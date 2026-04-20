@@ -1,0 +1,105 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Layer 2 / Layer 3 staging (SingleAxis-internal, never public) ---
+# See _internal/README.md. Moves to a separate private repo per the
+# documented Phase-1 split; excluded here so the public OSS tree
+# stays Layer-1 only.
+/_internal/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+build/
+.tox/
+.nox/
+.venv/
+venv/
+ENV/
+env/
+*.whl
+
+# --- Go ---
+bin/
+vendor/
+*.test
+*.out
+
+# --- Node / JS (docs site, SDK) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Helm ---
+charts/*/charts/
+charts/*/*.tgz
+charts/*/requirements.lock
+
+# --- Terraform ---
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+*.tfplan
+
+# --- Docker ---
+.docker/
+
+# --- IDE / Editor ---
+.claude/
+.vscode/
+!.vscode/settings.json.example
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- OS ---
+*.log
+*.pid
+*.seed
+
+# --- Build artefacts ---
+*.tar.gz
+*.zip
+sbom*.json
+sbom*.xml
+*.sig
+*.sigstore
+*.attestation
+
+# --- Local development ---
+.local/
+tmp/
+tmp_*/
+
+# --- Docs build output ---
+docs/_build/
+docs/.cache/
+site/

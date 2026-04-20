@@ -1,0 +1,117 @@
+# Default values for the SingleAxis Fabric umbrella chart (Layer 1).
+#
+# Regulatory Profiles in charts/fabric/profiles/ select the safe
+# defaults per regulation — most tenants should install with
+# --values profiles/<name>.yaml and override only tenant-specific
+# fields (tenant.id, Vault/KMS references).
+#
+# Layer 2 / Layer 3 subchart toggles (judgeWorkers, escalationService,
+# contextGraph, telemetryBridge, nats) are not included in the public
+# chart. They ship in the SingleAxis-internal distribution. See
+# specs/012-oss-commercialization-strategy.md.
+#
+# Latency posture (cross-cutting):
+#   Agent request path  — never blocks on a Fabric HTTP call
+#   Guardrails (L5)     — UDS sidecars, <100ms P99 per check
+
+tenant:
+  # UUID assigned at tenant registration. Required for production;
+  # smoke installs can leave this unset for local-only dev.
+  id: ""
+  name: ""
+
+# Global image pull secrets applied to every subchart pod.
+imagePullSecrets: []
+
+# Cross-cutting namespace creation. When running inside an operator
+# that manages the namespace externally, set this to false.
+namespace:
+  create: false
+  name: fabric-system
+  annotations: {}
+  labels: {}
+
+# Default NetworkPolicy: deny all ingress/egress except what each
+# component opens. Tenants with strict egress controls leave this on;
+# dev clusters flip to false.
+networkPolicy:
+  denyDefault: false
+
+# --- Subchart toggles + local overrides ---
+
+otelCollector:
+  enabled: false       # turn on once exporter endpoints are set
+# Subchart-specific overrides live under the subchart alias name,
+# matching dependency names in Chart.yaml. Example:
+# otel-collector:
+#   replicaCount: 2
+#   fabric:
+#     sampler:
+#       hmacKeySecret:
+#         name: fabric-otel-sampler-key
+
+nemoSidecar:
+  enabled: true       # starter Colang bundle ships with the subchart
+# nemo-sidecar:
+#   rails:
+#     bundlePath: /etc/fabric/rails
+
+langfuse:
+  enabled: false      # default L3 sink; opt-in because it needs Postgres
+# langfuse:
+#   database:
+#     dsnSecret:
+#       name: fabric-langfuse-db
+#       key: url
+#   nextauthUrl: https://langfuse.internal.example.com
+
+redteamRunner:
+  enabled: false      # CronJob attacks a live endpoint; opt-in by design
+# redteam-runner:
+#   schedule: "0 2 * * *"      # daily, via eu-ai-act-high-risk profile
+#   runConfig:
+#     inline: |
+#       tenant_id: acme-prod
+#       agent_id: support-bot
+#       profile: eu-ai-act-high-risk
+#       target:
+#         url: https://support-bot.acme.example.com/respond
+#         headers:
+#           Authorization: Bearer ${env:AGENT_BEARER}
+#       suites:
+#         - name: garak
+#           probes: [promptinject.HijackHateHumans]
+#         - name: pyrit
+#           scenarios: [jailbreak_fuzzer]
+#   extraEnv:
+#     - name: AGENT_BEARER
+#       valueFrom:
+#         secretKeyRef: { name: fabric-redteam-creds, key: bearer }
+
+updateAgent:
+  enabled: false      # Requires a real signing key at install; opt-in by design
+# update-agent:
+#   config:
+#     trustedKeys:
+#       - id: singleaxis-release
+#         publicKey: "<base64 raw 32-byte Ed25519 pubkey>"
+#     extraTrustedKeys:
+#       - id: tenant-mirror
+#         publicKey: "<base64 raw 32-byte Ed25519 pubkey>"
+#   tls:
+#     mode: certManager
+#     certManager:
+#       issuerRef:
+#         name: fabric-ca-issuer
+#         kind: ClusterIssuer
+#         group: cert-manager.io
+#   webhook:
+#     watchedNamespaces: [fabric-system, fabric-policy]
+
+# Profile metadata (set by --values profiles/<name>.yaml). Used only
+# for observability + NOTES; the profile's values are what actually
+# configure the deployment.
+profile:
+  name: permissive-dev
+  regulations: []
+  lockedFields: []

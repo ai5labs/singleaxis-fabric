@@ -1,0 +1,7 @@
+dist
+**/vendor
+**/*.test
+**/*.out
+.idea
+.vscode
+examples

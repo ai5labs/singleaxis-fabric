@@ -1,0 +1,50 @@
+<!-- Thank you for contributing to SingleAxis Fabric. -->
+
+## Summary
+
+<!-- One or two sentences: what does this PR change and why. -->
+
+## Related
+
+<!-- Link to relevant spec, issue, or discussion. -->
+
+- Spec: <!-- e.g. specs/004-telemetry-bridge.md -->
+- Issue: <!-- e.g. #123 -->
+
+## Type of change
+
+- [ ] Bug fix (`fix:` — no API change)
+- [ ] Feature (`feat:` — additive)
+- [ ] Breaking change (`feat!:` or `fix!:` — requires major bump)
+- [ ] Performance (`perf:`)
+- [ ] Refactor (`refactor:` — no behaviour change)
+- [ ] Test (`test:`)
+- [ ] Docs (`docs:`)
+- [ ] Build / CI (`build:` / `ci:`)
+- [ ] Chore (`chore:`)
+
+## Checklist
+
+- [ ] Commits are signed off (`git commit -s`)
+- [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
+- [ ] Tests added / updated
+- [ ] Spec updated if behaviour changed
+- [ ] `CHANGELOG.md` entry under `## [Unreleased]`
+- [ ] No new warnings from linters / type checkers
+- [ ] No secrets, credentials, or customer data committed
+- [ ] Dependency additions: SPDX licence compatible; noted in PR
+- [ ] Public API changes: docstrings added / updated
+
+## Security review needed?
+
+- [ ] This PR touches the Telemetry Bridge, guardrails, escalation
+  service, cryptography, or egress. (If yes, CODEOWNERS will
+  auto-request a security maintainer.)
+
+## Testing performed
+
+<!-- What did you run to validate this change? -->
+
+## Screenshots / recordings
+
+<!-- For UI changes. -->

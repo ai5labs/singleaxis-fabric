@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible defect in Fabric.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before filing, please confirm:
+        - This is not a security vulnerability (if it is, use the Security Advisory flow).
+        - You have searched existing issues for a duplicate.
+
+  - type: input
+    id: fabric-version
+    attributes:
+      label: Fabric version
+      description: "`helm ls -n fabric-system` or the Git SHA you're running."
+    validations:
+      required: true
+
+  - type: input
+    id: k8s-version
+    attributes:
+      label: Kubernetes version
+      description: "`kubectl version --short`"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Regulatory profile in use
+      options:
+        - permissive-dev
+        - eu-ai-act-high-risk
+        - eu-ai-act-limited-risk
+        - nist-ai-rmf
+        - iso-42001
+        - sr-11-7
+        - hipaa
+        - custom / other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the unexpected behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps or code to reproduce.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / metrics
+      description: Redact anything sensitive before pasting.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: No customer data, PII, or secrets are included in this issue.
+          required: true
+        - label: I have searched existing issues.
+          required: true

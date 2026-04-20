@@ -1,0 +1,60 @@
+# OpenTelemetry Collector Builder manifest for the SingleAxis Fabric
+# distribution. Build with:
+#
+#   ocb --config ocb-config.yaml
+#
+# This produces a custom collector binary at ./dist/otelcol-fabric that
+# includes Fabric's policy processors alongside the standard contrib
+# receivers and exporters. The goal is to let operators gate LLM-agent
+# telemetry at the Collector layer with the same allowlist the Bridge
+# enforces in-process.
+
+dist:
+  name: otelcol-fabric
+  description: SingleAxis Fabric OpenTelemetry Collector distribution
+  output_path: ./dist
+  version: 0.1.0
+
+extensions:
+  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.150.0
+  # health_check extension ships from the contrib distribution; keep
+  # the version pinned to the same v0.150.0 as the rest of the manifest.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.150.0
+  # Fabric's schema-allowlist guard. Replace the local path with a
+  # tagged module path once the first release is cut.
+  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
+    path: ./processor/fabricguardprocessor
+  # Fabric's OPA policy gate. Same story — path build until release.
+  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor v0.1.0
+    path: ./processor/fabricpolicyprocessor
+  # Fabric's deterministic HMAC sampler.
+  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor v0.1.0
+    path: ./processor/fabricsamplerprocessor
+  # Fabric's Presidio redaction processor (HTTP over Unix socket to
+  # the fabric-presidio-sidecar). Mirrors the Bridge's redaction stage.
+  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor v0.1.0
+    path: ./processor/fabricredactprocessor
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.150.0
+
+providers:
+  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
+
+# Replaces resolve local processor modules to their on-disk source so
+# operators can iterate on the guard without cutting releases.
+replaces:
+  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
+  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor => ./processor/fabricpolicyprocessor
+  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor => ./processor/fabricsamplerprocessor
+  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor => ./processor/fabricredactprocessor

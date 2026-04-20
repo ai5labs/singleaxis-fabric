@@ -1,0 +1,46 @@
+SingleAxis Fabric {{ .Chart.AppVersion }} (Layer 1) is installed.
+
+Profile: {{ .Values.profile.name }}
+{{- if .Values.profile.regulations }}
+Regulations: {{ join ", " .Values.profile.regulations }}
+{{- end }}
+
+Tenant id: {{ .Values.tenant.id | default "(unset — dev only)" }}
+
+Subcharts enabled:
+{{- if .Values.otelCollector.enabled }}
+  - otel-collector        (telemetry ingest + processors)
+{{- end }}
+{{- if .Values.nemoSidecar.enabled }}
+  - nemo-sidecar          (NeMo Colang inline guardrails)
+{{- end }}
+{{- if .Values.langfuse.enabled }}
+  - langfuse              (local observability UI)
+{{- end }}
+{{- if .Values.redteamRunner.enabled }}
+  - redteam-runner        (Garak + PyRIT red-team CronJob)
+{{- end }}
+{{- if .Values.updateAgent.enabled }}
+  - update-agent          (manifest-channel admission webhook)
+{{- end }}
+
+What to do next:
+
+1. Check pod health:
+     kubectl -n {{ .Release.Namespace }} get pods
+
+2. If this is your first install, confirm the profile is intentional.
+   Dev clusters default to `permissive-dev`; regulated deployments:
+
+     --values charts/fabric/profiles/eu-ai-act-high-risk.yaml
+
+   More profiles (NIST AI RMF, ISO-42001, SR-11-7, HIPAA) land
+   profile-by-profile as their rubric sets stabilize.
+
+3. Layer 1 ships the public substrate: OTel Collector distribution,
+   guardrail sidecars, and local observability. For managed operation
+   — judges, escalation service, Context Graph, Telemetry Bridge —
+   reach out to SingleAxis (see specs/012-oss-commercialization-strategy.md).
+
+4. Read the deployment model before production rollout:
+     specs/008-deployment-model.md

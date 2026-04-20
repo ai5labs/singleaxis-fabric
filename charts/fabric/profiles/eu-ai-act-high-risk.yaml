@@ -1,0 +1,114 @@
+# EU AI Act high-risk profile (Layer 1 only).
+#
+# Locked fields (see profile.lockedFields) MUST NOT be overridden by
+# tenant values — a tenant wanting different behaviour should switch
+# to a less strict profile. Fabric enforces the lock-list in the
+# update-agent manifest validator (Phase 2).
+#
+# NOTE: Production EU AI Act deployments also require judge-workers and
+# escalation-service from the SingleAxis-internal distribution (Layer 2).
+# This Layer 1 profile configures only the public substrate: OTel
+# Collector hardening and inline guardrails. Services engagements layer
+# the internal chart on top.
+
+profile:
+  name: eu-ai-act-high-risk
+  regulations:
+    - eu_ai_act_high_risk
+  lockedFields:
+    - otel-collector.fabric.guard.enabled
+    - otel-collector.fabric.guard.dropUnknownClasses
+    - otel-collector.fabric.redact.enabled
+
+namespace:
+  create: true
+  name: fabric-system
+
+networkPolicy:
+  denyDefault: true
+
+otelCollector:
+  enabled: true
+otel-collector:
+  replicaCount: 2
+  fabric:
+    guard:
+      enabled: true
+      dropUnknownClasses: true
+    policy:
+      enabled: true
+      bundlePath: /etc/fabric/policy
+    # PII redaction is pinned on for this profile.
+    #
+    # The Presidio sidecar chart is not yet part of the umbrella
+    # release (see components/presidio-sidecar). Until it lands, the
+    # operator MUST deploy the sidecar separately and set:
+    #
+    #   otel-collector.fabric.redact.existingSocketProvider: <name>
+    #
+    # Without that, the otel-collector chart fail-closes at render.
+    # We leave ``existingSocketProvider`` empty here so an installer
+    # who forgets to deploy the sidecar gets a loud error rather than
+    # a silent no-op redaction pipeline.
+    redact:
+      enabled: true
+      unixSocket: /var/run/fabric/presidio.sock
+      existingSocketProvider: ""
+    sampler:
+      enabled: true
+      hmacKeySecret:
+        name: fabric-otel-sampler-key
+        key: hmac_key
+      rates:
+        decision_summary: 1.0
+        escalation: 1.0
+        red_team_result: 1.0
+
+nemoSidecar:
+  enabled: true
+nemo-sidecar:
+  replicaCount: 2
+  rails:
+    bundlePath: /etc/fabric/rails
+
+# redteam-runner — COMPLIANCE PIN, NOT AN ENABLE.
+#
+# The EU AI Act high-risk rubric requires a daily red-team cadence
+# with fail-on-findings. This profile pins the compliance knobs but
+# deliberately leaves `redteamRunner.enabled` as the subchart default
+# (false), because:
+#
+#   1. Red-team CronJobs attack a live agent endpoint. They cannot
+#      run until the operator supplies `redteam-runner.runConfig.inline`
+#      with the target URL + a credential reference in extraEnv.
+#   2. Auto-enabling with an empty target would render a CronJob that
+#      noisily crash-loops against `https://""` — worse than no job.
+#
+# Operator MUST, at install time:
+#   --set redteamRunner.enabled=true
+#   --set redteam-runner.runConfig.inline='tenant_id: ...
+#                                          agent_id: ...
+#                                          target: { url: https://... }
+#                                          suites: [...]'
+#   (plus extraEnv for bearer tokens — see the subchart README.)
+#
+# The schedule / failOnFindings / concurrencyPolicy values below are
+# applied ONLY when the operator opts in, so they act as compliance
+# defaults without rendering a broken CronJob on a dry install.
+redteam-runner:
+  schedule: "0 2 * * *"             # daily
+  failOnFindings: true
+  concurrencyPolicy: Forbid
+
+# update-agent defaults for this profile — high-risk deployments must
+# gate the manifest channel with fail-closed admission. The tenant
+# still has to supply the real signing key and (ideally) cert-manager
+# issuer; the profile just pins the posture.
+updateAgent:
+  enabled: true
+update-agent:
+  config:
+    failClosed: true
+  webhook:
+    failurePolicy: Fail
+    timeoutSeconds: 5

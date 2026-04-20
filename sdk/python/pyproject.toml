@@ -1,0 +1,112 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fabric-sdk"
+description = "SingleAxis Fabric SDK for Python — inline guardrails, memory, tracing, escalation helpers."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
+keywords = ["singleaxis", "fabric", "llm", "agent", "guardrails", "otel", "compliance"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = [
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "pydantic>=2.8,<3.0",
+]
+
+[project.optional-dependencies]
+otlp = [
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+# Orchestration-framework adapters. Each extra pulls exactly the
+# upstream package its matching `fabric.adapters.*` module imports —
+# core SDK install stays free of orchestration dependencies.
+langgraph = [
+  "langgraph>=0.2,<1.0",
+]
+agent-framework = [
+  "agent-framework-core>=0.1,<2.0",
+]
+crewai = [
+  "crewai>=0.80,<1.0",
+]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6.9",
+  "mypy>=1.11.2",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+
+[project.urls]
+Homepage      = "https://github.com/ai5labs/singleaxis-fabric"
+Repository    = "https://github.com/ai5labs/singleaxis-fabric"
+Documentation = "https://github.com/ai5labs/singleaxis-fabric/blob/main/specs/002-architecture.md"
+Issues        = "https://github.com/ai5labs/singleaxis-fabric/issues"
+
+[tool.hatch.version]
+path = "src/fabric/_version.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fabric"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+  "-ra",
+  "--strict-config",
+  "--strict-markers",
+  "--cov=fabric",
+  "--cov-report=term-missing",
+  "--cov-fail-under=85",
+]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["fabric"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "C4", "PIE", "RET", "SIM", "PL", "RUF"]
+ignore = ["PLR0913"]
+
+[tool.ruff.lint.per-file-ignores]
+# S108: hardcoded /tmp paths are intentional in tests (short paths to
+# satisfy Darwin's 104-byte sun_path limit, and invalid paths to
+# trigger negative-path assertions).
+"tests/**" = ["S101", "PLR2004", "S108"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]

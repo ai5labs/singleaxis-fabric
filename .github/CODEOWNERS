@@ -1,0 +1,42 @@
+# SingleAxis Fabric — CODEOWNERS
+#
+# Phase 1a (OSS pre-release) single-maintainer setup: all paths route to
+# the sole maintainer, @jrcks67 (see MAINTAINERS.md). Team-based
+# ownership (@ai5labs/fabric-maintainers, fabric-security, fabric-platform,
+# fabric-graph) will be (re)introduced once a Technical Steering
+# Committee forms at 5+ maintainers per GOVERNANCE.md.
+#
+# Lines are evaluated from top to bottom; last match wins.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners — project lead until maintainers are formalised
+*                                    @jrcks67
+
+# Specs (design of record)
+/specs/                              @jrcks67
+
+# Governance
+/LICENSE                             @jrcks67
+/NOTICE                              @jrcks67
+/GOVERNANCE.md                       @jrcks67
+/CODE_OF_CONDUCT.md                  @jrcks67
+/CONTRIBUTING.md                     @jrcks67
+/MAINTAINERS.md                      @jrcks67
+
+# Security-sensitive areas — require security maintainer approval
+/SECURITY.md                         @jrcks67
+/components/presidio-sidecar/        @jrcks67
+/components/nemo-sidecar/            @jrcks67
+/sdk/python/src/fabric/guardrails.py @jrcks67
+
+# Chart / deployment
+/charts/                             @jrcks67
+/deploy/                             @jrcks67
+
+# Specs for Layer 2 / Layer 3 components (code lives in a separate
+# SingleAxis-internal repo; the specs stay public for transparency)
+/specs/003-context-graph.md          @jrcks67
+
+# CI / build
+/.github/                            @jrcks67
+/.pre-commit-config.yaml             @jrcks67
