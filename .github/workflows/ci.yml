@@ -1,0 +1,377 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    name: DCO sign-off check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check DCO
+        uses: christophebedard/dco-check@v1.1.0
+        with:
+          python-version: "3.12"
+
+  commit-lint:
+    name: Conventional commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.yaml
+
+  pre-commit:
+    name: Pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pre-commit/action@v3.0.1
+
+  markdown-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v17
+        with:
+          globs: "**/*.md"
+
+  link-check:
+    name: Markdown links
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v1
+        with:
+          args: --verbose --no-progress --exclude-mail '**/*.md'
+          fail: true
+
+  spec-schema:
+    name: Validate spec front-matter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator
+        run: pip install pyyaml jsonschema
+      - name: Validate specs
+        run: |
+          python - <<'PY'
+          import pathlib, sys, yaml, jsonschema
+          from jsonschema import Draft202012Validator
+
+          schema = {
+            "type": "object",
+            "required": ["title", "status", "revision", "last_updated", "owner"],
+            "properties": {
+              "title":        {"type": "string"},
+              "status":       {"enum": ["draft", "accepted", "implemented", "deprecated", "superseded"]},
+              "revision":     {"type": "integer", "minimum": 1},
+              "last_updated": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+              "owner":        {"type": "string"},
+              "supersedes":   {"type": ["string", "integer"]},
+              "superseded_by":{"type": ["string", "integer"]}
+            },
+            "additionalProperties": True
+          }
+          validator = Draft202012Validator(schema)
+          errors = 0
+          for p in sorted(pathlib.Path("specs").glob("[0-9][0-9][0-9]-*.md")):
+            text = p.read_text()
+            if not text.startswith("---"):
+              print(f"{p}: missing front-matter")
+              errors += 1
+              continue
+            _, fm, _ = text.split("---", 2)
+            meta = yaml.safe_load(fm)
+            for e in validator.iter_errors(meta):
+              print(f"{p}: {e.message}")
+              errors += 1
+          sys.exit(1 if errors else 0)
+          PY
+
+  python-lint-type:
+    name: Python lint + types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+      - name: ruff check
+        run: |
+          if find . -name "pyproject.toml" -not -path "./node_modules/*" | grep -q .; then
+            ruff check .
+          else
+            echo "No Python projects yet; skipping ruff check."
+          fi
+      - name: ruff format check
+        run: |
+          if find . -name "pyproject.toml" -not -path "./node_modules/*" | grep -q .; then
+            ruff format --check .
+          else
+            echo "No Python projects yet; skipping ruff format."
+          fi
+
+  python-mypy:
+    name: Python mypy (per-package)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          # Layer 1 (public)
+          - components/presidio-sidecar
+          - components/nemo-sidecar
+          - components/langfuse-bootstrap
+          - components/redteam-runner
+          - components/update-agent
+          - sdk/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package with dev extras
+        working-directory: ${{ matrix.package }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: mypy (isolated against package deps)
+        working-directory: ${{ matrix.package }}
+        # Each package declares its own [tool.mypy] block (strict,
+        # pinned python_version). Running from the package dir with
+        # `src tests` picks that config up, so we get real type
+        # errors against the package's own dependency graph instead
+        # of a repo-root soup with --ignore-missing-imports.
+        run: mypy src tests
+
+  python-test:
+    name: Python package tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+        package:
+          # Layer 1 (public)
+          - components/presidio-sidecar
+          - components/nemo-sidecar
+          - components/langfuse-bootstrap
+          - components/redteam-runner
+          - components/update-agent
+          - sdk/python
+        # The SDK is the only package that declares
+        # `requires-python = ">=3.11"`; everything else is 3.12+.
+        # Exclude 3.11 combinations for the 3.12-floored packages so
+        # we test each package against its declared support range.
+        exclude:
+          - package: components/presidio-sidecar
+            python-version: "3.11"
+          - package: components/nemo-sidecar
+            python-version: "3.11"
+          - package: components/langfuse-bootstrap
+            python-version: "3.11"
+          - package: components/redteam-runner
+            python-version: "3.11"
+          - package: components/update-agent
+            python-version: "3.11"
+        # Per-package coverage thresholds. These MUST mirror each
+        # package's pyproject.toml [tool.pytest.ini_options] addopts
+        # `--cov-fail-under=N`. CI enforces the floor even if a
+        # package's addopts are changed or dropped. CONTRIBUTING.md
+        # guarantees 80% line / 70% branch at minimum; some packages
+        # declare a higher bar (SDK 85).
+        include:
+          - package: components/presidio-sidecar
+            threshold: 80
+          - package: components/nemo-sidecar
+            threshold: 80
+          - package: components/langfuse-bootstrap
+            threshold: 80
+          - package: components/redteam-runner
+            threshold: 80
+          - package: components/update-agent
+            threshold: 80
+          - package: sdk/python
+            threshold: 85
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package with dev extras
+        working-directory: ${{ matrix.package }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: pytest with coverage gate
+        working-directory: ${{ matrix.package }}
+        run: pytest --cov --cov-report=term-missing --cov-fail-under=${{ matrix.threshold }}
+
+  helm-lint:
+    name: Helm / Kubernetes lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.0"
+      - name: Helm lint (umbrella, if scaffolded)
+        run: |
+          if [ -f charts/fabric/Chart.yaml ]; then
+            helm lint charts/fabric
+          else
+            echo "Umbrella chart not yet scaffolded; skipping."
+          fi
+      - name: Helm lint (subcharts)
+        # Lint each subchart that has a Chart.yaml. The sampler
+        # validator requires an HMAC key source, so pass one.
+        run: |
+          shopt -s nullglob
+          found=0
+          for chart in charts/fabric/charts/*/Chart.yaml; do
+            dir="$(dirname "$chart")"
+            echo "::group::helm lint ${dir}"
+            helm lint "${dir}" --set fabric.sampler.hmacKey=cafebabe
+            echo "::endgroup::"
+            found=1
+          done
+          if [ "$found" = "0" ]; then
+            echo "No subcharts found."
+          fi
+      - name: Helm template smoke render
+        run: |
+          shopt -s nullglob
+          for chart in charts/fabric/charts/*/Chart.yaml; do
+            dir="$(dirname "$chart")"
+            echo "::group::helm template ${dir}"
+            helm template ci "${dir}" --set fabric.sampler.hmacKey=cafebabe \
+              | head -1
+            echo "::endgroup::"
+          done
+
+  collector-image-build:
+    name: Collector image build (PR smoke)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: fabric-otelcol:pr
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-run --version
+        run: |
+          docker run --rm --entrypoint=/otelcol-fabric fabric-otelcol:pr --help \
+            | head -5
+
+  trivy-scan:
+    name: Trivy container scan (PR)
+    runs-on: ubuntu-latest
+    # PR-only: scanning on every main push would double the spend
+    # for the same commits already scanned on the incoming PR.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build collector image for scan
+        # Reuses the same Dockerfile as collector-image-build but
+        # tags separately (fabric-otelcol:trivy) so the two jobs
+        # can run in parallel without racing on the :pr tag.
+        uses: docker/build-push-action@v6
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: fabric-otelcol:trivy
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: fabric-otelcol:trivy
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-image.sarif
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+  license-header:
+    name: SPDX license headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: apache/skywalking-eyes/header@v0.6.0
+        with:
+          config: .licenserc.yaml
+
+  component-meta:
+    name: Component metadata consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator
+        run: pip install pyyaml jsonschema
+      - name: Validate .component-meta.yaml files
+        run: |
+          python - <<'PY'
+          import pathlib, sys, yaml
+          schema_keys = {"name", "language", "owner", "primary_spec"}
+          errors = 0
+          for meta_path in pathlib.Path("components").rglob(".component-meta.yaml"):
+            meta = yaml.safe_load(meta_path.read_text()) or {}
+            missing = schema_keys - set(meta)
+            if missing:
+              print(f"{meta_path}: missing keys {missing}")
+              errors += 1
+            spec = meta.get("primary_spec", "")
+            if spec and not pathlib.Path(spec).exists():
+              print(f"{meta_path}: primary_spec {spec} not found")
+              errors += 1
+          sys.exit(1 if errors else 0)
+          PY

@@ -1,0 +1,168 @@
+name: E2E kind smoke
+
+# End-to-end smoke test: spin up a kind cluster, install the umbrella
+# chart under the permissive-dev profile, and assert the subset of the
+# stack whose images can actually be built from this repo runs Ready.
+#
+# Scope for Phase 1a:
+#   - Only the otel-collector path is exercised end-to-end. Its image
+#     is built here from components/otel-collector-fabric and loaded
+#     into the kind cluster, since the first release (v0.1.0-rc.1)
+#     has not yet published images to ghcr.io.
+#   - nemo-sidecar, presidio-sidecar, update-agent, redteam-runner,
+#     langfuse are deliberately disabled via --set *.enabled=false.
+#     Their images do not yet exist at ghcr.io; once they ship in
+#     v0.1.0-rc.1+, expand this workflow to build + kind-load those
+#     too and add per-component readiness + /healthz checks.
+#
+# Runtime budget: ~10-15 min. This is why it lives outside ci.yml and
+# only runs on chart/component changes — doc-only PRs skip it.
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "components/**"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  kind-smoke:
+    name: kind cluster install + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      KIND_CLUSTER: fabric-e2e
+      NAMESPACE: fabric-system
+      COLLECTOR_IMAGE: fabric-otelcol:e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build collector image (no push, load locally)
+        # Built locally so we can kind-load it. Do NOT push to GHCR
+        # from this workflow — that's the release workflow's job.
+        uses: docker/build-push-action@v6
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.COLLECTOR_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create kind cluster
+        # helm/kind-action pins kind v0.23.0 by default; we pin the
+        # node image explicitly so cluster behaviour is stable across
+        # upstream kind releases.
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+          node_image: kindest/node:v1.30.0
+          version: v0.23.0
+          wait: 120s
+
+      - name: Load collector image into kind
+        run: |
+          kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+
+      - name: Install umbrella chart (permissive-dev, collector-only)
+        # permissive-dev enables collector+nemo by default; we force
+        # every subchart except otel-collector off because their
+        # images have not been published yet. hmacKey is inline for
+        # this throwaway test cluster — never do this in prod.
+        run: |
+          helm install ci charts/fabric \
+            --create-namespace \
+            --namespace "${NAMESPACE}" \
+            --values charts/fabric/profiles/permissive-dev.yaml \
+            --set nemoSidecar.enabled=false \
+            --set langfuse.enabled=false \
+            --set redteamRunner.enabled=false \
+            --set updateAgent.enabled=false \
+            --set otel-collector.image.repository=fabric-otelcol \
+            --set otel-collector.image.tag=e2e \
+            --set otel-collector.image.pullPolicy=IfNotPresent \
+            --set otel-collector.fabric.sampler.hmacKey=cafebabe \
+            --wait \
+            --timeout 5m
+
+      - name: Wait for pods Ready
+        run: |
+          kubectl wait --for=condition=ready pods --all \
+            --namespace "${NAMESPACE}" \
+            --timeout=300s
+
+      - name: List installed resources
+        run: |
+          kubectl get all --namespace "${NAMESPACE}"
+
+      - name: Assert collector healthcheckextension responds
+        # Exec curl from inside the collector pod (distroless has no
+        # shell/curl, so we use kubectl port-forward from the runner
+        # instead — simpler and doesn't require an exec-capable image).
+        run: |
+          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "Collector pod: ${POD}"
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            "pod/${POD}" 13133:13133 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+          # Give port-forward a moment to bind, then poll.
+          attempts=0
+          while [ "${attempts}" -lt 10 ]; do
+            if curl --silent --show-error --fail --max-time 2 \
+                http://127.0.0.1:13133/; then
+              echo "healthcheck OK"
+              exit 0
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+          done
+          echo "collector healthcheck did not respond on :13133" >&2
+          exit 1
+
+      - name: helm test (chart-provided test-connection Pod)
+        run: |
+          helm test ci --namespace "${NAMESPACE}" --timeout 2m
+
+      # --- Failure diagnostics -----------------------------------------
+      # Only run on failure; dump everything useful for debugging a
+      # broken PR without needing to reproduce locally.
+
+      - name: Describe pods (on failure)
+        if: failure()
+        run: kubectl describe pods --namespace "${NAMESPACE}" || true
+
+      - name: Collector logs (on failure)
+        if: failure()
+        run: |
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector \
+            --tail=200 --all-containers=true || true
+
+      - name: Events (on failure)
+        if: failure()
+        run: kubectl get events --namespace "${NAMESPACE}" \
+          --sort-by=.lastTimestamp || true
+
+      - name: Helm status (on failure)
+        if: failure()
+        run: helm status ci --namespace "${NAMESPACE}" --show-desc || true

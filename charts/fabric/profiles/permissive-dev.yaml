@@ -1,0 +1,61 @@
+# Permissive dev profile — NOT FOR PRODUCTION.
+#
+# Turns on every Layer 1 subchart with the smallest resource footprint
+# so a single-node kind cluster can run the public stack. Redaction and
+# signed egress are OFF — this profile is only for local feature
+# development and CI smoke tests.
+#
+# Layer 2 subcharts (judge-workers, escalation-service) are not part of
+# this chart. For engagements using SingleAxis-internal tooling, install
+# the internal umbrella chart on top of this one.
+
+profile:
+  name: permissive-dev
+  regulations: []
+  lockedFields: []
+
+namespace:
+  create: true
+  name: fabric-system
+
+networkPolicy:
+  denyDefault: false
+
+otelCollector:
+  enabled: true
+otel-collector:
+  replicaCount: 1
+  fabric:
+    redact:
+      enabled: false
+    policy:
+      enabled: true
+      bundlePath: ""     # pass-through until Rego is wired
+    sampler:
+      enabled: true
+      hmacKey: "dev-only-not-a-real-key-0123456789abcdef"
+  exporter:
+    endpoint: http://localhost:4318
+    insecure: true
+  debugExporter:
+    enabled: true
+
+nemoSidecar:
+  enabled: true
+nemo-sidecar:
+  rails:
+    bundlePath: /etc/fabric/rails
+
+# Dev-only Langfuse: disabled by default so CI smoke runs don't need
+# Postgres. Flip enabled=true and set database.url to bring up the UI.
+langfuse:
+  enabled: false
+  database:
+    url: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 256Mi

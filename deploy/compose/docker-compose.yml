@@ -1,0 +1,160 @@
+# SingleAxis Fabric — integration harness (Layer 1).
+#
+# Spins up everything an external agent needs to exercise the Fabric
+# audit stack locally: the two UDS guardrail sidecars, the Fabric
+# OTel Collector distribution, and a Langfuse + Postgres sink.
+#
+# Ports exposed on the host:
+#   4317       OTLP/gRPC        otel-collector  → agent → collector
+#   4318       OTLP/HTTP        otel-collector  → agent → collector
+#   3000       Langfuse UI      http://localhost:3000
+#
+# UDS sockets exposed on the host (bind-mount ./run/ → /run/fabric/):
+#   ./run/presidio.sock   agent → presidio-sidecar (PII redaction)
+#   ./run/nemo.sock       agent → nemo-sidecar     (Colang rails)
+#
+# See README.md for how to point an agent (Fabric SDK, vanilla OTLP,
+# etc.) at this stack.
+
+name: fabric-harness
+
+networks:
+  fabric:
+    driver: bridge
+
+volumes:
+  langfuse-db:
+
+services:
+
+  # ---- UDS guardrail sidecars -------------------------------------
+
+  presidio-sidecar:
+    build:
+      context: ../../components/presidio-sidecar
+      dockerfile: Dockerfile
+    image: fabric/presidio-sidecar:harness
+    user: "1000:1000"
+    command: ["--uds", "/run/fabric/presidio.sock"]
+    volumes:
+      - ./run:/run/fabric
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/fabric/presidio.sock"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks: [fabric]
+
+  nemo-sidecar:
+    build:
+      context: ../../components/nemo-sidecar
+      dockerfile: Dockerfile
+    image: fabric/nemo-sidecar:harness
+    user: "1000:1000"
+    command: ["--uds", "/run/fabric/nemo.sock", "--rails", "/etc/fabric/rails"]
+    volumes:
+      - ./run:/run/fabric
+      - ../../components/nemo-sidecar/rails/starter:/etc/fabric/rails:ro
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/fabric/nemo.sock"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks: [fabric]
+
+  # ---- OTel Collector (Fabric distribution) -----------------------
+
+  otel-collector:
+    build:
+      context: ../../components/otel-collector-fabric
+      dockerfile: Dockerfile
+    image: fabric/otel-collector:harness
+    command: ["--config=/etc/fabric/collector.yaml"]
+    environment:
+      # Pre-computed base64(pk-lf-harness:sk-lf-harness). Override in
+      # .env if you rotate the Langfuse project keys.
+      LANGFUSE_BASIC_AUTH: ${LANGFUSE_BASIC_AUTH:-cGstbGYtaGFybmVzczpzay1sZi1oYXJuZXNz}
+    volumes:
+      - ./collector-config/collector.yaml:/etc/fabric/collector.yaml:ro
+      - ./run:/run/fabric
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      presidio-sidecar:
+        condition: service_healthy
+      langfuse:
+        condition: service_healthy
+    networks: [fabric]
+
+  # ---- Langfuse (observability UI) --------------------------------
+
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+    volumes:
+      - langfuse-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [fabric]
+
+  langfuse:
+    image: langfuse/langfuse:2
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-harness-nextauth-secret-change-me}
+      SALT: ${LANGFUSE_SALT:-harness-salt-change-me}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_DEFAULT_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-fabric-harness}
+      LANGFUSE_DEFAULT_PROJECT_ROLE: OWNER
+      LANGFUSE_INIT_ORG_ID: fabric
+      LANGFUSE_INIT_ORG_NAME: SingleAxis Fabric Harness
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-fabric-harness}
+      LANGFUSE_INIT_PROJECT_NAME: Fabric Harness
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-harness}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-harness}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_USER_EMAIL:-admin@fabric.local}
+      LANGFUSE_INIT_USER_NAME: Harness Admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_USER_PASSWORD:-fabric-admin}
+    ports:
+      - "3000:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks: [fabric]
+
+  # ---- Optional: bootstrap Langfuse with Fabric dashboards --------
+  #
+  # Runs once on `docker compose --profile bootstrap up`. In production
+  # this is the Kubernetes Job shipped by charts/fabric/charts/langfuse/.
+  langfuse-bootstrap:
+    profiles: ["bootstrap"]
+    build:
+      context: ../../components/langfuse-bootstrap
+      dockerfile: Dockerfile
+    image: fabric/langfuse-bootstrap:harness
+    environment:
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-harness}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-harness}
+      FABRIC_PROFILE: ${FABRIC_PROFILE:-permissive-dev}
+    volumes:
+      - ../../components/langfuse-bootstrap/curated:/etc/fabric/curated:ro
+    depends_on:
+      langfuse:
+        condition: service_healthy
+    restart: "no"
+    networks: [fabric]

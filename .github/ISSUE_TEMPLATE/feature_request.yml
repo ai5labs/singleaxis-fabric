@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a change or addition.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Non-trivial changes typically warrant a spec. If this feature fits
+        an existing spec, please link it. If it needs a new spec, we'll ask
+        you to draft one (template: specs/000-overview.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to accomplish? What breaks or is awkward today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Sketch of the change — interface, behaviour, or user experience.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: input
+    id: related-spec
+    attributes:
+      label: Related spec (if any)
+      description: e.g. specs/003-context-graph.md
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false

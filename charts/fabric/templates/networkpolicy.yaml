@@ -1,0 +1,18 @@
+{{- if .Values.networkPolicy.denyDefault }}
+# Deny-all default NetworkPolicy. Each subchart is expected to ship
+# a NetworkPolicy that opens the specific ports it needs. Turning
+# this on in a cluster without subchart-level allow rules will
+# break pod-to-pod traffic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-deny-default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}

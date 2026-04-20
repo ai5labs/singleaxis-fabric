@@ -1,0 +1,56 @@
+# Pre-commit hooks — https://pre-commit.com
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  # mypy runs per-package in CI (see `.github/workflows/ci.yml`,
+  # `python-mypy` job) against each package's own strict `[tool.mypy]`
+  # config and its own dep graph. A repo-root pre-commit mypy with
+  # `--ignore-missing-imports` would diverge from CI semantics, so we
+  # keep type-checking in CI and keep pre-commit focused on fast
+  # local-loop hygiene (ruff, gitleaks, file validity, EOF/whitespace).
+
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: v1.14.2
+    hooks:
+      - id: helm-docs
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ["--disable", "MD013", "MD033", "MD041", "--"]
+
+  # Conventional-commit enforcement lives in CI (commitlint-github-action@v6,
+  # see `.github/workflows/ci.yml`). Running gitlint here duplicates
+  # that and drifts (two configs to keep in sync), so we keep the CI
+  # gate as the source of truth.

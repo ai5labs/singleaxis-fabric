@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fabric-reference-agent"
+version = "0.1.0"
+description = "Minimal reference agent demonstrating the SingleAxis Fabric SDK's end-to-end happy path."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
+dependencies = [
+  "fabric-sdk",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.6.9",
+]
+
+[project.scripts]
+fabric-reference-agent = "fabric_reference_agent.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fabric_reference_agent"]
+
+[tool.uv.sources]
+fabric-sdk = { path = "../../sdk/python", editable = true }
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

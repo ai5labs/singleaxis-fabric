@@ -1,0 +1,49 @@
+name: Spec proposal
+description: Propose a new design-of-record document under specs/.
+title: "[spec] "
+labels: ["spec", "design-discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Specs are Fabric's source of truth for architecture and product
+        decisions. See `specs/000-overview.md` for structure and status
+        conventions. This issue is for discussion; the spec itself should
+        be a pull request.
+
+  - type: input
+    id: title
+    attributes:
+      label: Proposed spec title
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph — what and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What this spec will cover (and what it will explicitly exclude).
+    validations:
+      required: true
+
+  - type: textarea
+    id: interactions
+    attributes:
+      label: Interactions with existing specs
+    validations:
+      required: false
+
+  - type: input
+    id: author
+    attributes:
+      label: Proposed author
+    validations:
+      required: true
