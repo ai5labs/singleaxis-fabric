@@ -29,17 +29,17 @@ processors:
   - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.150.0
   # Fabric's schema-allowlist guard. Replace the local path with a
   # tagged module path once the first release is cut.
-  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
     path: ./processor/fabricguardprocessor
   # Fabric's OPA policy gate. Same story — path build until release.
-  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor v0.1.0
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor v0.1.0
     path: ./processor/fabricpolicyprocessor
   # Fabric's deterministic HMAC sampler.
-  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor v0.1.0
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor v0.1.0
     path: ./processor/fabricsamplerprocessor
   # Fabric's Presidio redaction processor (HTTP over Unix socket to
   # the fabric-presidio-sidecar). Mirrors the Bridge's redaction stage.
-  - gomod: github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor v0.1.0
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor v0.1.0
     path: ./processor/fabricredactprocessor
 
 exporters:
@@ -54,7 +54,7 @@ providers:
 # Replaces resolve local processor modules to their on-disk source so
 # operators can iterate on the guard without cutting releases.
 replaces:
-  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
-  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor => ./processor/fabricpolicyprocessor
-  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor => ./processor/fabricsamplerprocessor
-  - github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor => ./processor/fabricredactprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor => ./processor/fabricpolicyprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor => ./processor/fabricsamplerprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor => ./processor/fabricredactprocessor

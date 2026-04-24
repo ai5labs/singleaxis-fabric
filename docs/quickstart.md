@@ -54,7 +54,7 @@ The canonical runnable example. Calls every SDK surface in one turn
 against a simulated LLM + judge, so it works offline.
 
 ```bash
-git clone https://github.com/ai5labs/singleaxis-fabric.git
+git clone https://github.com/singleaxis/singleaxis-fabric.git
 cd singleaxis-fabric/examples/reference-agent
 uv sync
 uv run fabric-reference-agent --prompt "Hello"

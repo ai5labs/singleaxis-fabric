@@ -1,4 +1,4 @@
-module github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor
+module github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor
 
 go 1.25.0
 

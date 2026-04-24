@@ -36,9 +36,9 @@ exclude = [
   # docs reference them intentionally as the canonical install source, so
   # we can't drop the links — just skip the check until the release
   # lands. Re-enable after v0.1.0 ships as a stable tag.
-  "^https://github\\.com/ai5labs/singleaxis-fabric/releases/tag/v0\\.1\\.0",
-  "^https://github\\.com/ai5labs/singleaxis-fabric/releases/download/v0\\.1\\.0",
-  "^https://github\\.com/ai5labs/singleaxis-fabric/compare/v0\\.1\\.0",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/releases/tag/v0\\.1\\.0",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/releases/download/v0\\.1\\.0",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/compare/v0\\.1\\.0",
 
   # Fed Reserve moved SR-11-7 to a new URL structure without redirects; docs
   # still reference the canonical supervision letter.
