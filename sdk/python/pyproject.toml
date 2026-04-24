@@ -57,10 +57,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/ai5labs/singleaxis-fabric"
-Repository    = "https://github.com/ai5labs/singleaxis-fabric"
-Documentation = "https://github.com/ai5labs/singleaxis-fabric/blob/main/specs/002-architecture.md"
-Issues        = "https://github.com/ai5labs/singleaxis-fabric/issues"
+Homepage      = "https://github.com/singleaxis/singleaxis-fabric"
+Repository    = "https://github.com/singleaxis/singleaxis-fabric"
+Documentation = "https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/002-architecture.md"
+Issues        = "https://github.com/singleaxis/singleaxis-fabric/issues"
 
 [tool.hatch.version]
 # Version is derived from the git tag at build time via hatch-vcs so the

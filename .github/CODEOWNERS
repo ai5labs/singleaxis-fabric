@@ -2,7 +2,7 @@
 #
 # Phase 1a (OSS pre-release) single-maintainer setup: all paths route to
 # the sole maintainer, @jrcks67 (see MAINTAINERS.md). Team-based
-# ownership (@ai5labs/fabric-maintainers, fabric-security, fabric-platform,
+# ownership (@singleaxis/fabric-maintainers, fabric-security, fabric-platform,
 # fabric-graph) will be (re)introduced once a Technical Steering
 # Committee forms at 5+ maintainers per GOVERNANCE.md.
 #
