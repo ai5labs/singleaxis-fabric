@@ -215,5 +215,5 @@ _(nothing yet)_
 
 ---
 
-[Unreleased]: https://github.com/ai5labs/singleaxis-fabric/compare/v0.1.0-rc.1...HEAD
-[0.1.0-rc.1]: https://github.com/ai5labs/singleaxis-fabric/releases/tag/v0.1.0-rc.1
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0-rc.1...HEAD
+[0.1.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.1

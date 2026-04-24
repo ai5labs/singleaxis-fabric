@@ -1,4 +1,4 @@
-module github.com/ai5labs/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor
+module github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor
 
 go 1.25.0
 
