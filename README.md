@@ -13,7 +13,11 @@ guardrails, and a clean human-escalation primitive — from day one.
 [![CI](https://github.com/singleaxis/singleaxis-fabric/actions/workflows/ci.yml/badge.svg)](https://github.com/singleaxis/singleaxis-fabric/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/singleaxis/singleaxis-fabric/badge)](https://securityscorecards.dev/viewer/?uri=github.com/singleaxis/singleaxis-fabric)
 
-[Quickstart](docs/quickstart.md) · [Architecture](docs/architecture.md) · [Deployment](docs/deployment.md) · [Reference agent](examples/reference-agent/) · [Specs](specs/)
+[Quickstart](docs/quickstart.md) ·
+[Architecture](docs/architecture.md) ·
+[Deployment](docs/deployment.md) ·
+[Reference agent](examples/reference-agent/) ·
+[Specs](specs/)
 
 </div>
 
@@ -270,9 +274,12 @@ follow a 90-day coordinated disclosure default.
 
 ## Community and support
 
-- **Issues** — bug reports, feature requests: [GitHub Issues](https://github.com/singleaxis/singleaxis-fabric/issues)
-- **Discussions** — questions, show-and-tell, design RFCs: [GitHub Discussions](https://github.com/singleaxis/singleaxis-fabric/discussions)
-- **Commercial engagement** — design partners, regulated deployments: [singleaxis.ai](https://singleaxis.ai)
+- **Issues** — bug reports, feature requests:
+  [GitHub Issues](https://github.com/singleaxis/singleaxis-fabric/issues)
+- **Discussions** — questions, show-and-tell, design RFCs:
+  [GitHub Discussions](https://github.com/singleaxis/singleaxis-fabric/discussions)
+- **Commercial engagement** — design partners, regulated deployments:
+  [singleaxis.ai](https://singleaxis.ai)
 
 ## Governance
 
