@@ -53,4 +53,9 @@ exclude = [
 
   # Kyverno docs CDN flakes under CI crawl load.
   "^https://kyverno\\.io/",
+
+  # slsa.dev (Sigstore-adjacent spec hosting) returns Connection Reset
+  # under CI crawl bursts even with retries. The link is the canonical
+  # SLSA spec reference in SECURITY.md and isn't moving.
+  "^https://slsa\\.dev/",
 ]
