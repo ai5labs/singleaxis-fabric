@@ -293,6 +293,5 @@ Licensed under the [Apache License, Version 2.0](LICENSE). See
 [`NOTICE`](NOTICE).
 
 SingleAxis, SASF, and the Fabric word mark are trademarks of AI5Labs
-Research OPC Private Limited. The trademarks are **not** licensed
-under Apache-2.0; see [`GOVERNANCE.md`](GOVERNANCE.md) for the
-trademark policy.
+Research OPC Private Limited. The trademarks are **not** licensed under
+Apache-2.0; see [`GOVERNANCE.md`](GOVERNANCE.md) for the trademark policy.
