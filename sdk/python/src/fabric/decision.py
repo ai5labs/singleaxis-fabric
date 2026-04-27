@@ -135,14 +135,22 @@ class Decision(AbstractContextManager["Decision"]):
     ) -> bool | None:
         if self._span is None or self._cm is None:  # pragma: no cover
             return None
-        if self._blocked is not None:
+        # Status precedence: blocked + escalated should not silently
+        # collapse to one signal. Tag attributes from each outcome
+        # independently, then pick a status description that names
+        # both when both are present so the audit trail can't lose
+        # the escalation behind a block status.
+        is_blocked = self._blocked is not None
+        is_escalation = isinstance(exc, EscalationRequested) or self._escalation is not None
+        if is_blocked:
             self._span.set_attribute(ATTR_BLOCKED, True)
-            if self._blocked.policies_fired:
+            if self._blocked is not None and self._blocked.policies_fired:
                 self._span.set_attribute(ATTR_BLOCK_POLICIES, tuple(self._blocked.policies_fired))
+        if is_blocked and is_escalation:
+            self._span.set_status(Status(StatusCode.ERROR, description="blocked_and_escalated"))
+        elif is_blocked:
             self._span.set_status(Status(StatusCode.ERROR, description="guardrail_blocked"))
-        elif isinstance(exc, EscalationRequested):
-            # Escalation is flow control, not a crash. Tag the span
-            # clearly but don't dump a stack into span events.
+        elif is_escalation:
             self._span.set_status(Status(StatusCode.ERROR, description="escalation_requested"))
         elif exc is not None:
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
@@ -243,12 +251,25 @@ class Decision(AbstractContextManager["Decision"]):
     def record_block(self, result: GuardrailResult) -> None:
         """Record a blocking guardrail outcome on the span.
 
+        First-wins: the first block recorded becomes ``self.blocked``.
+        Subsequent calls raise :class:`RuntimeError` rather than
+        silently overwriting; downstream consumers (graphs, audits)
+        rely on a single canonical block per Decision. Host code that
+        wants to record multiple guardrail outcomes should use the
+        chain's own per-rail span events (already emitted) and call
+        ``record_block`` only for the final, canonical block.
+
         Hosts that prefer an exception-driven flow can call
         ``raise_for_block`` after this to abort the decision with the
         canned block response attached.
         """
         if not result.blocked:
             raise ValueError("record_block called with a non-blocking GuardrailResult")
+        if self._blocked is not None:
+            raise RuntimeError(
+                "Decision is already blocked; record_block is first-wins. "
+                "Call only once per Decision."
+            )
         self._blocked = result
 
     def raise_for_block(self) -> None:
@@ -266,9 +287,22 @@ class Decision(AbstractContextManager["Decision"]):
         pick it up. Does **not** raise on its own — the SDK leaves
         flow control to the host, which typically pairs this with
         :meth:`raise_for_escalation` and its framework's interrupt.
+
+        First-wins: the first escalation recorded becomes
+        ``self.escalation``. Subsequent calls raise :class:`RuntimeError`
+        rather than silently overwriting attributes and emitting a
+        second event. Aggregation of multiple escalation reasons should
+        be done in the caller's :class:`EscalationSummary` (e.g. comma-
+        joined ``reason``) before the single ``request_escalation``
+        call.
         """
 
         span = self.span
+        if self._escalation is not None:
+            raise RuntimeError(
+                "Decision already has an escalation requested; request_escalation "
+                "is first-wins. Call only once per Decision."
+            )
         self._escalation = summary
         span.set_attribute(ATTR_ESCALATED, True)
         span.set_attribute(ATTR_ESC_REASON, summary.reason)
@@ -403,5 +437,18 @@ class Decision(AbstractContextManager["Decision"]):
     # -- OTel passthrough -------------------------------------------------
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
-        """Set a custom attribute on the active decision span."""
+        """Set a custom attribute on the active decision span.
+
+        Validates that ``value`` is one of the OTel-supported scalar
+        types (``str``, ``int``, ``float``, ``bool``). Passing a dict,
+        list, or ``None`` raises :class:`TypeError` with the offending
+        key — OTel itself silently drops unsupported types or warns
+        depending on SDK configuration; the SDK fails loud instead.
+        """
+        # bool first because isinstance(True, int) is True
+        if not isinstance(value, (bool, str, int, float)):
+            raise TypeError(
+                f"set_attribute({key!r}, ...): value must be str/int/float/bool, "
+                f"got {type(value).__name__}"
+            )
         self.span.set_attribute(key, value)

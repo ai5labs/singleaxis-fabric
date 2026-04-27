@@ -50,12 +50,21 @@ class FabricConfig:
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # Strip whitespace so a stray newline or trailing space in a
+        # ConfigMap / .env / Helm values file doesn't ship into every
+        # span as a tenant identifier. Empty-after-strip is rejected.
+        if isinstance(self.tenant_id, str):
+            object.__setattr__(self, "tenant_id", self.tenant_id.strip())
+        if isinstance(self.agent_id, str):
+            object.__setattr__(self, "agent_id", self.agent_id.strip())
+        if isinstance(self.profile, str):
+            object.__setattr__(self, "profile", self.profile.strip())
         if not self.tenant_id:
-            raise ValueError("tenant_id is required")
+            raise ValueError("tenant_id is required (empty or whitespace only)")
         if not self.agent_id:
-            raise ValueError("agent_id is required")
+            raise ValueError("agent_id is required (empty or whitespace only)")
         if not self.profile:
-            raise ValueError("profile is required")
+            raise ValueError("profile is required (empty or whitespace only)")
 
 
 class Fabric:
