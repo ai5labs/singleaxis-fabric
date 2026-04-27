@@ -53,19 +53,24 @@ resources:
     cpu: 100m
     memory: 256Mi
 
+# NeMo cold-start loads the Colang bundle + spaCy models, which can
+# take 10-20s on a fresh pod. Bumped readiness initialDelaySeconds
+# from 3 to 20 to avoid Unready flapping during rolling deploys.
 livenessProbe:
   httpGet:
     path: /healthz
     port: http
-  initialDelaySeconds: 10
+  initialDelaySeconds: 30
   periodSeconds: 10
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /healthz
     port: http
-  initialDelaySeconds: 3
+  initialDelaySeconds: 20
   periodSeconds: 5
+  failureThreshold: 3
 
 nodeSelector: {}
 tolerations: []

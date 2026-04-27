@@ -55,19 +55,25 @@ resources:
     cpu: 100m
     memory: 256Mi
 
+# Liveness/readiness budgets sized for cold pulls of the multi-arch
+# OTel Collector image (~40 MB) plus pipeline initialisation. The
+# previous 5s readiness initial delay marked pods Unready repeatedly
+# during rolling deploys on slow networks.
 livenessProbe:
   httpGet:
     path: /
     port: health
-  initialDelaySeconds: 10
+  initialDelaySeconds: 30
   periodSeconds: 10
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /
     port: health
-  initialDelaySeconds: 5
+  initialDelaySeconds: 15
   periodSeconds: 5
+  failureThreshold: 3
 
 nodeSelector: {}
 tolerations: []
