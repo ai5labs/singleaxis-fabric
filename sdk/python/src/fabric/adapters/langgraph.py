@@ -76,7 +76,9 @@ def escalate(decision: Decision, summary: EscalationSummary) -> Any:
     """
 
     try:
-        from langgraph.types import interrupt  # type: ignore[import-not-found, unused-ignore]  # noqa: PLC0415
+        from langgraph.types import (  # noqa: PLC0415
+            interrupt,  # type: ignore[import-not-found, unused-ignore]
+        )
     except ImportError as exc:  # pragma: no cover — exercised via monkey-patched import
         raise RuntimeError(
             "fabric.adapters.langgraph requires the optional 'langgraph' extra: "

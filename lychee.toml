@@ -66,4 +66,10 @@ exclude = [
   # the OpenSSF Scorecard badge target in README.md plus a reference
   # in specs/010-development-standards.md.
   "^https://securityscorecards\\.dev/",
+
+  # contributor-covenant.org returns Connection Reset under CI crawl
+  # bursts. Anchored fragment URLs (#enforcement-guidelines) are
+  # extra-flaky. Linked from CODE_OF_CONDUCT.md, which is verbatim
+  # Contributor Covenant 2.1 — the URL is the canonical reference.
+  "^https://www\\.contributor-covenant\\.org/",
 ]
