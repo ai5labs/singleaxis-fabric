@@ -6,6 +6,107 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-04-27
+
+Round-2 audit follow-up. 5 parallel deep-audit agents flagged ~80
+issues across SDK code-correctness, components, charts, specs, and
+production-readiness. This release fixes the customer-visible
+launch-blockers and the no-regret hygiene items; larger
+architectural lifts are explicitly deferred to v0.2.0.
+
+### Fixed (SDK)
+
+- `FabricConfig` and `Fabric.from_env` now strip whitespace from
+  `tenant_id`, `agent_id`, `profile` and reject empty-after-strip.
+  Trailing newlines in `.env` files / Helm values no longer ship as
+  span attributes.
+- `Decision.__exit__` now records `blocked_and_escalated` status
+  when both fire on the same Decision, instead of silently
+  collapsing the escalation behind the block status.
+- `Decision.record_block` and `Decision.request_escalation` are now
+  first-wins; the second call raises `RuntimeError` rather than
+  silently overwriting.
+- `Decision.set_attribute` validates value type and raises
+  `TypeError` on dict/list/None, matching OTel's actual contract
+  rather than relying on OTel to silently drop unsupported values.
+- `RetrievalRecord.from_query` now enforces 1:1 parity between
+  `result_hashes` and `result_count` when supplied. Mismatched
+  partial supply was silently corrupting downstream Context Graph
+  projections. `source_document_ids` remains free-form (N chunks
+  may share M < N source documents).
+- `_chain.GuardrailChain` no longer pushes NeMo rail names into
+  `entities_detected` (`EntitySummary` represents PII entity
+  classes, not rail names). NeMo rails appear only in
+  `policies_fired`.
+- `install_default_provider` refuses to silently re-install when an
+  existing real `TracerProvider` is configured. Returns the existing
+  provider with a warning; OTel's own API documents that
+  re-installation is not allowed.
+- New: `fabric.tracing` emits a one-shot warning at first
+  `get_tracer()` if the global TracerProvider is the OTel no-op
+  default. Without this, hosts who skip `install_default_provider`
+  ship instrumented agents that emit zero-trace_id spans silently.
+
+### Fixed (components)
+
+- NeMo sidecar refuses to start without `--rails-config` unless the
+  operator explicitly passes `--allow-passthrough`. Previously a
+  missing volumeMount silently produced an "allow-everything" engine
+  that disabled jailbreak/policy defence with only a docstring
+  warning.
+- NeMo sidecar `FABRIC_LIMIT_CONCURRENCY` parsing emits a clear
+  parser error on non-int input rather than crashing the whole
+  process at uvicorn boot.
+- Update-agent webhook refuses to fall back to plaintext on the
+  admission path when only one of `--tls-cert` / `--tls-key` is
+  present. Plaintext on a webhook causes either every-admission-
+  failure (failurePolicy=Fail) or every-admission-bypass
+  (failurePolicy=Ignore); both are customer outages. Fully-
+  plaintext mode is opt-in via `FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT=1`
+  for local smoke tests only.
+
+### Fixed (charts)
+
+- Umbrella chart now fail-renders on empty `tenant.id` for any
+  profile other than `permissive-dev`. Empty tenant ID stamps every
+  emitted span with no attribution and was the most common
+  silent-misconfiguration footgun.
+- `eu-ai-act-high-risk` profile no longer turns on
+  `networkPolicy.denyDefault: true` by default. The 0.1.x umbrella
+  does not yet ship per-subchart `allow` policies, so a blanket
+  deny would break pod-to-pod traffic on CNIs that enforce
+  NetworkPolicy. Operators with allow-rule expertise can flip it
+  back on manually; the per-subchart `allow` policies are roadmap.
+- `otel-collector` and `nemo-sidecar` readiness probe initial
+  delays bumped (from 5s/3s to 15s/20s) so rolling deploys on slow
+  networks don't mark pods Unready repeatedly during cold-start.
+
+### Fixed (docs)
+
+- `docs/architecture.md` latency framing softened to "design budget"
+  to match the README v0.1.2 wording. Numbers are unchanged but
+  no longer claimed as measured P99s.
+- `charts/fabric/README.md` no longer claims readiness probes
+  enforce latency budgets (today's probes are simple HTTP
+  `/healthz` checks; latency-aware readiness gate is roadmap).
+- `Pre-alpha` → `Beta` framing reconciled across the README and the
+  SDK README to match the `pyproject.toml` classifier
+  (`Development Status :: 4 - Beta`) introduced in 0.1.2.
+
+### Operator action required
+
+If you run `helm install fabric` with a non-`permissive-dev` profile,
+you must now pass `--set tenant.id=<uuid>` (previously this was
+documented as required but only warned in NOTES.txt).
+
+If you want fail-closed network posture, NetworkPolicy
+`denyDefault: true` is no longer enabled by the EU profile — flip it
+in your tenant values once you have allow-rules for your cluster.
+
+If you used `--allow-passthrough` semantics by relying on a missing
+`--rails-config` to NeMo sidecar (probably nobody — but flagging it
+as a behaviour change), pass `--allow-passthrough` explicitly.
+
 ## [0.1.2] - 2026-04-27
 
 Pre-launch hardening pass following an enterprise-grade audit.
@@ -533,7 +634,8 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.3
 [0.1.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.2
 [0.1.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.1
 [0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0
