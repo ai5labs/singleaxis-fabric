@@ -200,8 +200,7 @@ been exercised against a real tag. See Known issues below.
   subcharts gated by `*.enabled` toggles so operators can start with
   just the collector and layer on guardrails/observability/red-team as
   the deployment matures
-  ([008-deployment-model.md](specs/008-deployment-model.md),
-  [012-oss-commercialization-strategy.md](specs/012-oss-commercialization-strategy.md)):
+  ([008-deployment-model.md](specs/008-deployment-model.md)):
   - `otel-collector` — Fabric OTel Collector distribution with the
     `fabricguard`, `fabricpolicy`, `fabricsampler`, and `fabricredact`
     processors.
@@ -241,10 +240,10 @@ been exercised against a real tag. See Known issues below.
   multi-arch collector image to GHCR, signed Helm chart push to GHCR
   OCI, SLSA build-provenance attestations, and a draft GitHub Release.
 - **Design-of-record specs** (`specs/000-overview.md` through
-  `specs/013-design-partner-model.md`) covering product vision,
-  architecture, Context Graph, Telemetry Bridge, guardrails, judges,
-  escalation, deployment, compliance mapping, development standards,
-  roadmap, OSS commercialization strategy, and design-partner model.
+  `specs/011-roadmap.md`) covering product vision, architecture,
+  Context Graph, Telemetry Bridge, guardrails, judges, escalation,
+  deployment, compliance mapping, development standards, and
+  roadmap.
 
 ### Changed
 
@@ -304,12 +303,10 @@ been exercised against a real tag. See Known issues below.
   yet — no smoke test harness spins up the collector + sidecars + a
   reference agent and asserts end-to-end guardrail + telemetry flow.
   That lands before `v0.1.0` final.
-- **Phase-1a scope.** Per
-  [012-oss-commercialization-strategy.md](specs/012-oss-commercialization-strategy.md),
-  judge-workers, escalation-service, context-graph, telemetry-bridge,
-  and NATS broker are intentionally not part of the public chart
-  (Layer 2 under `_internal/`); operators deploying the OSS umbrella
-  get inline guardrails + collector + opt-in red-team, not the full
+- **Phase-1a scope.** Judge-workers, escalation-service,
+  context-graph, telemetry-bridge, and NATS broker are not part of
+  this distribution; operators deploying the OSS umbrella get
+  inline guardrails + collector + opt-in red-team, not the full
   async judge loop.
 
 ## [Unreleased]

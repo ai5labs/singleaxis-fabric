@@ -11,17 +11,16 @@ owner: project-lead
 ## Summary
 
 **Fabric is the open-source substrate for audit-ready AI agents.** The
-Apache-2.0 SDK, adapters, and guardrail sidecars in this repo — "Layer
-1" in the commercialization model
-([spec 012](012-oss-commercialization-strategy.md)) — instrument
-enterprise agents with standardized decision tracing, inline PII
-redaction, Colang policy rails, and a structured escalation primitive.
+Apache-2.0 SDK, adapters, and guardrail sidecars in this repo
+instrument enterprise agents with standardized decision tracing,
+inline PII redaction, Colang policy rails, and a structured
+escalation primitive.
 
-SingleAxis, the commercial entity behind Fabric, provides the services
-and internal tooling that turn instrumented agents into audit-ready
-ones: implementation, rubric authoring, managed operations, and (in
-time) evidence generation and attestation. The SDK is free; the
-expertise and the signature are not.
+Fabric is maintained by SingleAxis. Components and services
+maintained internally by SingleAxis — implementation help, rubric
+authoring, managed operations, evidence generation — complement the
+OSS for organizations that want the outcome rather than the
+operational burden.
 
 ## Goals
 
@@ -37,11 +36,9 @@ expertise and the signature are not.
    HIPAA, GDPR, and future regimes.
 4. **Keep tenants sovereign.** Raw traces, content, and user data
    never egress the tenant VPC by default. Ever.
-5. **Stay honest about the layer boundary.** No phone-home in the OSS.
-   No retroactive relicensing of anything that ships Apache-2.0. No
-   bait-and-switch on the Layer 1 surface. Layer 2 and Layer 3
-   capabilities are commercial by design and never pretended to be
-   free — see [spec 012](012-oss-commercialization-strategy.md).
+5. **Stay honest about the boundary.** No phone-home in the OSS. No
+   retroactive relicensing of anything that ships Apache-2.0. No
+   bait-and-switch on what is in this repository.
 
 ## Non-goals
 
@@ -101,31 +98,19 @@ Fabric addresses these as one package:
    SASF human reviewers evaluate against a signed rubric library and
    issue attestation. Content stays local; verdicts are portable.
 
-## Positioning — "Two doors"
+## Positioning — two complementary offerings
 
-Fabric is presented to the market as two complementary offerings, not
-as two tiers of the same product:
+Fabric is presented to the market as two complementary offerings:
 
-| Door | For whom | What it contains | Economic model |
-|------|----------|------------------|----------------|
-| **OSS (Layer 1)** | Engineering teams instrumenting an agent for traceability and inline guardrails; platform-capable organizations | Fabric SDK + adapters + guardrail sidecars + OTel distribution + reference agent | Free (Apache-2.0). No support, no SLA, no attestation |
-| **Services** (SingleAxis) | Regulated enterprises who want the outcome (audit-ready, evidenced) not the operational burden | Layer 1 + SingleAxis's internal tooling + implementation + rubric authoring + managed operations + evidence preparation | Engagement fee + monthly retainer — see [spec 013](013-design-partner-model.md) |
+| Offering | For whom | What it contains | Cost |
+|----------|----------|------------------|------|
+| **Fabric OSS** (this repo) | Engineering teams instrumenting an agent for traceability and inline guardrails; platform-capable organizations | Fabric SDK + adapters + guardrail sidecars + OTel distribution + reference agent | Free (Apache-2.0). No support, no SLA, no attestation. |
+| **SingleAxis services** | Regulated enterprises that want the outcome (audit-ready, evidenced) rather than the operational burden | Implementation help, rubric authoring, managed operations, evidence preparation | Commercial engagement. |
 
-The OSS door is the top-of-funnel. The services door is the revenue.
-The OSS door exists because:
-
-- Engineers and CISOs trust what they can audit.
-- "Used in production by X companies" on a GitHub repo beats any
-  sales deck.
-- Tenants who install Layer 1 themselves become services leads when
-  they hit the complexity wall — vertical rubrics, regulatory mapping,
-  first audit.
-- Paid conversion is triggered by regulatory events (upcoming audit,
-  new jurisdiction, board ask), not by software scarcity.
-
-Layer 2 (internal tooling) and Layer 3 (future product) are not
-public; see [spec 012](012-oss-commercialization-strategy.md) for the
-layer boundary and rationale.
+The OSS exists because engineers and CISOs trust what they can read
+and audit. Components and tooling not in this repository — judges,
+escalation service, context graph, telemetry bridge ingest — are
+maintained by SingleAxis internally and operated as services.
 
 ## Differentiation
 
@@ -157,27 +142,6 @@ Secondary:
   non-regulated workloads because the integration is simply good.
 - **Consultancies and integrators** using Fabric as a delivery vehicle
   for their engagements (encouraged — see Governance).
-
-## Economic shape for SingleAxis
-
-Fabric changes the economic shape of SingleAxis's existing consulting,
-on a phased schedule tied to customer count
-([spec 012](012-oss-commercialization-strategy.md)):
-
-- **Phase 1 (0–3 customers, now):** revenue is implementation services.
-  Fabric Layer 1 is the lead funnel; Layer 2 internal tooling makes
-  each engagement efficient. Services margins — same business, better
-  delivery instrument.
-- **Phase 2 (3–10 customers):** patterns repeat across customers. Some
-  Layer 2 tooling is billable as managed-service retainer. Revenue
-  mix shifts toward recurring.
-- **Phase 3 (10+ customers):** Layer 3 productizes. Evidence bundles,
-  compliance dashboards, and attestation ship as a named commercial
-  product at product margins.
-
-Fabric is not a new revenue line so much as a better shape for the
-existing one — with product-tier economics on the horizon as the
-services business accumulates reusable learning.
 
 ## The honest one-liner
 
