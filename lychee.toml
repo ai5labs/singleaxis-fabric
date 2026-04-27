@@ -72,4 +72,9 @@ exclude = [
   # extra-flaky. Linked from CODE_OF_CONDUCT.md, which is verbatim
   # Contributor Covenant 2.1 — the URL is the canonical reference.
   "^https://www\\.contributor-covenant\\.org/",
+
+  # conventionalcommits.org Connection Reset under CI bursts. Linked
+  # from .github/PULL_REQUEST_TEMPLATE.md as the canonical reference
+  # for the project's commit-message format. The URL is stable.
+  "^https://www\\.conventionalcommits\\.org/",
 ]
