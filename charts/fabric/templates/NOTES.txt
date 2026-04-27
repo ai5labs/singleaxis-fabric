@@ -37,10 +37,11 @@ What to do next:
    More profiles (NIST AI RMF, ISO-42001, SR-11-7, HIPAA) land
    profile-by-profile as their rubric sets stabilize.
 
-3. Layer 1 ships the public substrate: OTel Collector distribution,
-   guardrail sidecars, and local observability. For managed operation
-   — judges, escalation service, Context Graph, Telemetry Bridge —
-   reach out to SingleAxis (see specs/012-oss-commercialization-strategy.md).
+3. This chart ships the public substrate: OTel Collector
+   distribution, guardrail sidecars, and local observability. For
+   managed operation — judges, escalation service, Context Graph,
+   Telemetry Bridge — reach out to SingleAxis at
+   https://singleaxis.ai.
 
 4. Read the deployment model before production rollout:
      specs/008-deployment-model.md

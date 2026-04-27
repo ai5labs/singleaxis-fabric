@@ -49,12 +49,12 @@ channel, and the day-0 operator experience.
 
 ## Chart structure
 
-Per [spec 012](012-oss-commercialization-strategy.md), subcharts split
-across the layer boundary:
+Subcharts split across what's in this repository and what's
+maintained by SingleAxis internally:
 
-- **Layer 1 (public umbrella, Apache-2.0):** OTel Collector distribution,
-  guardrail sidecars, local observability.
-- **Layer 2 (SingleAxis-internal overlay chart):** judges, escalation
+- **This repository (public umbrella, Apache-2.0):** OTel Collector
+  distribution, guardrail sidecars, local observability.
+- **Maintained internally by SingleAxis (overlay chart):** judges, escalation
   service, Context Graph, Telemetry Bridge, and the infrastructure
   (NATS, Postgres) they require. Installed on top of the Layer 1
   umbrella during a services engagement.

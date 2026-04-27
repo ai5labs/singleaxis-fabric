@@ -77,9 +77,8 @@ telemetry queue drains when those services recover.
 
 ## What's not in this repo
 
-Fabric OSS ships Layer 1 (the developer-facing adoption surface).
-Layer 2 (SingleAxis internal tooling — Context Graph analytics,
-evidence-bundle generation, reviewer workflows, rubric authoring)
-and Layer 3 (future commercial products) live outside the public
-repo. The layer split is documented in
-[`specs/012-oss-commercialization-strategy.md`](../specs/012-oss-commercialization-strategy.md).
+This repository ships the developer-facing adoption surface — SDK,
+adapters, sidecars, OTel collector, Helm chart. Components and
+services maintained internally by SingleAxis (Context Graph
+analytics, evidence-bundle generation, reviewer workflows, rubric
+authoring) are not part of this distribution.

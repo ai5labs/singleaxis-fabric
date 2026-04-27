@@ -64,9 +64,7 @@ different claims and the difference matters to regulators.
 In Phase 1a, the evidence surface is deliberately narrow: decision
 spans, guardrail events, and escalation records. Context Graph
 queries, signed bundle exports, and the SingleAxis attestation
-network are Phase 2 and live in Layer 2 tooling (commercial). See
-[`specs/012-oss-commercialization-strategy.md`](../specs/012-oss-commercialization-strategy.md)
-for the layer split.
+network are roadmap items maintained by SingleAxis internally.
 
 ## Operational posture
 

@@ -46,9 +46,8 @@ honest about who actually reviews.
 | `sdk/python`                        | @jrcks67                              |
 | `specs/`                            | Project lead + assigned spec authors  |
 
-Layer 2 / Layer 3 components live in a separate SingleAxis-internal
-repo and do not have external maintainer slots — see
-[`specs/012-oss-commercialization-strategy.md`](specs/012-oss-commercialization-strategy.md).
+Components not in this repository are maintained by SingleAxis
+internally and do not have external maintainer slots.
 
 ## Emeritus
 

@@ -128,5 +128,4 @@ past a local test — multi-tenant, production Langfuse with external
 Postgres, KMS-backed keys — use the Helm chart.
 
 See `specs/008-deployment-model.md` for the authoritative deployment
-shape and `specs/012-oss-commercialization-strategy.md` for the
-Layer 1/2/3 split.
+shape.

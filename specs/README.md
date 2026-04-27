@@ -48,5 +48,3 @@ Every spec declares a `Status` in its header:
 | [009](009-compliance-mapping.md) | Regulation-to-layer mapping | draft |
 | [010](010-development-standards.md) | Development, testing, and release standards | draft |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
-| [012](012-oss-commercialization-strategy.md) | OSS distribution & commercialization strategy | draft |
-| [013](013-design-partner-model.md) | Design partner engagement model | draft |

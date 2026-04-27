@@ -8,10 +8,8 @@ Helm subchart).
 Components follow the layout described in
 [`../specs/002-architecture.md`](../specs/002-architecture.md).
 
-Layer 2 / Layer 3 components live in a separate SingleAxis-internal
-repo during Phase 1 and are not part of the public distribution. See
-[`../specs/012-oss-commercialization-strategy.md`](../specs/012-oss-commercialization-strategy.md)
-for the layer model.
+Components not in this repository are maintained by SingleAxis
+internally and are not part of this distribution.
 
 ## Status
 

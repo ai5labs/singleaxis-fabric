@@ -1,8 +1,8 @@
 ---
 title: Phased Execution Roadmap
 status: draft
-revision: 2
-last_updated: 2026-04-20
+revision: 3
+last_updated: 2026-04-27
 owner: project-lead
 ---
 
@@ -10,28 +10,26 @@ owner: project-lead
 
 ## Summary
 
-Fabric is built incrementally in phases. Each phase is gated on
-**customer signal** (SingleAxis's own ***REDACTED***), not
-calendar time or feature completeness. This reflects the
-commercialization strategy in
-[spec 012](012-oss-commercialization-strategy.md): OSS adoption is
-pull, not push; internal tooling matures against real workflows;
-product tier ships when market demand is real.
+Fabric is built incrementally, by capability tier. Each phase is
+gated on **technical and ecosystem milestones**, not calendar time
+or feature completeness against any specific competitor. Where a
+phase exit depends on real-world adoption ("conformance tests
+exercised against N independent installations"), that signal is
+named explicitly so the criterion is testable rather than
+aspirational.
 
-This spec covers the **public Layer 1 roadmap only**. Layer 2
-(SingleAxis internal tooling) and Layer 3 (future commercial product)
-are referenced for context but their detailed plans live in
-SingleAxis-internal documentation, not in this repo.
+This spec covers the **public roadmap only**. Components and
+services maintained internally by SingleAxis are referenced for
+context but their detailed plans are not part of this repository.
 
 ## Non-goals
 
 - Timeline commitments with specific dates. Sequencing matters;
-  calendar time depends on headcount, customer pipeline, and scope
-  decisions not yet made.
-- Feature parity with any specific competitor. Fabric Layer 1 is
-  opinionated; we ship what fits the layer model.
-- Publishing the Layer 2 or Layer 3 roadmap. Those plans are
-  commercial artifacts, not commitments to the open-source community.
+  calendar time depends on headcount, scope decisions, and ecosystem
+  signals not yet observed.
+- Feature parity with any specific competitor. Fabric is opinionated;
+  we ship what fits the architecture.
+- Publishing the roadmap for components not in this repository.
 
 ## Phase 0 — Scaffolding & specs (complete)
 
@@ -39,15 +37,15 @@ SingleAxis-internal documentation, not in this repo.
 
 **Status:** complete. The specs directory is at revision 1+ and the
 root governance files (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
-`GOVERNANCE.md`, `CODE_OF_CONDUCT.md`, `MAINTAINERS.md`) are in place.
+`GOVERNANCE.md`, `CODE_OF_CONDUCT.md`, `MAINTAINERS.md`) are in
+place.
 
 ## Phase 1 — Foundation (current)
 
-**Goal:** ship a genuinely useful Layer 1 OSS surface, build internal
-Layer 2 tooling to deliver services, close three design partners
-(see [spec 013](013-design-partner-model.md)).
+**Goal:** ship a genuinely useful OSS surface that an enterprise
+platform team can install and operate without hand-holding.
 
-### Layer 1 — ships publicly (Apache-2.0)
+### Public deliverables (Apache-2.0)
 
 - **Fabric SDK (Python):**
   - `Fabric` client, `Decision` context manager
@@ -62,138 +60,86 @@ Layer 2 tooling to deliver services, close three design partners
   - Pre-configured with Fabric-standard processors
   - Redaction + sampling baked in
 - **Reference agent:**
-  - End-to-end example exercising guardrails + retrieval + escalation
-- **Helm chart (Layer 1):**
+  - End-to-end example exercising guardrails + retrieval +
+    escalation
+- **Helm chart:**
   - Deploys SDK sidecars + OTel Collector within a tenant VPC
-
-### Internal — SingleAxis builds but does not publish
-
-Layer 2 tooling for pattern observation, rubric authoring, and managed
-operations — used to deliver design partner engagements. See
-[spec 012](012-oss-commercialization-strategy.md). Internal deliverables
-include vertical playbooks (HIPAA, SR 11-7, EU AI Act high-risk) and
-first-draft evidence artifacts.
+  - Two regulatory profiles: `permissive-dev` and
+    `eu-ai-act-high-risk`
 
 ### Exit criteria (Phase 1)
 
-- Three design partners in Stage D of
-  [spec 013](013-design-partner-model.md) (managed operation)
-- At least one live agent per partner
-- At least one internal compliance review per partner
-- Layer 1 OSS stable enough for external adopters to install without
-  hand-holding
+- Public OSS stable enough for external adopters to install without
+  hand-holding (the quickstart works end-to-end on a fresh checkout)
+- Inline guardrail latencies meet the published P99 budgets in
+  spec 005 under representative load
+- Reference agent passes the documented decision-span contract
+- Released artifacts are signed (cosign keyless) and accompanied by
+  SBOMs (CycloneDX + SPDX)
 
-### Out of scope in the public roadmap
+## Phase 2 — Broaden the surface
 
-The following exist or will exist as SingleAxis internal tooling or
-future commercial products. They are **not** public Layer 1 deliverables:
+**Goal:** broaden language support and the policy-rail catalog so
+Fabric is reachable from non-Python orchestration stacks and ships
+useful starter rails for additional regulations.
 
-- Evidence bundle generation
-- Signed rubric library
-- Compliance dashboards and auditor-grade UI
-- Escalation service backing HITL workflows
-- Cross-trace pattern detection
-- Multi-cluster Control Plane
-- Hosted evidence archive
-
-## Phase 2 — Broaden
-
-**Goal:** broaden Layer 1 surface; harden Layer 2 tooling internally;
-begin packaging reusable patterns.
-
-### Layer 1 additions
+### Public additions
 
 - **Additional SDK languages:** Go, TypeScript (same sidecar model;
   gRPC or UDS bridge)
 - **Rails library:** broader NeMo Colang rail catalog, organized by
   regulatory profile
-- **OTel processor library:** community-contributable Fabric-standard
-  processors for emerging regulatory needs
+- **OTel processor library:** community-contributable
+  Fabric-standard processors for emerging regulatory needs
 - **Conformance tests:** a test suite tenants run to verify their
   installation produces Fabric-compliant spans
 - **More reference agents:** one per covered vertical (healthcare,
   finance, support)
 
-### Internal (Layer 2)
-
-- ***REDACTED***
-  signal
-- Managed-service tooling hardens
-- First drafts of evidence artifacts written by hand against real
-  audits — precursor to Layer 3 productization
-
 ### Entry / Exit
 
-- **Entry:** ***REDACTED*** reaches Stage D.
-- **Exit:** ten customers in managed operation; pattern library stable
-  enough to productize in Phase 3.
+- **Entry:** Phase 1 exit criteria all met.
+- **Exit:** at least three independent organizations have published
+  Fabric-instrumented agents (public references, conference talks,
+  blog posts), and the conformance test suite is exercised by CI
+  against multi-language SDK builds.
 
-## Phase 3 — Stability and GA
+## Phase 3 — Stability & general availability
 
-**Goal:** ***REDACTED*** into a commercial offering; Layer 3
-ships as a named product.
+**Goal:** a stable, widely-deployed substrate with API commitments
+that production users can pin against.
 
-### Layer 1 additions
+### Public additions
 
 - **API stability commitments** (SDK, OTel attribute wire schema)
-- **Long-term support branches** for Layer 1 minor releases
-- **Expanded adapter surface** as new orchestration frameworks emerge
+- **Long-term support branches** for minor releases
+- **Expanded adapter surface** as new orchestration frameworks
+  emerge
 - **First-class OpenShift, GKE, EKS recipes**
 
-### Layer 2 productization (not public)
-
-Managed-service offering formalizes (pricing, SLA, onboarding). Rubric
-library ships as a commercial product under a proprietary license.
-
-### Layer 3 productization (not public)
-
-Evidence bundle generator, compliance dashboards, reviewer workflows,
-hosted archive, and SASF attestation infrastructure ship as commercial
-products.
-
-### Entry / Exit
-
-- **Entry:** ten customers in managed operation.
-- **Exit:** Layer 3 product in use by at least ***REDACTED***;
-  external security audit renewed.
-
-## Phase 4 — Layer 1 general availability
-
-**Goal:** a stable, widely-deployed Layer 1 substrate.
-
-**Includes:**
-
-- API stability commitments on SDK, wire schema, Helm chart values
-- Published conformance tests
-- Documented upgrade paths from earlier versions
-- Full SRE runbooks for Layer 1 operations
-- Certified partnerships with upstream components (Presidio, NeMo,
-  OpenTelemetry)
-
-**Exit criteria:**
+### Exit criteria
 
 - Used in production by at least five tenants in regulated sectors
-  running Layer 1 standalone (not as part of a services engagement)
-- A recognised regulator or auditor cites Fabric or SASF attestation
-  by name in published guidance
-- Project governance moves toward (optional) foundation neutrality if
-  warranted
+  running the OSS standalone
+- A recognised regulator or auditor cites Fabric by name in
+  published guidance
+- Documented upgrade paths from earlier versions
+- Full SRE runbooks for operations
+- Certified partnerships with upstream components (Presidio, NeMo,
+  OpenTelemetry)
+- Project governance moves toward (optional) foundation neutrality
+  if warranted
 
 ## Risk register
 
 | Risk | Mitigation |
 |------|------------|
-| Regulation changes faster than we can ship | Signed rubric channel (Layer 2, internal) lets SingleAxis push policy updates to customers without a full chart release. Not public. |
+| Regulation changes faster than we can ship | Signed rubric channel (operated as a service) lets policy updates flow to operators without a full chart release. |
 | A foundational dependency (Presidio, NeMo, LangGraph) goes in a hostile direction | Adapter layer in the SDK isolates upstream changes; components are swappable without breaking Fabric wire contracts. |
-| Pattern-sharing clause pushes design partners away | Dry-run mode + explicit contract terms + anonymization policy give security review everything it needs ([spec 013](013-design-partner-model.md)). |
 | Open-source contribution flow fails to materialise | Deep integration partnerships (OpenTelemetry, Presidio, NeMo) substitute for community-maintainer model. |
-| Competitive closed platforms commoditise "compliance" framing | Fabric's wedge is open Layer 1 + proprietary Layer 2/3 + attestation network. A closed platform cannot credibly offer the OSS substrate; an open-source competitor cannot offer the attestation. |
-| SingleAxis services capacity bottlenecks Phase 1 | ***REDACTED*** concurrently ([spec 013](013-design-partner-model.md)). Don't oversell. |
-| Publishing Layer 2/3 roadmap signals to competitors | This spec intentionally does not detail Layer 2/3 plans. Those live in SingleAxis-internal documentation. |
+| Competitive closed platforms commoditise "compliance" framing | Fabric's wedge is the open substrate combined with the attestation network. A closed platform cannot credibly offer the OSS; a non-attested OSS cannot offer the verdict. |
 
 ## References
 
-- [012 — OSS Distribution & Commercialization Strategy](012-oss-commercialization-strategy.md)
-- [013 — Design Partner Engagement Model](013-design-partner-model.md)
 - [001 — Product Vision & Positioning](001-product-vision.md)
 - [000 — Overview & Conventions](000-overview.md)

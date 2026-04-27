@@ -2,10 +2,9 @@ apiVersion: v2
 name: fabric
 description: |
   SingleAxis Fabric — open-source substrate for audit-ready AI agents.
-  Umbrella chart (Layer 1); regulatory profiles select which components
-  run and how they are configured. See specs/008-deployment-model.md
-  for the authoritative shape and specs/012-oss-commercialization-strategy.md
-  for the layer model.
+  Umbrella chart; regulatory profiles select which components run and
+  how they are configured. See specs/008-deployment-model.md for the
+  authoritative shape.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -26,17 +25,14 @@ annotations:
   category: Compliance
   licenses: Apache-2.0
 
-# Layer 1 subcharts — shipped in the public OSS release.
+# Subcharts — everything is optional. The umbrella ships with each
+# subchart gated behind its own ``enabled`` toggle so an operator can
+# start small (just otel-collector) and layer on the guardrail
+# sidecars and local observability as the deployment matures.
 #
-# Everything is optional — the umbrella ships with each subchart gated
-# behind its own ``enabled`` toggle so an operator can start small
-# (just otel-collector) and layer on the guardrail sidecars and local
-# observability as the deployment matures.
-#
-# Layer 2 / Layer 3 subcharts (judge-workers, escalation-service,
-# context-graph, telemetry-bridge, nats) live under ../../_internal/charts/
-# during Phase 1 and are not part of the public release. See
-# specs/012-oss-commercialization-strategy.md.
+# Components not in this repository (judge-workers, escalation-service,
+# context-graph, telemetry-bridge, nats) are maintained by SingleAxis
+# internally and are not part of this distribution.
 dependencies:
   - name: otel-collector
     version: 0.1.0

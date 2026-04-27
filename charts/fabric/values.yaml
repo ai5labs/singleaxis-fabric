@@ -5,10 +5,10 @@
 # --values profiles/<name>.yaml and override only tenant-specific
 # fields (tenant.id, Vault/KMS references).
 #
-# Layer 2 / Layer 3 subchart toggles (judgeWorkers, escalationService,
-# contextGraph, telemetryBridge, nats) are not included in the public
-# chart. They ship in the SingleAxis-internal distribution. See
-# specs/012-oss-commercialization-strategy.md.
+# Subchart toggles for components not in this repository
+# (judgeWorkers, escalationService, contextGraph, telemetryBridge,
+# nats) are not included here — those components are maintained by
+# SingleAxis internally.
 #
 # Latency posture (cross-cutting):
 #   Agent request path  — never blocks on a Fabric HTTP call

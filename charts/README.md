@@ -4,10 +4,8 @@ Helm charts for deploying Fabric **Layer 1** (public, Apache-2.0). The
 top-level umbrella chart is `fabric/`; subcharts for each Layer 1
 component live under `fabric/charts/`.
 
-Layer 2 subcharts (judge-workers, escalation-service, context-graph,
-telemetry-bridge, nats) live in a separate SingleAxis-internal repo
-during Phase 1 and are not part of this distribution. See
-[`../specs/012-oss-commercialization-strategy.md`](../specs/012-oss-commercialization-strategy.md).
+Components not in this repository are maintained by SingleAxis
+internally and are not part of this distribution.
 
 ## Authoritative spec
 

@@ -207,19 +207,6 @@ under-document than overclaim.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's in the current release.
 
-## OSS vs. services — the OSS and services
-
-| Door | For whom | What you get | Cost |
-|------|----------|--------------|------|
-| **Fabric OSS** (this repo) | Engineering teams instrumenting agents for traceability, inline guardrails, and HITL | Everything in this repo | Free (Apache-2.0) |
-| **SingleAxis services** | Regulated enterprises needing implementation, rubric authoring, managed ops, auditor-ready evidence bundles | OSS + SingleAxis's internal tooling and expertise | Commercial engagement |
-
-Both sides are honest about what they are. The OSS is genuinely
-useful standalone. The services are where SingleAxis's accumulated
-regulatory expertise lives. Full rationale:
-[`specs/012-oss-commercialization-strategy.md`](specs/012-oss-commercialization-strategy.md).
-Engagement model: [`specs/013-design-partner-model.md`](specs/013-design-partner-model.md).
-
 ## "Audit-ready" — what it means and doesn't
 
 Fabric is audit-**ready**, not certified. The distinction matters:
@@ -250,7 +237,6 @@ and [`specs/009-compliance-mapping.md`](specs/009-compliance-mapping.md).
 | Deploy the Helm chart with a regulatory profile | [`docs/deployment.md`](docs/deployment.md) |
 | See every SDK surface exercised in one runnable file | [`examples/reference-agent/`](examples/reference-agent/) |
 | Read the authoritative design of record | [`specs/`](specs/) |
-| Understand what's OSS vs. commercial | [`specs/012-oss-commercialization-strategy.md`](specs/012-oss-commercialization-strategy.md) |
 | Look up an SDK symbol or environment variable | [`sdk/python/README.md`](sdk/python/README.md) |
 | Plan a disaster-recovery exercise | [`docs/operations/dr.md`](docs/operations/dr.md) |
 
@@ -278,8 +264,8 @@ follow a 90-day coordinated disclosure default.
   [GitHub Issues](https://github.com/singleaxis/singleaxis-fabric/issues)
 - **Discussions** — questions, show-and-tell, design RFCs:
   [GitHub Discussions](https://github.com/singleaxis/singleaxis-fabric/discussions)
-- **Commercial engagement** — design partners, regulated deployments:
-  [singleaxis.ai](https://singleaxis.ai)
+- **Commercial support** — for regulated deployments and managed
+  operations: [singleaxis.ai](https://singleaxis.ai)
 
 ## Governance
 
