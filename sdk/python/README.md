@@ -14,7 +14,7 @@ CrewAI (installed via extras — the core SDK stays framework-neutral).
 
 ## Status
 
-Pre-alpha — **Phase 1a shipping.**
+Beta — **Phase 1a shipping.**
 
 ### Shipping now
 

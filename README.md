@@ -207,7 +207,7 @@ Authoritative design: [`specs/002-architecture.md`](specs/002-architecture.md).
 
 ## Status
 
-**Pre-alpha — Phase 1a shipping.** The `specs/` directory is the
+**Beta — Phase 1a shipping.** The `specs/` directory is the
 design of record. What's in this repo runs and is tested; anything
 marked "Phase 2" or "roadmap" is explicitly called out. We'd rather
 under-document than overclaim.
