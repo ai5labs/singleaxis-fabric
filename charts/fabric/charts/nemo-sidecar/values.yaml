@@ -94,3 +94,21 @@ railsConfigMap:
 
 starterRails:
   enabled: true
+
+# PodDisruptionBudget. Honored only when replicaCount > 1 (i.e. the
+# sidecar-as-Service HA topology). Same-pod UDS deployments don't
+# need it because lifecycle is tied to the parent agent pod.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off — see otel-collector/values.yaml. The
+# typical NeMo deployment is same-pod via UDS, in which case this
+# policy is a no-op. The sidecar-as-Service deployment (smoke/dev)
+# is what `ingressFrom` covers. `egressTo` is for NeMo's
+# content-safety rail when it calls out to an LLM provider for
+# refusal generation; DNS to kube-system is always allowed.
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  egressTo: []

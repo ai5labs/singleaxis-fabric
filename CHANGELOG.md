@@ -71,12 +71,17 @@ architectural lifts are explicitly deferred to v0.2.0.
   profile other than `permissive-dev`. Empty tenant ID stamps every
   emitted span with no attribution and was the most common
   silent-misconfiguration footgun.
-- `eu-ai-act-high-risk` profile no longer turns on
-  `networkPolicy.denyDefault: true` by default. The 0.1.x umbrella
-  does not yet ship per-subchart `allow` policies, so a blanket
-  deny would break pod-to-pod traffic on CNIs that enforce
-  NetworkPolicy. Operators with allow-rule expertise can flip it
-  back on manually; the per-subchart `allow` policies are roadmap.
+- Per-subchart `NetworkPolicy` allow templates now ship for
+  `otel-collector`, `nemo-sidecar`, and `update-agent`. Each opens
+  the minimum surface (collector OTLP receivers, sidecar service
+  port, webhook ingress) plus DNS to `kube-system`. Default off so
+  CNIs without enforcement aren't penalised; the
+  `eu-ai-act-high-risk` profile re-enables `networkPolicy.denyDefault:
+  true` paired with these allow rules.
+- `PodDisruptionBudget` templates added to all three subcharts,
+  honoured only when `replicaCount > 1`. `update-agent` is the
+  load-bearing one — losing both webhook replicas during a node
+  drain blocks ConfigMap/Secret CREATE/UPDATE cluster-wide.
 - `otel-collector` and `nemo-sidecar` readiness probe initial
   delays bumped (from 5s/3s to 15s/20s) so rolling deploys on slow
   networks don't mark pods Unready repeatedly during cold-start.

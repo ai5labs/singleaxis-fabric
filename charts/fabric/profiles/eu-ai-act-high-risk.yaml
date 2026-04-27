@@ -24,20 +24,21 @@ namespace:
   create: true
   name: fabric-system
 
-# NetworkPolicy: this profile previously set denyDefault=true, but the
-# 0.1.x umbrella does not yet ship per-subchart `allow` policies, so a
-# blanket deny would break pod-to-pod traffic (collector receiver,
-# update-agent webhook, kube-system DNS) on CNIs that enforce
-# NetworkPolicy. Operators who want fail-closed network posture should
-# author allow rules for their cluster topology and flip this to true
-# manually. Phase-2 work: ship per-subchart allow templates.
+# NetworkPolicy: deny-default at the namespace, paired with explicit
+# allow rules rendered by each subchart (otel-collector, nemo-sidecar,
+# update-agent). DNS to kube-system is permitted in every subchart's
+# rule. Operators who run a CNI without NetworkPolicy enforcement can
+# flip denyDefault back to false; the per-subchart allows then become
+# inert.
 networkPolicy:
-  denyDefault: false
+  denyDefault: true
 
 otelCollector:
   enabled: true
 otel-collector:
   replicaCount: 2
+  networkPolicy:
+    enabled: true
   fabric:
     guard:
       enabled: true
@@ -75,6 +76,8 @@ nemoSidecar:
   enabled: true
 nemo-sidecar:
   replicaCount: 2
+  networkPolicy:
+    enabled: true
   rails:
     bundlePath: /etc/fabric/rails
 
@@ -114,6 +117,8 @@ redteam-runner:
 updateAgent:
   enabled: true
 update-agent:
+  networkPolicy:
+    enabled: true
   config:
     failClosed: true
   webhook:

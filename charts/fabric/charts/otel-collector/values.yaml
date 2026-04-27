@@ -158,3 +158,32 @@ memoryLimiter:
 batch:
   timeoutSeconds: 5
   sendBatchSize: 512
+
+# PodDisruptionBudget. Default enabled so the audit-trail span
+# stream isn't dropped during node drains. Honored only when
+# replicaCount > 1.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off because not every CNI enforces them and
+# misconfigured policies will silently break the OTLP path. Turn on
+# in regulated profiles (eu-ai-act-high-risk sets denyDefault
+# alongside this).
+#
+# `ingressFrom` is appended verbatim to the OTLP ingress rule. Empty
+# means "any namespace in the cluster"; tenants typically narrow to
+# specific agent namespaces:
+#
+#   ingressFrom:
+#     - namespaceSelector:
+#         matchLabels:
+#           fabric.singleaxis.ai/agent: "true"
+#
+# `egressTo` is for the configured exporter endpoint plus any extra
+# destinations the operator declares (e.g. an external OTLP gateway,
+# Tempo, Honeycomb). DNS to kube-system is always allowed.
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  egressTo: []
