@@ -38,7 +38,7 @@ applies to the SDK's spans (not just future L2 bridge log records).
 - `LLMCall` and `ToolCall` exposed at the package level for callers
   building custom instrumentation patterns.
 - Auto-instrumentation extras — one `pip install` covers governance
-  + LLM-call observability for the popular SDK families:
+  and LLM-call observability for the popular SDK families:
   - `singleaxis-fabric[openai]` →
     `opentelemetry-instrumentation-openai-v2`
   - `singleaxis-fabric[anthropic]` →
@@ -762,25 +762,6 @@ been exercised against a real tag. See Known issues below.
   inline guardrails + collector + opt-in red-team, not the full
   async judge loop.
 
-## [Unreleased]
-
-### Added
-*(nothing yet)*
-
-### Changed
-*(nothing yet)*
-
-### Deprecated
-*(nothing yet)*
-
-### Removed
-*(nothing yet)*
-
-### Fixed
-*(nothing yet)*
-
-### Security
-*(nothing yet)*
 
 ---
 

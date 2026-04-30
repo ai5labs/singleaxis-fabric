@@ -95,8 +95,8 @@ plane (separate private repository), not here:
 - Inline guardrail latencies meet the published P99 budgets in
   spec 005 under representative load
 - Reference agent passes the documented decision-span contract
-- Released artifacts are signed (cosign keyless) + SBOMs (CycloneDX
-  + SPDX)
+- Released artifacts are signed (cosign keyless) and accompanied by
+  SBOMs (CycloneDX and SPDX)
 
 ## Phase 2 — Capture-everything SDK + observable-by-default chart (v0.2.x)
 

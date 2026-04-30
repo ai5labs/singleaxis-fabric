@@ -102,17 +102,20 @@ def serve(
             f"absent. cert={tls_cert} present={cert_present}, "
             f"key={tls_key} present={key_present}."
         )
-    if not cert_present and not key_present:
-        # Fully-plaintext mode is for local smoke testing only. Make
-        # the operator opt in via an env flag rather than letting it
-        # happen by default when files are missing.
-        if os.environ.get("FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT", "0") != "1":
-            raise SystemExit(
-                "update-agent: no TLS cert/key found; refusing to run "
-                "plaintext on an admission webhook. Provide --tls-cert "
-                "and --tls-key, or set FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT=1 "
-                "for local smoke tests only."
-            )
+    # Fully-plaintext mode is for local smoke testing only. Make the
+    # operator opt in via an env flag rather than letting it happen
+    # by default when both cert and key files are missing.
+    if (
+        not cert_present
+        and not key_present
+        and os.environ.get("FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT", "0") != "1"
+    ):
+        raise SystemExit(
+            "update-agent: no TLS cert/key found; refusing to run "
+            "plaintext on an admission webhook. Provide --tls-cert "
+            "and --tls-key, or set FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT=1 "
+            "for local smoke tests only."
+        )
     uvicorn.run(
         app_,
         host=host,
