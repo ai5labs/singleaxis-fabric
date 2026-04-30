@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Self
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from ._calls import LLMCall, ToolCall
 from .escalation import EscalationRequested, EscalationSummary
 from .guardrails import (
     GuardrailBlocked,
@@ -433,6 +434,75 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
         span.add_event("fabric.memory", attributes=event_attrs)
         return record
+
+    # -- child spans (LLM call / tool call) ------------------------------
+
+    def llm_call(
+        self,
+        *,
+        system: str,
+        model: str,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMCall:
+        """Open a child span for one LLM API call.
+
+        Returns an :class:`~fabric._calls.LLMCall` context manager that
+        opens ``fabric.llm_call`` (kind=CLIENT) under the current
+        decision span. The child span is populated with the
+        OpenTelemetry GenAI semantic conventions (``gen_ai.system``,
+        ``gen_ai.request.model``, etc.) and the matching ``fabric.llm.*``
+        mirrors so dashboards keyed on either namespace render
+        natively.
+
+        Usage::
+
+            with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+                response = anthropic_client.messages.create(...)
+                call.set_usage(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    finish_reason=response.stop_reason,
+                )
+
+        Concurrency: do not nest ``llm_call`` invocations inside one
+        another (the OTel current-span context will mis-parent the
+        inner one).
+        """
+        # Ensure the decision is open so the child span parents
+        # correctly.
+        _ = self.span
+        return LLMCall(
+            tracer=self._client.tracer,
+            system=system,
+            model=model,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+        )
+
+    def tool_call(self, name: str, *, call_id: str | None = None) -> ToolCall:
+        """Open a child span for one tool / function call.
+
+        Returns a :class:`~fabric._calls.ToolCall` context manager that
+        opens ``fabric.tool_call`` (kind=INTERNAL) under the current
+        decision span. The child span is populated with
+        ``gen_ai.tool.name`` and ``fabric.tool.name`` (plus optional
+        ``call.id`` if supplied).
+
+        Usage::
+
+            with decision.tool_call("vector_search") as tool:
+                results = my_vector_db.query(...)
+                tool.set_result_count(len(results))
+        """
+        _ = self.span
+        return ToolCall(
+            tracer=self._client.tracer,
+            name=name,
+            call_id=call_id,
+        )
 
     # -- OTel passthrough -------------------------------------------------
 
