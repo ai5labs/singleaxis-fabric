@@ -82,6 +82,20 @@ class GuardrailCheckerContract:
         assert verdict.reason is None or isinstance(verdict.reason, str)
         assert verdict.rail is None or isinstance(verdict.rail, str)
 
+    def test_allow_verdict_does_not_rewrite_value(self) -> None:
+        """An ``allow`` verdict must not carry a *different* value.
+
+        The chain ignores ``modified_value`` on ``allow`` (defect #9 —
+        a generative rail returned an assistant completion there and
+        the caller's payload was silently replaced). This makes the
+        rule binding on every third-party adapter, not just the
+        first-party ones.
+        """
+        checker = self.make_checker()
+        verdict = checker.check(SAMPLE_PHASE, SAMPLE_PATH, SAMPLE_VALUE)
+        if verdict.action == "allow":
+            assert verdict.modified_value in (None, SAMPLE_VALUE)
+
     def test_name_is_nonempty_str(self) -> None:
         checker = self.make_checker()
         name = checker.name

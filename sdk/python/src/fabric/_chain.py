@@ -6,10 +6,20 @@ the spec-005 ``GuardrailResult`` shape.
 Current rails (in pipeline order):
 
 1. **Presidio** — redacts PII. Never blocks.
-2. **NeMo Colang** — dialog / jailbreak / refusal rails. May block.
+2. **NeMo Colang** — dialog / jailbreak / refusal rails. May block and
+   may fire policies, but MAY NOT rewrite content except via an
+   explicit ``redact`` verdict. NeMo's Colang path returns the
+   *assistant completion* in ``modified_value``, so honouring it on any
+   other action would replace the caller's payload with generated text
+   (defect #9). A ``block`` carries its canned refusal in
+   ``block_response``; ``redacted_content`` stays the audit record of
+   what was actually submitted.
 3. **Extra checkers** — pluggable :class:`GuardrailChecker` tiers
    (Lakera, generic HTTP, custom classifiers), run in order after
-   NeMo. Each may rewrite content, fire a policy, block, or escalate.
+   NeMo. Each may fire a policy, block, or escalate, and may rewrite
+   content on ``redact`` / ``warn`` / ``block``. ``allow`` and
+   ``escalate`` verdicts never rewrite: "allow + a different value" is
+   self-contradictory.
 
 Presidio runs first so NeMo's (potentially LLM-backed) check never
 sees raw PII. Each rail is optional — the chain works with any
@@ -23,6 +33,7 @@ public API. Hosts configure the chain implicitly via
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -33,6 +44,53 @@ if TYPE_CHECKING:
     from .guardrails import GuardrailChecker
     from .nemo import NemoClient
     from .presidio import PresidioClient
+
+logger = logging.getLogger("fabric.chain")
+
+# Actions whose ``modified_value`` is a transformation of the value we
+# submitted, and may therefore replace it. Everything else is a
+# *statement about* that value, not a replacement for it.
+_NEMO_REWRITING_ACTIONS: frozenset[str] = frozenset({"redact"})
+_CHECKER_REWRITING_ACTIONS: frozenset[str] = frozenset({"redact", "warn", "block"})
+
+
+def _resolve_content(
+    *,
+    current: str,
+    action: str,
+    modified_value: str | None,
+    rewriting_actions: frozenset[str],
+    source: str,
+    rail: str | None,
+) -> str:
+    """Return the content to carry forward after one rail's verdict.
+
+    ``modified_value`` is honoured only for actions in
+    ``rewriting_actions`` — those whose modified value is a
+    *transformation of the value we submitted*. Every other action is a
+    statement *about* that value, so its payload is ignored and a
+    contract violation is logged.
+
+    The non-empty guard is retained for the rewriting actions so a
+    verdict with no payload cannot destroy an upstream rail's output.
+
+    The warning deliberately names only the rail and action — logging
+    the value would spill model output / user content into application
+    logs.
+    """
+
+    if action in rewriting_actions:
+        return modified_value or current
+    if modified_value and modified_value != current:
+        logger.warning(
+            "%s %r returned action=%r with a differing modified_value; ignoring it "
+            "(allowed rewriting actions: %s)",
+            source,
+            rail,
+            action,
+            ", ".join(sorted(rewriting_actions)),
+        )
+    return current
 
 
 class GuardrailChain:
@@ -75,15 +133,21 @@ class GuardrailChain:
 
         if self._nemo is not None:
             nemo_result = self._nemo.check(phase, path, content)
-            # NeMo may rewrite the content (e.g. refusal redirect). Only
-            # adopt the rewrite if it is non-empty: an empty modified
-            # value from NeMo (which happens when the engine stops a rail
-            # without supplying canned content) would otherwise silently
-            # destroy Presidio's redacted output. For an explicit block,
-            # we still surface block_response below, so callers see the
-            # canned refusal rather than an empty string.
-            if nemo_result.modified_value:
-                content = nemo_result.modified_value
+            # Only an explicit ``redact`` may rewrite the content. NeMo's
+            # Colang dialog path returns the *assistant completion* in
+            # ``modified_value`` for every non-redact action, so trusting
+            # it on "allow" silently replaced the user's prompt with a
+            # generated reply (defect #9). A "block" carries its canned
+            # refusal in ``block_response``; ``redacted_content`` must
+            # stay the audit record of what was actually submitted.
+            content = _resolve_content(
+                current=content,
+                action=nemo_result.action,
+                modified_value=nemo_result.modified_value,
+                rewriting_actions=_NEMO_REWRITING_ACTIONS,
+                source="nemo rail",
+                rail=nemo_result.rail,
+            )
             if nemo_result.action != "allow":
                 # Record only the rail in policies_fired. EntitySummary
                 # represents PII *entity classes* (e.g. EMAIL, PERSON);
@@ -95,8 +159,9 @@ class GuardrailChain:
                 blocked = True
                 block_response = nemo_result.block_response
 
-        # Pluggable checker tiers run in order after NeMo. Each may
-        # rewrite content, fire a policy, block, or escalate. A raised
+        # Pluggable checker tiers run in order after NeMo. Each may fire
+        # a policy, block, escalate, or rewrite content (redact / warn /
+        # block only — see _CHECKER_REWRITING_ACTIONS). A raised
         # exception fails closed (the checker is converted to a block).
         # The loop short-circuits on the first block so a downstream
         # checker can't un-block an upstream one.
@@ -110,8 +175,19 @@ class GuardrailChain:
                     policies.append(f"{checker.name}:{checker.name}")
                     break
 
-                if verdict.modified_value:
-                    content = verdict.modified_value
+                # Same rule as the NeMo tier, with a wider mutable set:
+                # a checker verdict is host-authored, and warn+rewrite /
+                # block+substitution are deliberate features. But
+                # "allow" and "escalate" assert the value is fine as-is,
+                # so they may not replace it.
+                content = _resolve_content(
+                    current=content,
+                    action=verdict.action,
+                    modified_value=verdict.modified_value,
+                    rewriting_actions=_CHECKER_REWRITING_ACTIONS,
+                    source="checker",
+                    rail=verdict.rail or checker.name,
+                )
                 if verdict.action != "allow":
                     policies.append(f"{checker.name}:{verdict.rail or checker.name}")
                 if verdict.action == "block":

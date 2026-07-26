@@ -106,10 +106,26 @@ class NemoRailsEngine:
     """Wrap an ``LLMRails`` instance as a :class:`RailsEngine`.
 
     ``LLMRails.generate`` is synchronous and returns a string or a
-    ``GenerationResponse`` for a single-turn completion. We treat the
-    returned text as the ``modified_value`` and derive the action +
-    rail from ``response.log.activated_rails`` when present, falling
-    back to a legacy ``rails_info`` dict for older stubs.
+    ``GenerationResponse`` for a single-turn completion. That text is
+    an **assistant completion**, never a rewritten copy of the value we
+    submitted — ``generate()`` gives us no way to tell the two apart.
+    It is therefore used only to derive ``block_response`` (the canned
+    refusal a stopping rail emitted); ``modified_value`` echoes the
+    request value verbatim.
+
+    The single exception is the legacy ``rails_info`` path, where the
+    engine explicitly declares ``action="redact"``: a redact verdict is
+    the one action whose contract is "here is a transformation of the
+    value you handed me", so its payload is honoured.
+
+    Returning the completion as ``modified_value`` on an ``allow`` was
+    defect #9: the SDK chain trusts ``modified_value`` and silently
+    replaced the user's prompt with a generated reply, with no policy
+    recorded. See ``sdk/python/src/fabric/_chain.py``.
+
+    The action + rail are derived from ``response.log.activated_rails``
+    when present, falling back to a legacy ``rails_info`` dict for
+    older stubs.
 
     An optional :class:`LiteralJailbreakFilter` runs before
     ``LLMRails.generate()``. When the filter matches, the engine
@@ -165,14 +181,21 @@ class NemoRailsEngine:
         return _parse_response(value, response)
 
 
-def _extract_modified_content(response: Any, input_value: str) -> str:
-    """Return the rewritten content (from response) or the original.
+def _extract_generated_content(response: Any, input_value: str) -> str:
+    """Return the text ``generate()`` produced, or the original value.
+
+    This is the **assistant completion**, not a rewrite of the input.
+    It feeds :func:`_interpret_activated_rails`, which turns it into a
+    ``block_response`` when a rail stopped execution. It must not be
+    handed back as ``modified_value`` (defect #9).
 
     Looks at ``response["content"]`` first, then falls back to
     ``response["response"][-1]["content"]`` (the modern
     ``GenerationResponse`` shape). An empty string in either field is
-    treated as "no rewrite" so the chain layer does not propagate an
-    empty redacted_content downstream.
+    treated as "nothing generated" and falls back to ``input_value``,
+    which also makes the ``generated != input_value`` test in
+    :func:`_interpret_activated_rails` correctly report "no canned
+    refusal".
     """
 
     content = _get(response, "content")
@@ -189,23 +212,27 @@ def _extract_modified_content(response: Any, input_value: str) -> str:
 
 def _interpret_activated_rails(
     activated_rails: Any,
-    modified: str,
+    generated: str,
     input_value: str,
 ) -> tuple[str, CheckAction, str | None]:
     """Translate a non-empty ``activated_rails`` list into our verdict
     triple ``(rail_name, action, block_response)``.
 
     A rail with ``stop == True`` (or ``"stop"`` in ``decisions``) and
-    a blocking type translates to ``action="block"``. Otherwise the
-    first rail's name is recorded as a non-blocking policy hit so the
-    chain layer can surface it in ``policies_fired`` while keeping
-    ``action="allow"``.
+    a blocking type translates to ``action="block"``. ``generated`` is
+    the assistant completion; when a rail stopped and the completion
+    differs from the submitted value it is the rail's canned refusal,
+    so it travels in ``block_response`` — never in ``modified_value``.
+
+    Otherwise the first rail's name is recorded as a non-blocking
+    policy hit so the chain layer can surface it in ``policies_fired``
+    while keeping ``action="allow"``.
     """
 
     stopping_rail = _find_stopping_rail(activated_rails)
     if stopping_rail is not None:
         rail_name = str(_get(stopping_rail, "name") or _DEFAULT_RAIL)
-        block_response = modified if modified and modified != input_value else None
+        block_response = generated if generated and generated != input_value else None
         return rail_name, "block", block_response
 
     first_rail = next(iter(activated_rails), None)
@@ -251,15 +278,17 @@ def _parse_response(input_value: str, response: Any) -> EngineResult:
         )
 
     if isinstance(response, str):
+        # A bare string from ``generate()`` IS the assistant completion.
+        # Echo the submitted value instead (defect #9).
         return EngineResult(
             allowed=True,
             action="allow",
             rail=_DEFAULT_RAIL,
             block_response=None,
-            modified_value=response,
+            modified_value=input_value,
         )
 
-    modified = _extract_modified_content(response, input_value)
+    generated = _extract_generated_content(response, input_value)
 
     # Modern path: response.log.activated_rails. Legacy fall-through:
     # response.rails_info.
@@ -267,18 +296,26 @@ def _parse_response(input_value: str, response: Any) -> EngineResult:
     activated_rails = _get(log, "activated_rails") if log is not None else None
     if activated_rails:
         rail, action, block_response = _interpret_activated_rails(
-            activated_rails, modified, input_value
+            activated_rails, generated, input_value
         )
     else:
         rail, action, block_response = _interpret_legacy_rails_info(response)
 
     allowed = action in ("allow", "redact", "warn")
+    # ``redact`` is the only action whose payload is a declared
+    # transformation of the submitted value; every other action gets
+    # the value back byte-for-byte so a generated reply can never
+    # masquerade as a rewritten input. Only the legacy ``rails_info``
+    # path can produce ``redact``, so the modern Colang path always
+    # echoes — which is correct: ``generate()`` gives us no way to
+    # distinguish a rewritten input from a reply.
+    modified_value = generated if action == "redact" else input_value
     return EngineResult(
         allowed=allowed,
         action=action,
         rail=rail,
         block_response=block_response,
-        modified_value=modified,
+        modified_value=modified_value,
     )
 
 
