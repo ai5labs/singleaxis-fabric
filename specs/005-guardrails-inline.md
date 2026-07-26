@@ -199,6 +199,32 @@ allowlisted policy / entity attributes. Agents do not separately
 log guardrail actions. Downstream, the Telemetry Bridge folds those
 span events into the Decision Graph.
 
+### The `modified_value` invariant (normative)
+
+A guardrail sidecar's `modified_value` is a **transformation of the
+submitted value**. It MUST equal that value byte-for-byte unless
+`action == "redact"`. **An assistant completion is not a modified
+value.** A refusal belongs in `block_response`, never in
+`modified_value`.
+
+Correspondingly, the SDK's guardrail chain honours a NeMo
+`modified_value` only on a `redact` action. An `allow` verdict can never
+change the payload.
+
+This is normative rather than advisory because violating it fails
+silently on the happy path. NeMo Guardrails is built on
+`LLMRails.generate()`, a chat-completion call, so returning its output as
+`modified_value` caused `guard_input` to replace the caller's message
+with chatbot text under `allowed: true`, with no exception and no warning
+— and a "no PII in output" assertion still passed, because no user data
+remained to leak. Enforcement lives in the sidecar's `RailsChecker` (the
+only layer seeing both request and engine result, so it also covers
+operator-supplied engines) **and** in the SDK chain, so a defect in
+either layer alone cannot reopen it.
+
+Callers MUST honour `blocked` and MUST NOT treat the returned content as
+a safe substitute for the input on a blocked turn.
+
 ## Streaming output filter
 
 Streaming moderation is hard: you cannot check the complete output
