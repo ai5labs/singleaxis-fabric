@@ -1,11 +1,19 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for ``fabric._id_validators.warn_if_pii_shaped``.
+"""Tests for ``fabric._id_validators``.
 
-Covers the spec 016 §4.5 acceptance criteria: email-shaped and
-phone-shaped identifier values emit a one-shot ``UserWarning``;
-``FABRIC_QUIET_PII_WARN=1`` suppresses; ``*_name`` fields are not
-checked (they are explicitly human-readable in the spec).
+Two guards live in that module and are tested here.
+
+``warn_if_pii_shaped`` covers the spec 016 §4.5 acceptance criteria:
+email-shaped and phone-shaped identifier values emit a one-shot
+``UserWarning``; ``FABRIC_QUIET_PII_WARN=1`` suppresses; ``*_name``
+fields are not checked (they are explicitly human-readable in the spec).
+
+``check_identifier`` covers placeholder rejection for the two partition
+keys ``tenant_id`` / ``agent_id``. The acceptance half of that suite
+matters as much as the rejection half: this is a public pre-1.0 API and
+the accepted-identifier tests exist to prove we did not narrow what
+existing users may pass.
 """
 
 from __future__ import annotations
@@ -16,7 +24,12 @@ from dataclasses import dataclass
 import pytest
 
 from fabric import Fabric, FabricConfig
-from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
+from fabric._id_validators import (
+    PIIShapedIdentifierWarning,
+    PlaceholderIdentifierWarning,
+    check_identifier,
+    warn_if_pii_shaped,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -168,3 +181,294 @@ def test_decision_plain_ids_do_not_warn() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", PIIShapedIdentifierWarning)
         fabric.decision(session_id="s-1", request_id="r-1", user_id="u-1")
+
+
+# =========================================================================
+# check_identifier — placeholder rejection for tenant_id / agent_id
+# =========================================================================
+
+# Tier A. Every entry here is stringified absence or an unsubstituted
+# template. None of them can be a deliberate identifier under any
+# reading, so each must raise rather than ship into every span.
+_REJECTED = [
+    "undefined",
+    "null",
+    "none",
+    "nil",
+    "nan",
+    "n/a",
+    "(null)",
+    "<null>",
+    "<none>",
+    "<undefined>",
+    "<nil>",
+    "<your-tenant>",
+    "<TENANT_ID>",
+    "${TENANT}",
+    "${FABRIC_TENANT_ID}",
+    "acme-${ENV}",
+    "{{ tenant }}",
+    "{{tenant_id}}",
+    "%s",
+    "%(tenant)s",
+]
+
+
+@pytest.mark.parametrize("value", _REJECTED)
+def test_placeholder_tenant_id_is_rejected(value: str) -> None:
+    """Each Tier A placeholder raises for ``tenant_id``.
+
+    ``tenant_id`` partitions every trace, audit record and downstream
+    isolation check. Accepting ``"undefined"`` merges unrelated tenants
+    into one bogus partition, and the mistake surfaces months later in
+    the audit trail rather than at startup.
+    """
+    with pytest.raises(ValueError, match="placeholder"):
+        FabricConfig(tenant_id=value, agent_id="support-bot")
+
+
+@pytest.mark.parametrize("value", _REJECTED)
+def test_placeholder_agent_id_is_rejected(value: str) -> None:
+    """The same rule applies to ``agent_id`` — both partition keys are
+    guarded, not just the first one checked."""
+    with pytest.raises(ValueError, match="placeholder"):
+        FabricConfig(tenant_id="acme", agent_id=value)
+
+
+@pytest.mark.parametrize("value", ["UNDEFINED", "Null", "NoNe", "N/A", "(NULL)"])
+def test_placeholder_matching_is_case_insensitive(value: str) -> None:
+    """A JS shim emits ``undefined``; a Helm values file may emit
+    ``NULL``. Case is not a meaningful signal of intent here."""
+    with pytest.raises(ValueError, match="placeholder"):
+        FabricConfig(tenant_id=value, agent_id="a")
+
+
+@pytest.mark.parametrize("value", ["  undefined  ", "\nnull\n", "\t${TENANT}\t"])
+def test_placeholder_is_rejected_after_whitespace_strip(value: str) -> None:
+    """Stripping runs before the placeholder check, so a stray newline
+    from a ConfigMap cannot smuggle a sentinel past the guard."""
+    with pytest.raises(ValueError, match="placeholder"):
+        FabricConfig(tenant_id=value, agent_id="a")
+
+
+@pytest.mark.parametrize("value", ["", "   ", "\n\t "])
+def test_empty_and_whitespace_only_still_rejected(value: str) -> None:
+    """The pre-existing empty-id rejection is unchanged and still fires
+    with its own message — the placeholder guard runs after it and must
+    not shadow it."""
+    with pytest.raises(ValueError, match="tenant_id is required"):
+        FabricConfig(tenant_id=value, agent_id="a")
+
+
+def test_rejection_message_names_the_field_and_the_value() -> None:
+    """The error has to be actionable from a container log line alone:
+    which field, what value was seen, and how to override."""
+    with pytest.raises(ValueError) as err:
+        FabricConfig(tenant_id="undefined", agent_id="a")
+    message = str(err.value)
+    assert "tenant_id" in message
+    assert "'undefined'" in message
+    assert "FABRIC_ALLOW_PLACEHOLDER_IDS" in message
+
+
+def test_from_env_rejects_placeholder_tenant() -> None:
+    """``from_env`` documents that a misconfigured deployment fails on
+    startup rather than on the first agent call. An unsubstituted
+    ``FABRIC_TENANT_ID`` is exactly that class of misconfiguration."""
+    with pytest.raises(ValueError, match="placeholder"):
+        Fabric.from_env(env={"FABRIC_TENANT_ID": "${TENANT}", "FABRIC_AGENT_ID": "bot"})
+
+
+# ---- accepted identifiers: proof we did not break existing users --------
+
+# Every value here MUST construct without raising and without any
+# PlaceholderIdentifierWarning. This list is the regression fence around
+# the guard: it is what stops a future "tighten the rules" change from
+# silently breaking real deployments.
+_ACCEPTED = [
+    # uuids, both cased forms
+    "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+    "urn:uuid:3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    # dotted / hierarchical names
+    "acme.corp.eu",
+    "com.acme.agents.support",
+    "acme.corp/support-bot",
+    # slugs
+    "acme-corp",
+    "support-bot-v2",
+    "acme_corp_prod",
+    # opaque / generated
+    "01HXYZABC123DEF456GHJ789K",
+    "t_9f8e7d6c5b4a",
+    # docs/quickstart.md ships this as a worked example value — the
+    # project's own documented happy path must not warn
+    "my-agent",
+    # single character — used ~80 times across this suite
+    "t",
+    "a",
+    # long
+    "x" * 200,
+    # environment-ish names that are REAL tenants in real deployments
+    "test",
+    "dev",
+    "local",
+    "default",
+    "demo",
+    "sandbox",
+    "staging",
+    "example",
+    "production",
+    # near-misses of the sentinel list — substring matching would
+    # wrongly reject these, whole-value matching does not
+    "na",
+    "nonesuch",
+    "nullify-corp",
+    "undefined-behaviour-labs",
+    "nano",
+    "nilsson",
+    # non-ASCII and unusual characters: propagation deliberately
+    # round-trips these, so the config layer must not be stricter
+    "acme-münchen",
+    "テナント",
+    "tenant with spaces",
+]
+
+
+@pytest.mark.parametrize("value", _ACCEPTED)
+def test_realistic_identifiers_are_accepted(value: str) -> None:
+    """Realistic identifiers construct cleanly and are stored verbatim.
+
+    Asserting the round-trip (not just "no raise") also pins that the
+    guard never normalizes case or rewrites the value.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PlaceholderIdentifierWarning)
+        config = FabricConfig(tenant_id=value, agent_id=value)
+    assert config.tenant_id == value
+    assert config.agent_id == value
+
+
+def test_no_length_or_charset_rule_is_imposed() -> None:
+    """Explicit anti-regression: there is deliberately no minimum
+    length, maximum length, slug, UUID or ASCII rule. A future change
+    that adds one has to delete this test and justify it."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PlaceholderIdentifierWarning)
+        assert FabricConfig(tenant_id="x", agent_id="y").tenant_id == "x"
+        assert len(FabricConfig(tenant_id="z" * 512, agent_id="a").tenant_id) == 512
+        assert FabricConfig(tenant_id="tenant=1&x", agent_id="a").tenant_id == "tenant=1&x"
+
+
+def test_case_is_preserved_not_normalized() -> None:
+    """Matching is case-insensitive; storage is not. What the caller
+    passed is what lands on every span."""
+    config = FabricConfig(tenant_id="AcMe-Corp", agent_id="Support-Bot")
+    assert config.tenant_id == "AcMe-Corp"
+    assert config.agent_id == "Support-Bot"
+
+
+# ---- Tier B: copy-paste markers warn but are accepted -------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "changeme",
+        "CHANGEME",
+        "change-me",
+        "replace_me",
+        "Replace Me",
+        "todo",
+        "TBD",
+        "fixme",
+        "your-tenant",
+        "YOUR_TENANT",
+        "my-tenant",
+        "tenant-id",
+        "agent_id",
+    ],
+)
+def test_copy_paste_marker_warns_but_is_accepted(value: str) -> None:
+    """These are syntactically valid identifiers and an operator could
+    conceivably mean them, so they warn rather than raise — but the
+    warning has to fire, because they are overwhelmingly an uncopied
+    quickstart snippet."""
+    with pytest.warns(PlaceholderIdentifierWarning, match="copy-paste"):
+        config = FabricConfig(tenant_id=value, agent_id="a")
+    assert config.tenant_id == value
+
+
+def test_copy_paste_marker_warning_names_the_field() -> None:
+    with pytest.warns(PlaceholderIdentifierWarning) as record:
+        FabricConfig(tenant_id="acme", agent_id="changeme")
+    assert any("agent_id" in str(w.message) for w in record)
+
+
+# ---- escape hatch: downgrade, never silence ----------------------------
+
+
+def test_allow_placeholder_env_downgrades_raise_to_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``FABRIC_ALLOW_PLACEHOLDER_IDS=1`` demotes the Tier A raise to a
+    warning so an operator who genuinely must ship ``"none"`` can — but
+    it does not silence it, so the choice stays visible in the logs."""
+    monkeypatch.setenv("FABRIC_ALLOW_PLACEHOLDER_IDS", "1")
+    with pytest.warns(PlaceholderIdentifierWarning, match="placeholder"):
+        config = FabricConfig(tenant_id="undefined", agent_id="a")
+    assert config.tenant_id == "undefined"
+
+
+def test_allow_placeholder_env_only_honours_exactly_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any other value leaves the guard fully armed — no truthiness
+    games on a safety switch."""
+    for raw in ("0", "true", "yes", ""):
+        monkeypatch.setenv("FABRIC_ALLOW_PLACEHOLDER_IDS", raw)
+        with pytest.raises(ValueError, match="placeholder"):
+            FabricConfig(tenant_id="undefined", agent_id="a")
+
+
+def test_allow_placeholder_env_does_not_disable_the_empty_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hatch covers placeholders only. An empty id is still fatal."""
+    monkeypatch.setenv("FABRIC_ALLOW_PLACEHOLDER_IDS", "1")
+    with pytest.raises(ValueError, match="tenant_id is required"):
+        FabricConfig(tenant_id="  ", agent_id="a")
+
+
+# ---- check_identifier unit behaviour -----------------------------------
+
+
+def test_check_identifier_noops_on_empty_and_non_string() -> None:
+    """FabricConfig rejects those before calling us; the guard must not
+    raise a second, less useful error on the same value."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PlaceholderIdentifierWarning)
+        check_identifier("tenant_id", "")
+        check_identifier("tenant_id", None)  # type: ignore[arg-type]
+        check_identifier("tenant_id", 42)  # type: ignore[arg-type]
+
+
+def test_check_identifier_is_not_applied_to_profile() -> None:
+    """Scope statement: only the two partition keys are guarded.
+    ``profile`` is a closed set the sidecars validate, so the SDK does
+    not second-guess it here."""
+    config = FabricConfig(tenant_id="acme", agent_id="bot", profile="undefined")
+    assert config.profile == "undefined"
+
+
+def test_check_identifier_is_not_applied_to_execution_ids() -> None:
+    """``execution_*`` ids are correlation hints, not partition keys.
+    They keep their existing non-empty-when-set rule and nothing more."""
+    config = FabricConfig(
+        tenant_id="acme",
+        agent_id="bot",
+        execution_attempt_id="undefined",
+        execution_id="${RUN_ID}",
+    )
+    assert config.execution_attempt_id == "undefined"
+    assert config.execution_id == "${RUN_ID}"

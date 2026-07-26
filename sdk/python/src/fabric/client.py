@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from ._chain import GuardrailChain
-from ._id_validators import warn_if_pii_shaped
+from ._id_validators import check_identifier, warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_tracer
 
@@ -49,6 +49,16 @@ class FabricConfig:
     """Resolved, validated configuration for a :class:`Fabric` client.
 
     Constructed by :meth:`Fabric.from_env` or by the caller directly.
+
+    ``tenant_id`` and ``agent_id`` are validated on construction. They
+    are whitespace-stripped, must be non-empty, and must not be a
+    placeholder: stringified absence (``undefined``, ``null``, ``none``,
+    ``nil``, ``nan``, ``n/a``, ``(null)``) or an unsubstituted template
+    (``${TENANT}``, ``{{ tenant }}``, ``<your-tenant>``, ``%s``) raises
+    :class:`ValueError`. Copy-paste markers such as ``changeme`` warn
+    but are accepted. Length, character set, case and environment-ish
+    names such as ``staging`` are deliberately **not** validated — see
+    :mod:`fabric._id_validators` for the full rationale.
     """
 
     tenant_id: str
@@ -103,6 +113,16 @@ class FabricConfig:
             raise ValueError("agent_id is required (empty or whitespace only)")
         if not self.profile:
             raise ValueError("profile is required (empty or whitespace only)")
+        # Placeholder rejection — tenant_id and agent_id partition every
+        # span, audit record and downstream isolation check, so an unset
+        # variable rendered as "undefined" / "${TENANT}" must fail on
+        # startup rather than silently merge unrelated tenants. Only the
+        # two partition keys are checked; profile is a closed set the
+        # sidecars validate, and the optional execution_* ids are
+        # correlation hints, not partition keys. Runs after the strip and
+        # empty checks so we never report a value we already rejected.
+        check_identifier("tenant_id", self.tenant_id)
+        check_identifier("agent_id", self.agent_id)
         # PII shape warnings — only after the strip+empty checks above
         # so we don't warn on values we're about to reject anyway. See
         # specs/016-foundational-fixes.md §4.5.

@@ -1,24 +1,67 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Heuristic PII-shape warnings for ``*_id`` identifier values.
+"""Guards for ``*_id`` identifier values: PII shape, and placeholders.
 
 Identifier fields such as ``tenant_id``, ``agent_id``, ``user_id``,
 ``session_id`` and ``request_id`` are written onto every emitted span
-under the ``fabric.*`` namespace. If callers pass values that *look*
-like an email address or a phone number, those values silently leave
-the process and ship to the trace backend with every decision —
-a quiet PII leak that the developer never asked for.
+under the ``fabric.*`` namespace. Two distinct failure modes live here.
 
-This module provides :func:`warn_if_pii_shaped`, called from
+**PII shape** (:func:`warn_if_pii_shaped`) — if callers pass values that
+*look* like an email address or a phone number, those values silently
+leave the process and ship to the trace backend with every decision —
+a quiet PII leak that the developer never asked for. Called from
 :class:`fabric.client.FabricConfig` and :class:`fabric.decision.Decision`
 during construction. A single warning per ``(field_name, value)`` pair
 is emitted per process via Python's :mod:`warnings` default filter; set
-``FABRIC_QUIET_PII_WARN=1`` to suppress all such warnings.
-
-The intent is *not* validation — opaque-but-email-shaped IDs are
-sometimes intentional. The intent is to make the silent leak loud
-exactly once, so an operator notices before a year of traces accumulate.
+``FABRIC_QUIET_PII_WARN=1`` to suppress all such warnings. Here the
+intent is *not* validation — opaque-but-email-shaped IDs are sometimes
+intentional. The intent is to make the silent leak loud exactly once, so
+an operator notices before a year of traces accumulate.
 See specs/016-foundational-fixes.md §4.5.
+
+**Placeholder identifiers** (:func:`check_identifier`) — here the intent
+*is* validation, but narrowly. ``tenant_id`` and ``agent_id`` are the
+partition keys of every trace, every audit record and every tenant
+isolation check downstream. A value of ``"undefined"``, ``"null"`` or
+``"${TENANT}"`` is never a real tenant; it is an unset variable, a
+stringified ``undefined`` from a JS shim, or an unsubstituted template.
+Accepting it silently merges unrelated tenants into one bogus partition
+and the mistake is only discovered months later, in the audit trail.
+
+Two tiers, both deliberately narrow:
+
+* **Tier A — reject** (:data:`_SENTINEL_VALUES` plus unsubstituted
+  template shapes). These cannot be a deliberate identifier under any
+  reading. Raises :class:`ValueError`, consistent with the existing
+  empty-``tenant_id`` rejection and with ``from_env``'s documented
+  "fails on startup rather than on the first agent call" contract.
+  ``FABRIC_ALLOW_PLACEHOLDER_IDS=1`` downgrades the raise to a
+  :class:`PlaceholderIdentifierWarning` — it demotes, it does not
+  silence, so an operator who genuinely must ship ``"none"`` can, and
+  still sees it in the logs.
+* **Tier B — warn** (:data:`_COPY_PASTE_MARKERS`). Values like
+  ``"changeme"`` or ``"your-tenant"`` are overwhelmingly an uncopied
+  quickstart snippet, but they *are* syntactically valid identifiers and
+  someone could conceivably mean them. Warn only, never raise.
+
+What is deliberately **NOT** validated, and why:
+
+* **Length.** No minimum, no maximum. One-character ids are used
+  throughout this SDK's own test suite and are perfectly legal.
+* **Character set / format.** No slug, UUID, DNS-label or ASCII rule.
+  ``fabric.propagation`` deliberately round-trips identifiers containing
+  spaces, ``=`` and non-ASCII characters; real deployments carry
+  identifiers minted by systems the SDK does not control.
+* **Case.** Values are never normalized or lower-cased. Matching is
+  case-insensitive, but what the caller passed is what gets stored and
+  emitted.
+* **Environment-ish names.** ``test``, ``dev``, ``local``, ``default``,
+  ``demo``, ``sandbox``, ``staging`` and ``example`` are *real* tenant
+  and agent names in real deployments and are always accepted.
+* **Near-misses of the sentinels.** Bare ``na`` is accepted (it is a
+  region code — North America); only ``n/a`` is rejected. Likewise
+  ``nullify-corp`` or ``nonesuch`` are accepted: Tier A matches the
+  whole stripped value, never a substring.
 """
 
 from __future__ import annotations
@@ -27,14 +70,155 @@ import os
 import re
 import warnings
 
-__all__ = ["PIIShapedIdentifierWarning", "warn_if_pii_shaped"]
+__all__ = [
+    "PIIShapedIdentifierWarning",
+    "PlaceholderIdentifierWarning",
+    "check_identifier",
+    "warn_if_pii_shaped",
+]
 
 ENV_QUIET = "FABRIC_QUIET_PII_WARN"
+ENV_ALLOW_PLACEHOLDER = "FABRIC_ALLOW_PLACEHOLDER_IDS"
 
 # Regex shapes per spec 016 §4.5 — deliberately permissive to err on
 # the side of flagging.
 _LIKELY_EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _LIKELY_PHONE = re.compile(r"^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$")
+
+
+_SENTINEL_VALUES: frozenset[str] = frozenset(
+    {
+        "undefined",
+        "null",
+        "none",
+        "nil",
+        "nan",
+        "n/a",
+        "(null)",
+        "<null>",
+        "<none>",
+        "<undefined>",
+    }
+)
+"""Tier A. Stringified absence — never a deliberate identifier.
+
+Matched case-insensitively against the whitespace-stripped value. These
+are what a language runtime, template engine or shell produces when a
+variable was *not* set: JS ``String(undefined)``, Python ``str(None)``,
+Go's ``<nil>``, an empty SQL column rendered as ``(null)``.
+"""
+
+_COPY_PASTE_MARKERS: frozenset[str] = frozenset(
+    {
+        "changeme",
+        "replaceme",
+        "todo",
+        "tbd",
+        "fixme",
+        "yourtenant",
+        "youragent",
+        "tenantid",
+        "agentid",
+        "mytenant",
+    }
+)
+"""Tier B. Copy-paste markers from docs and quickstarts.
+
+Matched after lower-casing and removing ``-``/``_``/space, so
+``replace-me``, ``REPLACE_ME`` and ``Replace Me`` all match a single
+entry. Warn only: these are syntactically valid identifiers and a
+determined operator could mean them.
+
+Deliberately absent: ``my-agent``. ``docs/quickstart.md`` ships it as a
+worked example value, so warning on it would fire on this project's own
+documented happy path — and unlike ``my-tenant`` it is a plausible real
+name for a single-agent deployment. The asymmetry is intentional.
+"""
+
+# Unsubstituted template shapes. ``${VAR}`` / ``{{ var }}`` cover shell,
+# Helm, Jinja and Go templates; ``%s`` / ``%(name)s`` cover printf-style
+# interpolation that was never applied. Full ``<...>`` wrapping is the
+# universal docs convention for "put your value here" and also catches
+# ``<nil>``-style renderings not enumerated above.
+_TEMPLATE_MARKERS: tuple[str, ...] = ("${", "{{")
+_PRINTF_TEMPLATE = re.compile(r"^%(s|\([A-Za-z_][A-Za-z0-9_]*\)s)$")
+_ANGLE_WRAPPED = re.compile(r"^<[^<>]*>$")
+
+_SEPARATORS = re.compile(r"[-_ ]+")
+
+
+class PlaceholderIdentifierWarning(UserWarning):
+    """Emitted when an identifier value looks like an unfilled placeholder.
+
+    A :class:`UserWarning` subclass so it is visible by default but can
+    be filtered or escalated to an error via standard :mod:`warnings`
+    machinery. Also used for Tier A rejections that were downgraded by
+    ``FABRIC_ALLOW_PLACEHOLDER_IDS=1``.
+    """
+
+
+def _is_sentinel(value: str) -> bool:
+    """True if ``value`` is stringified absence or an unfilled template."""
+    lowered = value.lower()
+    if lowered in _SENTINEL_VALUES:
+        return True
+    if any(marker in value for marker in _TEMPLATE_MARKERS):
+        return True
+    if _ANGLE_WRAPPED.match(value):
+        return True
+    return bool(_PRINTF_TEMPLATE.match(value))
+
+
+def _is_copy_paste_marker(value: str) -> bool:
+    """True if ``value`` is a docs/quickstart fill-me-in marker."""
+    return _SEPARATORS.sub("", value.lower()) in _COPY_PASTE_MARKERS
+
+
+def check_identifier(field_name: str, value: str) -> None:
+    """Reject placeholder ``value`` for ``field_name``, or warn on markers.
+
+    Called from :meth:`fabric.client.FabricConfig.__post_init__` for
+    ``tenant_id`` and ``agent_id`` only — the two fields that partition
+    every trace and every downstream isolation check.
+
+    Raises :class:`ValueError` when ``value`` is stringified absence
+    (``undefined``, ``null``, ``none``, ``nil``, ``nan``, ``n/a``,
+    ``(null)``) or an unsubstituted template (``${...}``, ``{{...}}``,
+    ``<...>``, ``%s``, ``%(name)s``). Setting
+    ``FABRIC_ALLOW_PLACEHOLDER_IDS=1`` downgrades that raise to a
+    :class:`PlaceholderIdentifierWarning`.
+
+    Emits a :class:`PlaceholderIdentifierWarning` — never raises — when
+    ``value`` is a copy-paste marker such as ``changeme`` or
+    ``your-tenant``.
+
+    Length, character set, case and environment-ish names such as
+    ``test`` or ``staging`` are explicitly not validated; see the module
+    docstring. No-ops on a falsy or non-string ``value`` — the caller
+    has already rejected those.
+    """
+    if not value or not isinstance(value, str):
+        return
+    if _is_sentinel(value):
+        message = (
+            f"{field_name}={value!r} is a placeholder, not an identifier. "
+            f"This value partitions every span, audit record and tenant "
+            f"isolation check, so an unset variable here silently merges "
+            f"unrelated data. Set a real {field_name}. "
+            f"(to allow anyway, set {ENV_ALLOW_PLACEHOLDER}=1)"
+        )
+        if os.environ.get(ENV_ALLOW_PLACEHOLDER) == "1":
+            warnings.warn(message, PlaceholderIdentifierWarning, stacklevel=3)
+            return
+        raise ValueError(message)
+    if _is_copy_paste_marker(value):
+        warnings.warn(
+            f"{field_name}={value!r} looks like an unedited copy-paste "
+            f"placeholder from the docs. It will be written onto every "
+            f"emitted span as a real {field_name}.",
+            PlaceholderIdentifierWarning,
+            stacklevel=3,
+        )
 
 
 class PIIShapedIdentifierWarning(UserWarning):
