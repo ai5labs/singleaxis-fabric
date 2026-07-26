@@ -16,7 +16,9 @@ Concurrency and timeout knobs (env vars, all optional):
 from __future__ import annotations
 
 import argparse
+import logging
 import os
+import socket
 import sys
 from typing import TYPE_CHECKING
 
@@ -27,6 +29,53 @@ from fabric_nemo_sidecar.app import build_app
 if TYPE_CHECKING:
     from fabric_nemo_sidecar.literal_filter import LiteralJailbreakFilter
     from fabric_nemo_sidecar.rails import RailsEngine
+
+# Re-exported so tests (and any tooling) can monkeypatch the symbol the
+# CLI actually calls; the explicit __all__ keeps mypy's no-implicit-reexport
+# happy when build_app is accessed via this module.
+__all__ = ["bind_uds", "build_app", "main"]
+
+logger = logging.getLogger("fabric_nemo_sidecar")
+
+# Backlog for the listening socket. Matches uvicorn's own default so
+# behaviour is unchanged from letting uvicorn bind the socket itself.
+_UDS_BACKLOG = 2048
+
+
+def bind_uds(path: str) -> socket.socket:
+    """Bind and return a listening Unix domain socket at ``path``.
+
+    We bind the socket here rather than handing ``uds=`` to uvicorn so
+    that *we* own the permission step. uvicorn's own UDS path calls
+    ``os.chmod`` unconditionally and dies if the filesystem refuses it;
+    Docker Desktop's macOS bind mounts (virtiofs) raise ``EINVAL`` on
+    ``chmod`` of a socket, which made the sidecar impossible to run
+    against a bind-mounted socket directory. Permissions are still
+    applied wherever the filesystem supports them — we only degrade to a
+    warning when they cannot be, instead of refusing to start.
+    """
+
+    if os.path.exists(path):
+        os.unlink(path)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.bind(path)
+    try:
+        # S103: 0o666 is deliberate and matches uvicorn's own UDS mode.
+        # The socket is reachable only through its directory, which is
+        # what actually gates access; an unreadable socket would simply
+        # make the sidecar unusable by its co-located caller.
+        os.chmod(path, 0o666)  # noqa: S103
+    except OSError as exc:
+        logger.warning(
+            "could not set permissions on %s (%s); continuing with the "
+            "filesystem default. Some bind-mounted filesystems (notably "
+            "Docker Desktop on macOS) do not support chmod on sockets. "
+            "Callers must already have access via directory permissions.",
+            path,
+            exc,
+        )
+    sock.listen(_UDS_BACKLOG)
+    return sock
 
 
 def _build_literal_filter(
@@ -78,9 +127,7 @@ def _build_engine(
     # operator can see this in pod logs. The rail name on every /check
     # response stamps PASSTHROUGH_FAIL_OPEN so any downstream
     # dashboard surfaces the misconfiguration.
-    import logging  # noqa: PLC0415
-
-    logging.getLogger("fabric_nemo_sidecar").warning(
+    logger.warning(
         "NeMo sidecar starting in PASSTHROUGH mode "
         "(--allow-passthrough): jailbreak/policy defence is "
         "disabled. DO NOT use in production."
@@ -160,15 +207,21 @@ def main(argv: list[str] | None = None) -> int:
         "limit_concurrency": limit_concurrency,
         "timeout_keep_alive": 5,
     }
+    # Held for the lifetime of the server: uvicorn dups the descriptor,
+    # so the socket object must not be garbage collected before it runs.
+    uds_sock: socket.socket | None = None
     if args.uds:
-        if os.path.exists(args.uds):
-            os.unlink(args.uds)
-        kwargs["uds"] = args.uds
+        uds_sock = bind_uds(args.uds)
+        kwargs["fd"] = uds_sock.fileno()
     else:
         kwargs["host"] = args.host
         kwargs["port"] = args.port
 
-    uvicorn.run(**kwargs)  # type: ignore[arg-type]
+    try:
+        uvicorn.run(**kwargs)  # type: ignore[arg-type]
+    finally:
+        if uds_sock is not None:
+            uds_sock.close()
     return 0
 
 

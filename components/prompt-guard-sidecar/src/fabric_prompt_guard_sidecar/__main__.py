@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import socket
 import sys
 
 import uvicorn
@@ -19,9 +20,50 @@ from fabric_prompt_guard_sidecar.app import build_app
 # Re-exported so tests (and any tooling) can monkeypatch the symbol the
 # CLI actually calls; the explicit __all__ keeps mypy's
 # no-implicit-reexport happy when build_app is accessed via this module.
-__all__ = ["build_app", "main"]
+__all__ = ["bind_uds", "build_app", "main"]
 
 logger = logging.getLogger("fabric_prompt_guard_sidecar")
+
+# Backlog for the listening socket. Matches uvicorn's own default so
+# behaviour is unchanged from letting uvicorn bind the socket itself.
+_UDS_BACKLOG = 2048
+
+
+def bind_uds(path: str) -> socket.socket:
+    """Bind and return a listening Unix domain socket at ``path``.
+
+    We bind the socket here rather than handing ``uds=`` to uvicorn so
+    that *we* own the permission step. uvicorn's own UDS path calls
+    ``os.chmod`` unconditionally and dies if the filesystem refuses it;
+    Docker Desktop's macOS bind mounts (virtiofs) raise ``EINVAL`` on
+    ``chmod`` of a socket, which made the sidecar impossible to run
+    against a bind-mounted socket directory. Permissions are still
+    applied wherever the filesystem supports them — we only degrade to a
+    warning when they cannot be, instead of refusing to start.
+    """
+
+    if os.path.exists(path):
+        os.unlink(path)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.bind(path)
+    try:
+        # S103: 0o666 is deliberate. The socket is the sidecar's only
+        # ingress and its peer runs as a different uid in the compose /
+        # pod setup; access is fenced by the containing directory's
+        # permissions, not the socket's. This matches the mode uvicorn
+        # itself applies when given uds=.
+        os.chmod(path, 0o666)  # noqa: S103
+    except OSError as exc:
+        logger.warning(
+            "could not set permissions on %s (%s); continuing with the "
+            "filesystem default. Some bind-mounted filesystems (notably "
+            "Docker Desktop on macOS) do not support chmod on sockets. "
+            "Callers must already have access via directory permissions.",
+            path,
+            exc,
+        )
+    sock.listen(_UDS_BACKLOG)
+    return sock
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -102,15 +144,21 @@ def main(argv: list[str] | None = None) -> int:
         "app": app,
         "log_config": None,
     }
+    # Held for the lifetime of the server: uvicorn dups the descriptor,
+    # so the socket object must not be garbage collected before it runs.
+    uds_sock: socket.socket | None = None
     if args.uds:
-        if os.path.exists(args.uds):
-            os.unlink(args.uds)
-        kwargs["uds"] = args.uds
+        uds_sock = bind_uds(args.uds)
+        kwargs["fd"] = uds_sock.fileno()
     else:
         kwargs["host"] = args.host
         kwargs["port"] = args.port
 
-    uvicorn.run(**kwargs)  # type: ignore[arg-type]
+    try:
+        uvicorn.run(**kwargs)  # type: ignore[arg-type]
+    finally:
+        if uds_sock is not None:
+            uds_sock.close()
     return 0
 
 
