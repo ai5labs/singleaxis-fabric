@@ -48,8 +48,22 @@ processors:
     timeout: 1s
 
 exporters:
+  # `detailed` dumps every span with its full attribute set. This is the
+  # harness's capture channel: the Fabric distribution is built with only
+  # the debug and otlphttp exporters (see ocb-config.yaml), so there is no
+  # file exporter to write structured captures with. Reading these logs is
+  # how you inspect what actually survived the processor chain.
   debug:
-    verbosity: basic
+    verbosity: detailed
+  # KNOWN BROKEN: /api/public/otel is a Langfuse **v3** endpoint, but this
+  # harness pins langfuse/langfuse:2 above, which does not serve it. Every
+  # export fails with HTTP 404 and the collector drops the batch:
+  #   "not retryable error: Permanent error: ... HTTP Status Code 404"
+  # Spans still reach the collector and pass the Fabric processors — only
+  # the hand-off to the Langfuse UI is lost. Fixing it properly means
+  # moving the harness to Langfuse v3, which additionally requires
+  # ClickHouse, Redis and MinIO. Until then, capture from the debug
+  # exporter above rather than from the Langfuse UI.
   otlphttp/langfuse:
     endpoint: http://langfuse:3000/api/public/otel
     headers:
@@ -63,9 +77,24 @@ extensions:
 service:
   extensions: [zpages]
   pipelines:
+    # Only ``fabricguard`` registers a traces factory today
+    # (processor/fabricguardprocessor/factory.go calls WithTraces).
+    # fabricredact, fabricpolicy and fabricsampler are logs-only —
+    # their factories register WithLogs and nothing else — so listing
+    # any of them here aborts collector startup with
+    # "telemetry type is not supported" and the whole harness fails to
+    # come up. charts/fabric/charts/otel-collector gets this right; this
+    # config did not.
+    #
+    # CONSEQUENCE, stated plainly: spans are field-allowlisted by
+    # fabricguard but are NOT Presidio-redacted, HMAC-sampled or
+    # policy-gated at the collector. For traces, redaction happens only
+    # in-process via the SDK's guard_input / guard_output_final calls
+    # against the Presidio sidecar. Collector-side redaction is
+    # defence-in-depth that does not currently exist for traces.
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, batch]
+      processors: [memory_limiter, fabricguard, batch]
       exporters: [debug, otlphttp/langfuse]
     logs:
       receivers: [otlp]
