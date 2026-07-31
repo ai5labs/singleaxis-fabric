@@ -30,8 +30,8 @@ def test_otel_emitter_emits_one_run_span_and_n_probe_spans(run_result: RunResult
     assert len(probe_spans) == 2
 
     run_attrs = dict(run_span.attributes or {})
-    assert run_attrs["event_class"] == "redteam_run"
-    assert run_attrs["fabric.redteam.run_id"] == "run-abc"
+    assert run_attrs["fabric.event_class"] == "redteam_run"
+    assert run_attrs["fabric.redteam.run_id"] == "0123456789abcdef0123456789abcdef"
     assert run_attrs["fabric.redteam.probe_count"] == 2
     assert run_attrs["fabric.redteam.fail_count"] == 1
 

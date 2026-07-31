@@ -14,11 +14,16 @@ up: ## Start core harness (sidecars + collector + Langfuse).
 	fi
 	$(COMPOSE) up -d --build
 	@echo ""
-	@echo "Langfuse UI:  http://localhost:3000"
-	@echo "OTLP/gRPC:    localhost:4317"
-	@echo "OTLP/HTTP:    localhost:4318"
-	@echo "Presidio UDS: $$(pwd)/run/presidio.sock"
-	@echo "NeMo UDS:     $$(pwd)/run/nemo.sock"
+	@echo "Langfuse UI:  http://localhost:$${FABRIC_LANGFUSE_PORT:-3000}"
+	@echo "OTLP/gRPC:    localhost:$${FABRIC_OTLP_GRPC_PORT:-4317}"
+	@echo "OTLP/HTTP:    localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
+	@echo ""
+	@echo "Guardrail sockets live on the 'fabric-run' named volume, not on"
+	@echo "the host. Run your agent as a container to reach them:"
+	@echo "  docker run --rm --network $(PROJECT)_fabric \\"
+	@echo "    -v $(PROJECT)_fabric-run:/run/fabric --user 1000:1000 \\"
+	@echo "    -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 <image>"
+	@echo "  UDS paths inside the container: /run/fabric/{presidio,nemo}.sock"
 
 up-bootstrap: up ## Start harness AND run the Langfuse bootstrap Job.
 	$(COMPOSE) --profile bootstrap run --rm langfuse-bootstrap

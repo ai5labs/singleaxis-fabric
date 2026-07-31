@@ -1,8 +1,8 @@
 ---
 title: ReplayMetadata envelope — emit-only reconstruction metadata
-status: draft
-revision: 1
-last_updated: 2026-06-02
+status: implemented
+revision: 2
+last_updated: 2026-07-25
 owner: project-lead
 ---
 

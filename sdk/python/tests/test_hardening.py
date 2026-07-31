@@ -42,7 +42,7 @@ def test_remember_with_lone_surrogate_does_not_crash(
     fabric = _client()
     with fabric.decision(session_id="s", request_id="r") as d:
         d.remember(kind="semantic", content=_SURROGATE)  # must not raise
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     event = next(e for e in span.events if e.name == "fabric.memory")
     content_hash = dict(event.attributes or {})["fabric.memory.content_hash"]
     assert isinstance(content_hash, str)
@@ -59,7 +59,11 @@ def test_tool_call_args_and_result_with_surrogate_do_not_crash(
     ):
         call.set_arguments(_SURROGATE)  # must not raise
         call.set_result(_SURROGATE)  # must not raise
-    tool_span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.tool_call")
+    tool_span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(tool_span.attributes or {})
     args_hash = attrs["fabric.tool.arguments_hash"]
     result_hash = attrs["fabric.tool.result_hash"]

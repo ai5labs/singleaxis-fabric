@@ -126,14 +126,18 @@ with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
     )
 ```
 
-Phoenix's LLM view, Langfuse cost dashboards, and any backend keyed
-on either namespace render Fabric traces natively from this release
-onward.
+Any backend keyed on the `gen_ai.*` conventions — Phoenix's LLM view,
+Langfuse cost dashboards — should render these child spans natively.
+We have not executed a recorded smoke render against each backend, so
+treat this as the conventions being emitted correctly rather than as a
+per-backend verification.
 
 Spans land in whatever your Collector fans out to — Langfuse, Tempo,
-Jaeger, Honeycomb. With the chart's curated-Langfuse bootstrap, they
-appear in the Langfuse project created by the init Job. For pure-local
-debugging, swap `OTLPSpanExporter` for `ConsoleSpanExporter`.
+Jaeger, Honeycomb. The bundled Langfuse subchart is **off in every
+shipped profile** (it needs an external Postgres DSN); enable it with
+`--set langfuse.enabled=true` plus a DSN, and the bootstrap Job seeds
+the curated project. For pure-local debugging, swap `OTLPSpanExporter`
+for `ConsoleSpanExporter`.
 
 ## 5. What's next
 

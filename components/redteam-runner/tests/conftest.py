@@ -9,6 +9,7 @@ import pytest
 
 from fabric_redteam_runner.config import RunConfig, SuiteConfig, TargetConfig
 from fabric_redteam_runner.results import (
+    CaptureStatus,
     Finding,
     ProbeResult,
     RunResult,
@@ -36,8 +37,9 @@ class FakeSuite:
                 [
                     Finding(
                         attempt_id=f"{probe}-0",
-                        prompt_hash="ph",
-                        response_hash="rh",
+                        prompt_hash="a" * 64,
+                        response_hash="b" * 64,
+                        capture_status=CaptureStatus.CAPTURED,
                         severity=Severity.HIGH,
                         notes="fake finding",
                     )
@@ -63,7 +65,7 @@ def run_result() -> RunResult:
     start = datetime(2026, 4, 20, 12, 0, 0, tzinfo=UTC)
     end = datetime(2026, 4, 20, 12, 0, 3, tzinfo=UTC)
     return RunResult(
-        run_id="run-abc",
+        run_id="0123456789abcdef0123456789abcdef",
         tenant_id="acme",
         agent_id="support-bot",
         profile="eu-ai-act-high-risk",
@@ -79,8 +81,9 @@ def run_result() -> RunResult:
                 findings=[
                     Finding(
                         attempt_id="a1",
-                        prompt_hash="ph",
-                        response_hash="rh",
+                        prompt_hash="a" * 64,
+                        response_hash="b" * 64,
+                        capture_status=CaptureStatus.CAPTURED,
                         severity=Severity.HIGH,
                     )
                 ],

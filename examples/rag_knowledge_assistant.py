@@ -32,9 +32,9 @@ Fabric primitives / attributes this example demonstrates
   (``RetrievalSource.RAG`` + ``RetrievalSource.KG``) with hashed queries.
 * ``Decision.recall`` / ``Decision.remember`` -> ``fabric.memory`` read+write
   events (``MemoryKind.SEMANTIC``), hash-correlatable.
-* ``Decision.llm_call`` -> child ``fabric.llm_call`` span with the GenAI
+* ``Decision.llm_call`` -> dynamic ``{operation} {model}`` span with the GenAI
   semantic conventions, ``fabric.step.type``, usage + cache + streaming.
-* ``Decision.tool_call`` -> child ``fabric.tool_call`` span (vector search).
+* ``Decision.tool_call`` -> tool-named ``execute_tool`` span (vector search).
 * ``Decision.record_eval`` -> inline ``fabric.eval`` grounding/faithfulness
   score; ``Decision.queue_judge`` -> ``fabric.judge.queued`` for async review.
 * ``Decision.checkpoint`` -> ``fabric.checkpoint`` save point.
@@ -323,7 +323,7 @@ def run_assistant(fab: Fabric, transport: LocalQueueTransport) -> str:
                 "Answer grounded ONLY in the context."
             )
             with decision.llm_call(
-                system="fireworks",
+                provider="fireworks",
                 model="accounts/fireworks/models/kimi-k2p6",
                 temperature=0.2,
                 max_tokens=512,
@@ -423,6 +423,13 @@ def _span_named(spans: list[ReadableSpan], name: str) -> ReadableSpan:
     raise AssertionError(f"no span named {name!r} captured")
 
 
+def _span_with_operation(spans: list[ReadableSpan], operation: str) -> ReadableSpan:
+    for span in spans:
+        if dict(span.attributes or {}).get("gen_ai.operation.name") == operation:
+            return span
+    raise AssertionError(f"no GenAI {operation!r} span captured")
+
+
 def print_audit_trail(spans: list[ReadableSpan]) -> None:
     """Print a human-readable view of the Fabric audit trail."""
     print("=" * 72)
@@ -469,8 +476,8 @@ def print_audit_trail(spans: list[ReadableSpan]) -> None:
 def assert_audit_trail(spans: list[ReadableSpan]) -> None:
     decision_span = _span_named(spans, "fabric.decision")
     execution_span = _span_named(spans, "fabric.execution")
-    llm_span = _span_named(spans, "fabric.llm_call")
-    tool_span = _span_named(spans, "fabric.tool_call")
+    llm_span = _span_with_operation(spans, "chat")
+    tool_span = _span_with_operation(spans, "execute_tool")
     d_attrs = dict(decision_span.attributes or {})
 
     # -- identity / correlation -----------------------------------------
@@ -527,7 +534,7 @@ def assert_audit_trail(spans: list[ReadableSpan]) -> None:
 
     # -- LLM child span: GenAI conventions + step taxonomy --------------
     l_attrs = dict(llm_span.attributes or {})
-    assert l_attrs.get("gen_ai.system") == "fireworks"
+    assert l_attrs.get("gen_ai.provider.name") == "fireworks"
     assert l_attrs.get("gen_ai.request.model") == "accounts/fireworks/models/kimi-k2p6"
     assert l_attrs.get("gen_ai.usage.input_tokens") == 384
     assert l_attrs.get("gen_ai.usage.output_tokens") == 48

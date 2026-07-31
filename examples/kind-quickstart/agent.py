@@ -85,7 +85,7 @@ def main() -> None:
             source="vector", query="refund policy", result_hashes=["kb#1182"]
         )
 
-        with d.llm_call(system="anthropic", model="claude-haiku-4-5") as call:
+        with d.llm_call(provider="anthropic", model="claude-haiku-4-5") as call:
             text, ti, to = do_call(user_msg)
             call.set_usage(input_tokens=ti, output_tokens=to)
             print(f"llm: {text}")

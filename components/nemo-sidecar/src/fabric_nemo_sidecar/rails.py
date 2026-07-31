@@ -13,10 +13,13 @@ you are changing these models you are also changing the SDK.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+_LOG = logging.getLogger("fabric_nemo_sidecar")
 
 CheckAction = Literal["allow", "redact", "block", "warn"]
 
@@ -87,7 +90,23 @@ class PassthroughEngine:
 class RailsChecker:
     """Applies a :class:`RailsEngine` and returns a wire-level
     :class:`CheckResponse`. The pydantic boundary lives here so
-    engines can stay free of FastAPI / pydantic coupling."""
+    engines can stay free of FastAPI / pydantic coupling.
+
+    This is also where the ``modified_value`` invariant is enforced, and
+    it is enforced here rather than in the NeMo adapter because this is
+    the only layer that sees *both* the request and the engine result.
+    Operators may plug in any :class:`RailsEngine`; a third-party or
+    in-house engine must not be able to put arbitrary content on the
+    wire under an ``allow`` verdict.
+
+    The invariant: ``modified_value`` is a transformation of the
+    submitted value and MUST equal it byte-for-byte unless the action is
+    ``redact``. An assistant completion is not a modified value. This
+    exists because NeMo's Colang path returns ``LLMRails.generate()``
+    output — a chat completion — and returning that as the "modified"
+    input silently replaced the caller's message with chatbot text under
+    ``allowed=true``.
+    """
 
     __slots__ = ("_engine",)
 
@@ -96,10 +115,24 @@ class RailsChecker:
 
     def check(self, request: CheckRequest) -> CheckResponse:
         result = self._engine.check(request.phase, request.path, request.value)
+        modified_value = result.modified_value
+        if result.action != "redact" and modified_value != request.value:
+            # Fail loud, not silent: an engine that rewrites content
+            # outside a redact action is misbehaving, and swallowing it
+            # would hide the bug this guard exists to catch.
+            _LOG.warning(
+                "rails engine returned a modified_value under action=%r on rail %r; "
+                "only 'redact' may rewrite content. Substituting the submitted "
+                "value. Engine=%s",
+                result.action,
+                result.rail,
+                type(self._engine).__name__,
+            )
+            modified_value = request.value
         return CheckResponse(
             allowed=result.allowed,
             action=result.action,
             rail=result.rail,
             block_response=result.block_response,
-            modified_value=result.modified_value,
+            modified_value=modified_value,
         )

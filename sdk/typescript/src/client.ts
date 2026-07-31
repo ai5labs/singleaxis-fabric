@@ -27,6 +27,9 @@ export interface FabricConfig {
   tenantId: string;
   /** Agent identifier. Required. */
   agentId: string;
+  agentName?: string;
+  agentVersion?: string;
+  agentDescription?: string;
   /** Governance profile. Defaults to `"default"`. */
   profile?: string;
   workflowId?: string;
@@ -74,6 +77,9 @@ export class Fabric {
     this.identity = {
       tenantId: config.tenantId,
       agentId: config.agentId,
+      agentName: config.agentName ?? config.agentId,
+      agentVersion: config.agentVersion,
+      agentDescription: config.agentDescription,
       profile: config.profile ?? "default",
       workflowId: config.workflowId,
       executionId: config.executionId,

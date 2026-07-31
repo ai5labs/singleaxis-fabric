@@ -38,11 +38,21 @@ otel-collector:
       # environment that emits real traces — it is a known constant and
       # the deterministic sampler decisions become trivially replayable.
       hmacKey: "00000000000000000000000000000000000000000000000000000000deadbeef"
+  # No exporter endpoint. This profile is for local dev and CI smoke
+  # runs, where there is no backend to export to.
+  #
+  # It previously set `endpoint: http://localhost:4318`, which is the
+  # collector's OWN OTLP/HTTP receiver (it binds 0.0.0.0:4318) — every
+  # span was re-exported into the pod that emitted it, a self-feeding
+  # loop rather than a backend. Leaving the endpoint unset renders no
+  # `otlphttp/fabric` exporter at all; the pipelines use `debug`, so
+  # spans land in the collector pod's stdout where `kubectl logs` (and
+  # the e2e span-landing assertion) can read them.
   exporter:
-    endpoint: http://localhost:4318
-    insecure: true
+    endpoint: ""
   debugExporter:
     enabled: true
+    verbosity: basic
 
 nemoSidecar:
   enabled: true

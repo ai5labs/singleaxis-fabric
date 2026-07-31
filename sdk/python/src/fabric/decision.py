@@ -364,6 +364,8 @@ class Decision(AbstractContextManager["Decision"]):
         decision_id: str | None = None,
         execution_id: str | None = None,
         workflow_id: str | None = None,
+        workflow_name: str | None = None,
+        conversation_compacted: bool = False,
     ) -> None:
         if not session_id:
             raise ValueError("session_id is required")
@@ -389,6 +391,8 @@ class Decision(AbstractContextManager["Decision"]):
         # actually stamped.
         self._execution_id = execution_id
         self._workflow_id = workflow_id
+        self._workflow_name = workflow_name
+        self._conversation_compacted = conversation_compacted
         self._resolved_execution_id: str | None = None
         self._resolved_workflow_id: str | None = None
         # Resolved attempt/retry metadata, cached on enter. There is no
@@ -535,7 +539,7 @@ class Decision(AbstractContextManager["Decision"]):
 
     # -- context manager --------------------------------------------------
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> Self:  # noqa: PLR0912
         if self._state != "new":
             raise RuntimeError(
                 f"Decision already {self._state}; open one Decision per agent "
@@ -559,9 +563,22 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
+        self._span.set_attribute("gen_ai.operation.name", "invoke_agent")
+        self._span.set_attribute("gen_ai.agent.name", self._client.agent_name)
+        self._span.set_attribute("gen_ai.agent.id", self._client.agent_id)
+        self._span.set_attribute("gen_ai.conversation.id", self._session_id)
+        if self._client.agent_version is not None:
+            self._span.set_attribute("gen_ai.agent.version", self._client.agent_version)
+        if self._client.agent_description is not None:
+            self._span.set_attribute("gen_ai.agent.description", self._client.agent_description)
+        if self._conversation_compacted:
+            self._span.set_attribute("gen_ai.conversation.compacted", True)
         self._resolve_execution_metadata()
         if self._resolved_workflow_id is not None:
             self._span.set_attribute(ATTR_WORKFLOW, self._resolved_workflow_id)
+        semantic_workflow_name = self._workflow_name or self._resolved_workflow_id
+        if semantic_workflow_name is not None:
+            self._span.set_attribute("gen_ai.workflow.name", semantic_workflow_name)
         if self._resolved_execution_id is not None:
             self._span.set_attribute(ATTR_EXECUTION, self._resolved_execution_id)
         # Attempt/retry metadata, inherited from the active execution when
@@ -1020,6 +1037,10 @@ class Decision(AbstractContextManager["Decision"]):
         result_hashes: Sequence[str] | None = None,
         source_document_ids: Sequence[str] | None = None,
         latency_ms: int | None = None,
+        data_source_id: str | None = None,
+        provider: str | None = None,
+        top_k: int | None = None,
+        capture_content: bool = False,
     ) -> RetrievalRecord:
         """Record a retrieval event on the decision span.
 
@@ -1064,6 +1085,29 @@ class Decision(AbstractContextManager["Decision"]):
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
             span.add_event("fabric.retrieval", attributes=event_attrs)
+            semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
+            with self._client.tracer.start_as_current_span(
+                semantic_name,
+                kind=SpanKind.CLIENT,
+            ) as retrieval_span:
+                retrieval_span.set_attribute("gen_ai.operation.name", "retrieval")
+                if data_source_id is not None:
+                    retrieval_span.set_attribute("gen_ai.data_source.id", data_source_id)
+                if provider is not None:
+                    retrieval_span.set_attribute("gen_ai.provider.name", provider)
+                if top_k is not None:
+                    retrieval_span.set_attribute("gen_ai.retrieval.top_k", top_k)
+                if capture_content:
+                    retrieval_span.set_attribute("gen_ai.retrieval.query.text", query)
+                    if record.source_document_ids:
+                        retrieval_span.set_attribute(
+                            "gen_ai.retrieval.documents",
+                            json.dumps(
+                                [{"id": doc_id} for doc_id in record.source_document_ids],
+                                separators=(",", ":"),
+                                sort_keys=True,
+                            ),
+                        )
             return record
 
     # -- memory ----------------------------------------------------------
@@ -1077,6 +1121,9 @@ class Decision(AbstractContextManager["Decision"]):
         tags: Sequence[str] | None = None,
         ttl_seconds: int | None = None,
         invalidates: str | None = None,
+        store_id: str | None = None,
+        provider: str | None = None,
+        capture_content: bool = False,
     ) -> MemoryRecord:
         """Record that this decision wrote to long-term memory.
 
@@ -1135,6 +1182,22 @@ class Decision(AbstractContextManager["Decision"]):
             if record.invalidates is not None:
                 event_attrs["fabric.memory.invalidates"] = record.invalidates
             span.add_event("fabric.memory", attributes=event_attrs)
+            with self._client.tracer.start_as_current_span(
+                "create_memory", kind=SpanKind.CLIENT
+            ) as memory_span:
+                memory_span.set_attribute("gen_ai.operation.name", "create_memory")
+                memory_span.set_attribute("gen_ai.memory.record.count", 1)
+                if store_id is not None:
+                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if key is not None:
+                    memory_span.set_attribute("gen_ai.memory.record.id", key)
+                if provider is not None:
+                    memory_span.set_attribute("gen_ai.provider.name", provider)
+                if capture_content:
+                    memory_span.set_attribute(
+                        "gen_ai.memory.records",
+                        json.dumps([{"id": key, "content": content}], separators=(",", ":")),
+                    )
             return record
 
     def recall(
@@ -1144,6 +1207,9 @@ class Decision(AbstractContextManager["Decision"]):
         key: str,
         content: str,
         source: str | None = None,
+        store_id: str | None = None,
+        provider: str | None = None,
+        capture_content: bool = False,
     ) -> MemoryRecord:
         """Record a memory READ. Symmetric to :meth:`remember`.
 
@@ -1189,6 +1255,22 @@ class Decision(AbstractContextManager["Decision"]):
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
             span.add_event("fabric.memory", attributes=event_attrs)
+            with self._client.tracer.start_as_current_span(
+                "search_memory", kind=SpanKind.CLIENT
+            ) as memory_span:
+                memory_span.set_attribute("gen_ai.operation.name", "search_memory")
+                memory_span.set_attribute("gen_ai.memory.record.id", key)
+                memory_span.set_attribute("gen_ai.memory.record.count", 1)
+                if store_id is not None:
+                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if provider is not None:
+                    memory_span.set_attribute("gen_ai.provider.name", provider)
+                if capture_content:
+                    memory_span.set_attribute("gen_ai.memory.query.text", key)
+                    memory_span.set_attribute(
+                        "gen_ai.memory.records",
+                        json.dumps([{"id": key, "content": content}], separators=(",", ":")),
+                    )
             return record
 
     def forget(
@@ -1197,6 +1279,8 @@ class Decision(AbstractContextManager["Decision"]):
         key: str,
         *,
         tenant_scope: bool = False,
+        store_id: str | None = None,
+        provider: str | None = None,
     ) -> MemoryRecord:
         """Emit a right-to-erasure marker for a memory key.
 
@@ -1244,6 +1328,16 @@ class Decision(AbstractContextManager["Decision"]):
             if record.tenant_scope:
                 event_attrs["fabric.memory.tenant_scope"] = True
             span.add_event("fabric.memory", attributes=event_attrs)
+            with self._client.tracer.start_as_current_span(
+                "delete_memory", kind=SpanKind.CLIENT
+            ) as memory_span:
+                memory_span.set_attribute("gen_ai.operation.name", "delete_memory")
+                memory_span.set_attribute("gen_ai.memory.record.id", key)
+                memory_span.set_attribute("gen_ai.memory.record.count", 1)
+                if store_id is not None:
+                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if provider is not None:
+                    memory_span.set_attribute("gen_ai.provider.name", provider)
             return record
 
     # -- side effects ----------------------------------------------------
@@ -1489,6 +1583,9 @@ class Decision(AbstractContextManager["Decision"]):
         evaluator_version: str | None = None,
         confidence: float | None = None,
         payload_ref: str | None = None,
+        score_label: str | None = None,
+        explanation: str | None = None,
+        response_id: str | None = None,
     ) -> EvalRecord:
         """Attach a synchronous score to this decision span.
 
@@ -1547,6 +1644,17 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.eval.payload_ref"] = record.payload_ref
 
             span.add_event("fabric.eval", attributes=event_attrs)
+            gen_ai_attrs: dict[str, str | float] = {
+                "gen_ai.evaluation.name": record.dimension,
+                "gen_ai.evaluation.score.value": record.score,
+            }
+            if score_label is not None:
+                gen_ai_attrs["gen_ai.evaluation.score.label"] = score_label
+            if explanation is not None:
+                gen_ai_attrs["gen_ai.evaluation.explanation"] = explanation
+            if response_id is not None:
+                gen_ai_attrs["gen_ai.response.id"] = response_id
+            span.add_event("gen_ai.evaluation.result", attributes=gen_ai_attrs)
             return record
 
     # -- judge queue -----------------------------------------------------
@@ -2388,11 +2496,28 @@ class Decision(AbstractContextManager["Decision"]):
     def llm_call(
         self,
         *,
-        system: str,
+        provider: str | None = None,
+        system: str | None = None,
         model: str,
+        operation_name: str = "chat",
+        emit_legacy_attributes: bool = True,
         temperature: float | None = None,
         top_p: float | None = None,
+        top_k: int | None = None,
         max_tokens: int | None = None,
+        stream: bool | None = None,
+        reasoning_level: str | None = None,
+        previous_response_id: str | None = None,
+        encoding_formats: Sequence[str] | None = None,
+        output_type: str | None = None,
+        conversation_id: str | None = None,
+        conversation_compacted: bool | None = None,
+        prompt_name: str | None = None,
+        prompt_version: str | None = None,
+        system_instructions: object | None = None,
+        input_messages: object | None = None,
+        tool_definitions: object | None = None,
+        capture_content: bool = False,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -2403,12 +2528,12 @@ class Decision(AbstractContextManager["Decision"]):
         """Open a child span for one LLM API call.
 
         Returns an :class:`~fabric._calls.LLMCall` context manager that
-        opens ``fabric.llm_call`` (kind=CLIENT) under the current
-        decision span. The child span is populated with the
-        OpenTelemetry GenAI semantic conventions (``gen_ai.system``,
-        ``gen_ai.request.model``, etc.) and the matching ``fabric.llm.*``
-        mirrors so dashboards keyed on either namespace render
-        natively.
+        opens a dynamically named ``{operation} {model}`` span
+        (kind=CLIENT) under the current decision span. The child span is
+        populated with the OpenTelemetry GenAI semantic conventions
+        (``gen_ai.provider.name``, ``gen_ai.operation.name``,
+        ``gen_ai.request.model``, etc.) and matching ``fabric.llm.*``
+        compatibility mirrors.
 
         Usage::
 
@@ -2435,13 +2560,39 @@ class Decision(AbstractContextManager["Decision"]):
         # Ensure the decision is open so the child span parents
         # correctly.
         _ = self.span
+        resolved_provider = provider or system
+        if resolved_provider is None:
+            raise ValueError("llm_call: provider is required")
+        if provider is not None and system is not None and provider != system:
+            raise ValueError("llm_call: provider and deprecated system alias disagree")
         return LLMCall(
             tracer=self._client.tracer,
-            system=system,
+            meter=self._client.meter,
+            provider=resolved_provider,
             model=model,
+            operation_name=operation_name,
+            emit_legacy_attributes=emit_legacy_attributes,
             temperature=temperature,
             top_p=top_p,
+            top_k=top_k,
             max_tokens=max_tokens,
+            stream=stream,
+            reasoning_level=reasoning_level,
+            previous_response_id=previous_response_id,
+            encoding_formats=encoding_formats,
+            output_type=output_type,
+            conversation_id=conversation_id or self._session_id,
+            conversation_compacted=(
+                self._conversation_compacted
+                if conversation_compacted is None
+                else conversation_compacted
+            ),
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
+            system_instructions=system_instructions,
+            input_messages=input_messages,
+            tool_definitions=tool_definitions,
+            capture_content=capture_content,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,
@@ -2450,11 +2601,30 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
         )
 
+    def embeddings(
+        self,
+        *,
+        provider: str,
+        model: str,
+        encoding_formats: Sequence[str] | None = None,
+    ) -> LLMCall:
+        """Open a standard GenAI embeddings client span."""
+
+        return self.llm_call(
+            provider=provider,
+            model=model,
+            operation_name="embeddings",
+            encoding_formats=encoding_formats,
+        )
+
     def tool_call(
         self,
         name: str,
         *,
         call_id: str | None = None,
+        tool_type: str | None = None,
+        description: str | None = None,
+        capture_content: bool = False,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -2468,10 +2638,10 @@ class Decision(AbstractContextManager["Decision"]):
         """Open a child span for one tool / function call.
 
         Returns a :class:`~fabric._calls.ToolCall` context manager that
-        opens ``fabric.tool_call`` (kind=INTERNAL) under the current
-        decision span. The child span is populated with
-        ``gen_ai.tool.name`` and ``fabric.tool.name`` (plus optional
-        ``call.id`` if supplied).
+        opens a tool-named span (kind=INTERNAL) under the current
+        decision span. The child span carries
+        ``gen_ai.operation.name=execute_tool``, ``gen_ai.tool.name``,
+        and ``fabric.tool.name`` (plus an optional call id).
 
         Usage::
 
@@ -2489,16 +2659,21 @@ class Decision(AbstractContextManager["Decision"]):
 
         The generic cross-cutting kwargs (``tags`` / ``baseline`` /
         ``signature``, spec 023) apply here too: their results are stamped
-        on the child ``fabric.tool_call`` span. Calls that omit them stay
-        byte-identical to the pre-023 emission (additive).
+        on the child tool span. Calls that omit them stay byte-identical
+        to the pre-023 attribute emission (additive).
         """
         _ = self.span
         extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}
         apply_cross_cutting(extra, tags=tags, baseline=baseline, signature=signature)
         return ToolCall(
             tracer=self._client.tracer,
+            meter=self._client.meter,
             name=name,
             call_id=call_id,
+            tool_type=tool_type,
+            description=description,
+            agent_name=self._client.agent_name,
+            capture_content=capture_content,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,

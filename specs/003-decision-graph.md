@@ -1,8 +1,8 @@
 ---
 title: Decision Graph — Unified Provenance Artifact
-status: draft
-revision: 1
-last_updated: 2026-04-18
+status: accepted
+revision: 2
+last_updated: 2026-07-25
 owner: project-lead
 ---
 

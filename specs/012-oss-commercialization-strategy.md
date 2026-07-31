@@ -1,8 +1,8 @@
 ---
 title: PRD - Operational Infrastructure for Autonomous Systems
-status: draft
-revision: 2
-last_updated: 2026-05-14
+status: accepted
+revision: 3
+last_updated: 2026-07-25
 owner: product
 ---
 

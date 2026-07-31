@@ -51,10 +51,17 @@ hidden defaults. Missing-on-purpose to force a conscious deployer choice:
 | `tenant.id` is set | `--set tenant.id=...` |
 | Real update-agent signing key | `--set update-agent.config.allowPlaceholderKey=true` |
 | Presidio redact-socket provider | `--set otel-collector.fabric.redact.acceptMissingProvider=true` |
-| Exporter endpoint set | `--set otel-collector.exporter.acceptUnsetEndpoint=true` |
 
 If a guard fires, the failure message tells you exactly which field and
 why. Don't bypass guards in production.
+
+The exporter endpoint is **no longer** one of these guards. An unset
+`otel-collector.exporter.endpoint` renders the debug exporter and
+routes spans to the collector pod's stdout with a loud post-install
+warning, rather than failing the render — so the former
+`exporter.acceptUnsetEndpoint` escape hatch is gone. For a regulated
+profile that is still the wrong end state: set a real endpoint, since
+stdout is neither durable nor an audit trail.
 
 ## Deriving a custom profile
 

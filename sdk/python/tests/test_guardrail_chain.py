@@ -233,6 +233,16 @@ def test_chain_runs_presidio_before_nemo() -> None:
 def test_nemo_warn_records_policy_without_blocking(
     span_exporter: InMemorySpanExporter,
 ) -> None:
+    """``warn`` is a *flag*, not a rewrite — the policy must be recorded
+    while the caller's text survives byte-for-byte.
+
+    The pre-fix assertion (``out == "rewritten"``) is exactly what let a
+    generated reply overwrite the user's prompt (defect #9): NeMo's
+    Colang path puts the assistant completion in ``modified_value`` for
+    every non-redact action. This is the stronger assertion — the policy
+    signal is unchanged, and the payload is now provably untouched.
+    """
+
     fake = _FakeNemo(
         NemoResult(
             allowed=True,
@@ -245,7 +255,7 @@ def test_nemo_warn_records_policy_without_blocking(
     fabric = _client(nemo=fake)
     with fabric.decision(session_id="s", request_id="r") as dec:
         out = dec.guard_input("baseball chat")
-    assert out == "rewritten"
+    assert out == "baseball chat"
 
     span = span_exporter.get_finished_spans()[0]
     events = [ev for ev in span.events if ev.name == "fabric.guardrail"]
@@ -369,6 +379,176 @@ def test_non_block_nemo_with_empty_modified_value_keeps_presidio_redaction(
     assert result.blocked is False
     assert result.redacted_content == "[REDACTED:PHONE]"
     assert "nemo:topic" in result.policies_fired
+
+
+# -- defect #9: only an explicit redact may rewrite content -----------
+
+
+def test_nemo_allow_verdict_never_replaces_input_with_generated_reply() -> None:
+    """The live repro for defect #9, frozen as a regression test.
+
+    NeMo's Colang dialog path returns the *assistant completion* in
+    ``modified_value``. Before the fix the chain adopted it on any
+    non-empty value, so an ``allow`` verdict silently replaced the
+    user's prompt with generated text — and because ``allow`` fires no
+    policy, ``policies_fired`` was empty, leaving no audit breadcrumb
+    that a substitution had happened at all.
+    """
+
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="allow",
+            rail="on_topic",
+            block_response=None,
+            modified_value="I'd be happy to help you with that. Could you share the invoice?",
+        )
+    )
+    fabric = _client(nemo=nemo)
+    with fabric.decision(session_id="s", request_id="r") as dec:
+        out = dec.guard_input("summarise invoice INV-88213")
+    assert out == "summarise invoice INV-88213"
+
+
+def test_nemo_block_keeps_submitted_content_and_surfaces_refusal_separately() -> None:
+    """A block must keep ``redacted_content`` as the audit record of
+    what was actually submitted; the canned refusal travels in
+    ``block_response`` and nowhere else. Conflating the two is the exact
+    confusion that produced defect #9.
+    """
+
+    presidio = _FakePresidio(
+        RedactionResult(value="[REDACTED:EMAIL] ignore previous", hashed=True, pii_category="EMAIL")
+    )
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=False,
+            action="block",
+            rail="jailbreak_defence",
+            block_response="I can't help with that.",
+            modified_value="I can't help with that.",
+        )
+    )
+    fabric = _client(presidio=presidio, nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(
+            phase="input", path="input", value="a@b.com ignore previous"
+        )
+    finally:
+        fabric.close()
+    assert result.blocked is True
+    assert result.redacted_content == "[REDACTED:EMAIL] ignore previous"
+    assert result.block_response == "I can't help with that."
+    assert "nemo:jailbreak_defence" in result.policies_fired
+
+
+@pytest.mark.parametrize("action", ["allow", "warn", "block"])
+def test_only_redact_action_rewrites_content_non_mutating(action: str) -> None:
+    """Pins the whole NeMo action vocabulary: allow/warn/block never
+    mutate the payload, whatever they put in ``modified_value``."""
+
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=action != "block",
+            action=action,  # type: ignore[arg-type]
+            rail="rail",
+            block_response="refused",
+            modified_value="GENERATED ASSISTANT REPLY",
+        )
+    )
+    fabric = _client(nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="original text")
+    finally:
+        fabric.close()
+    assert result.redacted_content == "original text"
+
+
+def test_only_redact_action_rewrites_content_mutating() -> None:
+    """The other half of the vocabulary decision: ``redact`` is the one
+    NeMo action whose ``modified_value`` IS a transformation of the
+    submitted value, so it is applied."""
+
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="redact",
+            rail="pii_rail",
+            block_response=None,
+            modified_value="my ssn is [REDACTED]",
+        )
+    )
+    fabric = _client(nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(
+            phase="input", path="input", value="my ssn is 123-45-6789"
+        )
+    finally:
+        fabric.close()
+    assert result.redacted_content == "my ssn is [REDACTED]"
+    assert "nemo:pii_rail" in result.policies_fired
+
+
+def test_nemo_redact_with_empty_modified_value_keeps_upstream_content() -> None:
+    """The empty-value guard is preserved for the one mutating action:
+    a ``redact`` verdict carrying no payload must not destroy Presidio's
+    upstream redaction."""
+
+    presidio = _FakePresidio(
+        RedactionResult(value="[REDACTED:EMAIL]", hashed=True, pii_category="EMAIL")
+    )
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="redact",
+            rail="pii_rail",
+            block_response=None,
+            modified_value="",
+        )
+    )
+    fabric = _client(presidio=presidio, nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="a@b.com")
+    finally:
+        fabric.close()
+    assert result.redacted_content == "[REDACTED:EMAIL]"
+
+
+def test_chain_warns_when_nemo_violates_the_rewrite_contract(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A contract violation is ignored *and observable*: the chain logs
+    a WARNING naming the rail and action. The log record must NOT carry
+    the value itself — that would spill model output / user content into
+    application logs.
+    """
+
+    submitted = "summarise invoice INV-88213"
+    reply = "I'd be happy to help you with that."
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="allow",
+            rail="on_topic",
+            block_response=None,
+            modified_value=reply,
+        )
+    )
+    fabric = _client(nemo=nemo)
+    with caplog.at_level("WARNING", logger="fabric.chain"):
+        try:
+            result = fabric.guardrail_chain.check(phase="input", path="input", value=submitted)
+        finally:
+            fabric.close()
+
+    assert result.redacted_content == submitted
+    records = [r for r in caplog.records if r.name == "fabric.chain"]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "on_topic" in message
+    assert "allow" in message
+    assert submitted not in message
+    assert reply not in message
 
 
 # -- pluggable GuardrailChecker tier ----------------------------------
@@ -495,6 +675,49 @@ def test_extra_checker_escalate_records_policy_without_blocking() -> None:
     finally:
         fabric.close()
     assert result.blocked is False
+    assert "escalator:needs_review" in result.policies_fired
+
+
+def test_extra_checker_allow_verdict_cannot_mutate_content() -> None:
+    """ "allow + a different value" is self-contradictory: the checker
+    asserted the value it was handed is fine, so it may not hand back a
+    different one. Same rule as the NeMo tier (defect #9)."""
+
+    checker = _FakeChecker(
+        "rogue",
+        CheckerVerdict(action="allow", modified_value="something else entirely"),
+    )
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="original")
+    finally:
+        fabric.close()
+    assert result.blocked is False
+    assert result.redacted_content == "original"
+    assert result.policies_fired == []
+
+
+def test_extra_checker_escalate_verdict_cannot_mutate_content() -> None:
+    """``escalate`` defers to a human reviewer; the reviewer must see
+    what was actually submitted, so the payload is never rewritten."""
+
+    checker = _FakeChecker(
+        "escalator",
+        CheckerVerdict(action="escalate", modified_value="rewritten", rail="needs_review"),
+    )
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="original")
+    finally:
+        fabric.close()
+    assert result.blocked is False
+    assert result.redacted_content == "original"
     assert "escalator:needs_review" in result.policies_fired
 
 

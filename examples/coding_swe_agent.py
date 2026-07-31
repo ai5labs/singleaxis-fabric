@@ -25,12 +25,12 @@ Fabric primitives / attributes demonstrated
   -> fabric.guardrail event (redacts a leaked secret before the LLM sees it)
 * ``decision.record_retrieval(...)`` -> fabric.retrieval event (repo grep)
 * ``decision.llm_call(...)`` with step_type="plan" / "synthesize"
-  -> fabric.llm_call child span, fabric.step.type, gen_ai.* usage, cache,
+  -> dynamic GenAI LLM child span, fabric.step.type, gen_ai.* usage, cache,
      streaming and per-call retry attributes
 * ``decision.authorize_tool_call(...)`` -> fabric.tool.authorization event
   (a deny-by-default authorizer blocks `rm -rf`, allows the safe tools)
 * ``decision.tool_call(...)`` with step_type="act"/"observe" and step-level
-  retry metadata -> fabric.tool_call child spans, fabric.step.*,
+  retry metadata -> tool-named child spans, fabric.step.*,
   fabric.tool.error / error_category, fabric.tool.retry.count, idempotency
 * ``decision.evaluate_policy(...)`` -> fabric.policy.evaluation event
   (a change-management policy: edits to protected paths require approval)
@@ -323,7 +323,7 @@ def run_swe_agent(fab: Fabric, *, ticket: str) -> None:
             # -- PLAN step: ask the LLM for an approach -------------------
             plan_prompt = f"{SYSTEM_PROMPT}\n\nTicket: {safe_ticket}"
             with decision.llm_call(
-                system="fireworks",
+                provider="fireworks",
                 model=MODEL,
                 temperature=0.0,
                 max_tokens=512,
@@ -434,7 +434,7 @@ def run_swe_agent(fab: Fabric, *, ticket: str) -> None:
 
             # -- SYNTHESIZE step: ask the LLM to finalize the patch -------
             with decision.llm_call(
-                system="fireworks",
+                provider="fireworks",
                 model=MODEL,
                 temperature=0.0,
                 step_id="synth-1",
@@ -657,7 +657,11 @@ def run_assertions(spans: Sequence[ReadableSpan]) -> None:
     assert suppressed, "file_write SUPPRESS side effect missing from replay envelope"
 
     # -- child spans: plan/synthesize LLM calls + act/observe tool calls --
-    llm_spans = by_name.get("fabric.llm_call", [])
+    llm_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
     step_types = {dict(s.attributes or {})["fabric.step.type"] for s in llm_spans}
     assert {"plan", "synthesize"} <= step_types, (
         f"missing plan/synth steps: {step_types}"
@@ -675,7 +679,11 @@ def run_assertions(spans: Sequence[ReadableSpan]) -> None:
     assert s_attrs["fabric.llm.usage.cache_read_tokens"] >= 0
     assert s_attrs["fabric.llm.streaming.chunk_count"] == 12
 
-    tool_spans = by_name.get("fabric.tool_call", [])
+    tool_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    ]
     tool_step_types = {dict(s.attributes or {})["fabric.step.type"] for s in tool_spans}
     assert {"act", "observe"} <= tool_step_types
     # the failed first run_tests attempt recorded an exception on its span

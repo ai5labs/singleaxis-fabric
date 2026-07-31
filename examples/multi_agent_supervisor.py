@@ -285,7 +285,7 @@ def run_researcher(fab: Fabric, *, session_id: str, user_request: str) -> str:
 
         # The researcher LLM call — a "research" planning step.
         with d.llm_call(
-            system="deal-desk-research",
+            provider="deal-desk-research",
             model=MODEL,
             temperature=0.2,
             step_type="plan",
@@ -332,7 +332,7 @@ def run_analyst(fab: Fabric, *, session_id: str, findings: str) -> tuple[str, fl
         )
 
         with d.llm_call(
-            system="deal-desk-analyst",
+            provider="deal-desk-analyst",
             model=MODEL,
             temperature=0.1,
             step_type="reason",
@@ -384,7 +384,7 @@ def run_writer(fab: Fabric, *, session_id: str, analysis: str) -> None:
         attributes={"fabric.subagent": "writer"},
     ) as d:
         with d.llm_call(
-            system="deal-desk-writer",
+            provider="deal-desk-writer",
             model=MODEL,
             temperature=0.3,
             step_type="draft",
@@ -549,9 +549,10 @@ def print_audit_trail(spans: Sequence[ReadableSpan]) -> None:
             )
             print(f"      - {e.name:<26} {highlight}")
 
-    for c in by_name.get("fabric.llm_call", []) + by_name.get("fabric.tool_call", []):
+    genai_children = [s for s in spans if _attr(s, "gen_ai.operation.name") is not None]
+    for c in genai_children:
         step = _attr(c, "fabric.step.type")
-        name = _attr(c, "fabric.tool.name") or _attr(c, "fabric.llm.request.model")
+        name = _attr(c, "gen_ai.tool.name") or _attr(c, "gen_ai.request.model")
         print(f"[{c.name}]  step.type={step}  {name}")
 
     print("\n" + "=" * 74)
@@ -672,7 +673,7 @@ def run_assertions(spans: Sequence[ReadableSpan], execution_id: str) -> None:
         )
 
     # -- Child spans: step taxonomy + retry telemetry ------------------
-    llm_calls = by_name["fabric.llm_call"]
+    llm_calls = [s for s in spans if _attr(s, "gen_ai.operation.name") == "chat"]
     assert len(llm_calls) == 3, f"expected 3 llm_call spans, got {len(llm_calls)}"
     step_types = {_attr(c, "fabric.step.type") for c in llm_calls}
     assert step_types == {"plan", "reason", "draft"}, step_types
@@ -681,7 +682,9 @@ def run_assertions(spans: Sequence[ReadableSpan], execution_id: str) -> None:
     assert _attr(reason_call, "fabric.llm.retry.count") == 1
     assert _attr(reason_call, "fabric.llm.retry.reason") == "upstream_429"
 
-    tool_calls = by_name["fabric.tool_call"]
+    tool_calls = [
+        s for s in spans if _attr(s, "gen_ai.operation.name") == "execute_tool"
+    ]
     assert len(tool_calls) == 2, f"expected 2 tool_call spans, got {len(tool_calls)}"
     crm = next(c for c in tool_calls if _attr(c, "fabric.tool.name") == "crm_write")
     # The CRM step models attempt #2 with step-level retry lineage.

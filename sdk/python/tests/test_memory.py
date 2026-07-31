@@ -79,7 +79,7 @@ def test_remember_emits_span_event(span_exporter: InMemorySpanExporter) -> None:
             ttl_seconds=86400,
         )
 
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [ev for ev in span.events if ev.name == "fabric.memory"]
     assert len(events) == 1
     attrs = dict(events[0].attributes or {})
@@ -98,7 +98,11 @@ def test_remember_omits_optional_attrs_when_unset(
         dec.remember(kind="scratch", content="temp note")
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.memory"
     )
     attrs = dict(event.attributes or {})
     assert attrs["fabric.memory.kind"] == "scratch"
@@ -116,7 +120,12 @@ def test_remember_updates_rolling_span_aggregates(
         dec.remember(kind="semantic", content="b")
         dec.remember(kind="episodic", content="c")
 
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_MEMORY_WRITE_COUNT] == 3
     # Sorted, deduped.
     assert attrs[ATTR_MEMORY_KINDS] == ("episodic", "semantic")
@@ -140,7 +149,7 @@ def test_remember_never_exposes_raw_content_on_span(
     with client.decision(session_id="s", request_id="r") as dec:
         dec.remember(kind="episodic", content=raw)
 
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     all_values: list[object] = list((span.attributes or {}).values())
     for ev in span.events:
         all_values.extend((ev.attributes or {}).values())
@@ -173,7 +182,11 @@ def test_remember_emits_invalidates_attr(span_exporter: InMemorySpanExporter) ->
         )
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.memory"
     )
     attrs = dict(event.attributes or {})
     assert attrs["fabric.memory.invalidates"] == "old-key"
@@ -187,7 +200,11 @@ def test_remember_omits_invalidates_when_unset(
         dec.remember(kind="semantic", content="v")
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.memory"
     )
     assert "fabric.memory.invalidates" not in dict(event.attributes or {})
 
@@ -209,7 +226,11 @@ def test_forget_emits_erase_event(span_exporter: InMemorySpanExporter) -> None:
         dec.forget(MemoryKind.EPISODIC, "prefs/ui")
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.memory"
     )
     attrs = dict(event.attributes or {})
     assert attrs["fabric.memory.direction"] == "erase"
@@ -225,7 +246,11 @@ def test_forget_tenant_scope_marker(span_exporter: InMemorySpanExporter) -> None
         dec.forget("semantic", "tenant:acme", tenant_scope=True)
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.memory"
     )
     attrs = dict(event.attributes or {})
     assert attrs["fabric.memory.direction"] == "erase"
@@ -240,7 +265,12 @@ def test_forget_updates_erase_count(span_exporter: InMemorySpanExporter) -> None
         dec.forget("episodic", "k1")
         dec.forget("semantic", "k2", tenant_scope=True)
 
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_MEMORY_WRITE_COUNT] == 1
     assert attrs[ATTR_MEMORY_ERASE_COUNT] == 2
     assert attrs[ATTR_MEMORY_KINDS] == ("episodic", "semantic")
@@ -254,7 +284,7 @@ def test_forget_never_exposes_raw_content_on_span(
     with client.decision(session_id="s", request_id="r") as dec:
         dec.forget("episodic", raw_key)
 
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     # The key is a caller-supplied identifier and is carried verbatim;
     # assert no content_hash / hashed-content attribute leaked.
     event = next(ev for ev in span.events if ev.name == "fabric.memory")

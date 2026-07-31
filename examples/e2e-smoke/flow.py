@@ -95,7 +95,7 @@ def _run_decision(fabric: Fabric) -> str:
 
         # Child LLM span with fixed (fake) usage — no network LLM call.
         with decision.llm_call(
-            system="e2e-fake",
+            provider="e2e-fake",
             model="e2e-model-v1",
             temperature=0.0,
             max_tokens=128,

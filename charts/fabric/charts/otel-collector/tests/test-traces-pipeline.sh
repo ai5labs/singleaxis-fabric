@@ -17,9 +17,13 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_dir="$(cd "${here}/.." && pwd)"
 
-# Common required values: sampler hmac key (chart-time validator) and
-# exporter endpoint (no OSS default per chart README).
+# Common values. The sampler is off by default (no key to invent for a
+# bare install), so turn it on with a key to render the production-shape
+# pipeline. The exporter endpoint has no OSS default; set one so the
+# `otlphttp/fabric` exporter is rendered — with it empty the chart falls
+# back to the `debug` exporter instead, which is a different assertion.
 common_args=(
+  --set fabric.sampler.enabled=true
   --set fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
   --set exporter.endpoint=http://otlp.example:4318
 )

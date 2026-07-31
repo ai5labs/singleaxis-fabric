@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
@@ -27,6 +27,9 @@ _LOG = logging.getLogger("fabric")
 
 FABRIC_SDK_NAME = "singleaxis-fabric-python"
 """``service.name`` fallback applied when the host hasn't set one."""
+
+GEN_AI_SCHEMA_URL = "https://opentelemetry.io/schemas/gen-ai/1.42.0"
+"""Schema URL for the GenAI semantic conventions emitted by Fabric."""
 
 _MAX_ATTR_VALUE_LEN = 4096
 """Cap exported string-attribute length on the SDK's default provider so a
@@ -62,7 +65,21 @@ def _warn_if_noop_provider() -> None:
 def get_tracer() -> trace.Tracer:
     """Return the tracer the SDK emits spans with."""
     _warn_if_noop_provider()
-    return trace.get_tracer(FABRIC_SDK_NAME, __version__)
+    return trace.get_tracer(
+        FABRIC_SDK_NAME,
+        __version__,
+        schema_url=GEN_AI_SCHEMA_URL,
+    )
+
+
+def get_meter() -> metrics.Meter:
+    """Return the meter used for standard GenAI client instruments."""
+
+    return metrics.get_meter(
+        FABRIC_SDK_NAME,
+        __version__,
+        schema_url=GEN_AI_SCHEMA_URL,
+    )
 
 
 def install_default_provider(

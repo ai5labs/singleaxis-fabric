@@ -29,13 +29,22 @@ Response:
       "action": "allow",
       "rail": "jailbreak_defence",
       "block_response": null,
-      "modified_value": "<possibly-rewritten text>"
+      "modified_value": "<the submitted value; rewritten only on redact>"
     }
 
 ``action`` ∈ ``{allow, redact, block, warn}`` mirrors spec 005's
 ``GuardrailAction``. ``rail`` is the Colang rail id (e.g.
 ``off_topic``, ``refusal_policy``, ``jailbreak_defence``) — it is
 emitted on the OTel event as ``nemo:<rail>``.
+
+``modified_value`` is a transformation of the submitted value and MUST
+equal it byte-for-byte unless ``action == "redact"``. An assistant
+completion is **not** a modified value; a refusal belongs in
+``block_response``. The guardrail chain therefore honours
+``modified_value`` only on a ``redact`` action — an ``allow`` verdict can
+never change the payload. NeMo's Colang path returns
+``LLMRails.generate()`` output, so trusting it unconditionally silently
+replaced caller input with chat completions under ``allowed: true``.
 """
 
 from __future__ import annotations

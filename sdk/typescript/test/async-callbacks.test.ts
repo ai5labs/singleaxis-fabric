@@ -30,7 +30,6 @@ import {
   GEN_AI_USAGE_INPUT_TOKENS,
   GEN_AI_USAGE_OUTPUT_TOKENS,
   SPAN_NAME_DECISION,
-  SPAN_NAME_LLM_CALL,
 } from "../src/attributes.js";
 import { sha256Hex } from "../src/index.js";
 
@@ -76,6 +75,16 @@ function spanByName(name: string): ReadableSpan {
   return span;
 }
 
+function spanByOperation(operation: string): ReadableSpan {
+  const span = exporter
+    .getFinishedSpans()
+    .find((candidate) => candidate.attributes["gen_ai.operation.name"] === operation);
+  if (!span) {
+    throw new Error(`no finished GenAI ${operation} span`);
+  }
+  return span;
+}
+
 describe("async callback forms record after an await", () => {
   it("async llmCall: setUsage after an awaited microtask lands on the span", async () => {
     const f = fabric();
@@ -86,7 +95,7 @@ describe("async callback forms record after an await", () => {
       });
     });
 
-    const llm = spanByName(SPAN_NAME_LLM_CALL);
+    const llm = spanByOperation("chat");
     expect(llm.attributes[GEN_AI_USAGE_INPUT_TOKENS]).toBe(120);
     expect(llm.attributes[GEN_AI_USAGE_OUTPUT_TOKENS]).toBe(64);
     expect(llm.attributes[FABRIC_LLM_USAGE_INPUT_TOKENS]).toBe(120);
@@ -103,7 +112,7 @@ describe("async callback forms record after an await", () => {
       });
     });
 
-    const tool = spanByName("fabric.tool_call");
+    const tool = spanByOperation("execute_tool");
     expect(tool.attributes[FABRIC_TOOL_ARGS_HASH]).toBe(sha256Hex('{"query":"refunds"}'));
     expect(tool.attributes[FABRIC_TOOL_RESULT_HASH]).toBe(sha256Hex('{"hits":3}'));
   });
@@ -118,8 +127,8 @@ describe("async callback forms record after an await", () => {
     });
 
     const decision = spanByName(SPAN_NAME_DECISION);
-    const llm = spanByName(SPAN_NAME_LLM_CALL);
-    expect(llm.parentSpanId).toBe(decision.spanContext().spanId);
+    const llm = spanByOperation("chat");
+    expect(llm.parentSpanContext?.spanId).toBe(decision.spanContext().spanId);
     expect(llm.spanContext().traceId).toBe(decision.spanContext().traceId);
   });
 
@@ -135,7 +144,7 @@ describe("async callback forms record after an await", () => {
       }),
     ).rejects.toBe(boom);
 
-    const llm = spanByName(SPAN_NAME_LLM_CALL);
+    const llm = spanByOperation("chat");
     expect(llm.status.code).toBe(SpanStatusCode.ERROR);
     expect(llm.status.message).toBe("Error");
     expect(llm.events.some((e) => e.name === "exception")).toBe(true);
@@ -148,11 +157,13 @@ describe("async callback forms record after an await", () => {
       d.llmCall({ system: "anthropic", model: "claude-opus-4-8" }, (call) => {
         call.setUsage({ inputTokens: 10 });
         // The span must NOT be finished yet inside a sync body.
-        endedInsideCallback = exporter.getFinishedSpans().some((s) => s.name === SPAN_NAME_LLM_CALL);
+        endedInsideCallback = exporter
+          .getFinishedSpans()
+          .some((span) => span.attributes["gen_ai.operation.name"] === "chat");
       });
     });
     expect(endedInsideCallback).toBe(false);
-    const llm = spanByName(SPAN_NAME_LLM_CALL);
+    const llm = spanByOperation("chat");
     expect(llm.attributes[GEN_AI_USAGE_INPUT_TOKENS]).toBe(10);
   });
 });

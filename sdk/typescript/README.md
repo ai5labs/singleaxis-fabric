@@ -145,8 +145,8 @@ fabric.decision({ sessionId: "sess-1", requestId: "req-1", userId: "user-42" }, 
 });
 ```
 
-One `fabric.decision` span lands per agent turn, with `fabric.llm_call`
-and `fabric.tool_call` children nested under it.
+One `fabric.decision` span lands per agent turn, with dynamically named
+`{operation} {model}` and tool-named `execute_tool` children nested under it.
 
 For async work, `await` the callback (`await decision.llmCall(opts, async
 (call) => { ... })`) — the span now stays open until the awaited body

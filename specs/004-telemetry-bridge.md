@@ -1,8 +1,8 @@
 ---
 title: Telemetry Bridge & Sanitized Egress
-status: draft
-revision: 2
-last_updated: 2026-04-18
+status: accepted
+revision: 3
+last_updated: 2026-07-25
 owner: project-lead
 ---
 

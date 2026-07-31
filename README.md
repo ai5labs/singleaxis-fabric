@@ -19,6 +19,7 @@ evidence generation land with the SingleAxis commercial control plane.
 
 [Quickstart](docs/quickstart.md) ·
 [Architecture](docs/architecture.md) ·
+[GenAI conventions](docs/genai-semantic-conventions.md) ·
 [Deployment](docs/deployment.md) ·
 [API stability](docs/api-stability.md) ·
 [Reference agent](examples/reference-agent/) ·
@@ -44,8 +45,12 @@ insurers, public sector — keep building the same five things in-house:
 5. A deployment shape that doesn't make the agent request path wait on
    any of it.
 
-Fabric ships all five as a drop-in library, sidecars, and a Helm chart.
-Apache-2.0. Zero-signup. Works offline.
+Fabric ships the substrate for all five as a drop-in library, sidecars,
+and a Helm chart. Apache-2.0. Zero-signup. Works offline. The one
+partial is (3): the OSS distribution gives you the pause-and-emit
+primitive and the adapter wiring, not the reviewer queue or the
+signed-verdict resume — those are commercial (see
+[`specs/007-escalation-workflow.md`](specs/007-escalation-workflow.md)).
 
 ## What you get
 
@@ -70,9 +75,10 @@ Apache-2.0. Zero-signup. Works offline.
   never leaves the span), allowlisted attributes, rolling counters on
   the decision span. Maps cleanly onto a provenance graph.
 - **OTel Collector distribution** — preconfigured with the Fabric
-  processor chain (tail sampling, attribute allowlisting, tenant
-  scoping). Fans out to Langfuse, Tempo, Jaeger, Honeycomb, Datadog —
-  anything that speaks OTLP.
+  processor chain (attribute allowlisting, tenant scoping, redaction,
+  policy hooks, plus HMAC tail sampling that ships off so a default
+  install keeps every event). Fans out to Tempo, Jaeger, Honeycomb,
+  Datadog — anything that speaks OTLP/HTTP. Installs by default.
 - **Helm chart with regulatory profiles** — `permissive-dev` for
   evaluation and `eu-ai-act-high-risk` for production under the EU AI
   Act ship today. NIST AI RMF, ISO/IEC 42001, SR 11-7, and HIPAA
@@ -143,7 +149,7 @@ with fabric.decision(
     # gen_ai.* semantic conventions (model, token counts, finish
     # reason) — Phoenix's LLM view, Langfuse cost dashboards, and
     # any backend keyed on either namespace render natively.
-    with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+    with decision.llm_call(provider="anthropic", model="claude-opus-4-8") as call:
         answer = "..."  # call your LLM
         call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
 
@@ -181,6 +187,10 @@ git clone https://github.com/singleaxis/singleaxis-fabric.git
 cd singleaxis-fabric/charts/fabric
 helm dependency build
 
+# Bare install — the OTel Collector comes up with no further flags:
+helm install fabric . \
+    --namespace fabric-system --create-namespace
+
 # Dev / evaluation cluster:
 helm install fabric . \
     --namespace fabric-system --create-namespace \
@@ -193,10 +203,34 @@ helm install fabric . \
     --set tenant.id=<uuid>
 ```
 
-The `otel-collector` subchart also publishes as an OCI artifact at
-`oci://ghcr.io/singleaxis/charts/otel-collector` for teams that only
-want the collector distribution. Umbrella-chart OCI publishing lands
-in a following release.
+**What a bare install actually does.** The collector installs and
+starts receiving. With no `otel-collector.exporter.endpoint` set, it
+writes spans to its own pod stdout (`kubectl logs`) via the OTel debug
+exporter, and `NOTES.txt` prints a loud warning saying so. Nothing is
+silently dropped — but **stdout is not durable and is not an audit
+trail**. Point it at a real backend before you rely on retention:
+
+```bash
+helm upgrade fabric . --reuse-values \
+    --set otel-collector.exporter.endpoint=https://<your-otlp-backend>
+```
+
+Everything else — Presidio and NeMo sidecars, Langfuse, the red-team
+runner, the update agent — stays **opt-in**, because each needs a
+secret, a key, or an external database you have to supply. The
+`langfuse` subchart in particular does **not** bundle Postgres; see
+[`docs/exporting-to-your-observability-backend.md`](docs/exporting-to-your-observability-backend.md).
+
+The high-risk profile **fails closed**: as printed, that last command
+stops at render until you also supply a real Ed25519 release key and a
+Presidio redaction socket provider. The two required `--set` flags —
+and the template-only flags for pre-install review — are in
+[`docs/deployment.md`](docs/deployment.md).
+
+The umbrella chart also publishes as a cosign-signed OCI artifact at
+`oci://ghcr.io/singleaxis/charts/fabric` on each release. Subcharts
+are bundled inside it and are not published or installable on their
+own.
 
 Chart contents, profiles, and latency posture: [`charts/fabric/README.md`](charts/fabric/README.md).
 Full deployment guide including HA, DR, and upgrade posture:
@@ -231,10 +265,22 @@ Authoritative design: [`specs/002-architecture.md`](specs/002-architecture.md).
 
 ## Status
 
-**Beta — Phase 1a shipping.** The `specs/` directory is the
-design of record. What's in this repo runs and is tested; anything
-marked "Phase 2" or "roadmap" is explicitly called out. We'd rather
-under-document than overclaim.
+**Beta — v0.6.x.** The `specs/` directory is the design of record.
+What's in this repo runs and is tested; anything marked "roadmap" is
+explicitly called out. We'd rather under-document than overclaim.
+
+Two things worth knowing before you plan around them:
+
+- **The TypeScript SDK is not at parity with the Python SDK, and is not
+  a drop-in substitute.** It is an *emit-surface-only* capture library:
+  7 modules against Python's 58, reproducing 19 of the 39 shared
+  conformance goldens. It has no framework adapters, no guardrail or
+  policy transports, no MCP instrumentation, and no host-side I/O
+  helpers, and it is not published to npm. Outstanding work is tracked
+  in [`docs/typescript-parity-backlog.md`](docs/typescript-parity-backlog.md).
+  There is no Go SDK.
+- **Latency figures in this README are design budgets, not measured
+  P99s.** The benchmark suite is opt-in and is not a CI gate.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's in the current release.
 
@@ -253,8 +299,8 @@ plus:
   and machine-dependent — no timing pass/fail threshold);
 - a **live end-to-end gate** in CI: a real SDK `Decision` is exported
   over OTLP to an in-cluster collector and the `fabric.decision` span
-  (plus a `fabric.llm_call` child and the `fabric.tenant_id` attribute)
-  is asserted to land intact.
+  (plus a dynamically named GenAI child and the `fabric.tenant_id`
+  attribute) is asserted to land intact.
 
 ## What this OSS distribution covers
 

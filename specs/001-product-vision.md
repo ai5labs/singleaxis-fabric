@@ -1,8 +1,8 @@
 ---
 title: Product Vision & Positioning
-status: draft
-revision: 3
-last_updated: 2026-04-26
+status: accepted
+revision: 4
+last_updated: 2026-07-25
 owner: project-lead
 ---
 

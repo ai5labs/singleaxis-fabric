@@ -20,9 +20,12 @@ helm install fabric . \
 # Regulated workloads (EU AI Act high-risk):
 #   - REPLACE the trustedKey publicKey with the real release Ed25519
 #     public key (base64). The chart fails-closed otherwise.
-#   - DEPLOY the Presidio sidecar separately (the umbrella does not
-#     bundle it yet) and set redact.existingSocketProvider to its
-#     resource name.
+#   - PROVIDE a Presidio sidecar. The umbrella bundles the subchart,
+#     but this profile does not enable it (it needs a real tenant HMAC
+#     key). Either enable it — `--set presidioSidecar.enabled=true`
+#     plus `--set presidio-sidecar.tenantKey.existingSecret=<secret>` —
+#     or point redact.existingSocketProvider at a sidecar you manage
+#     yourself.
 helm install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
@@ -48,12 +51,14 @@ re-validate at startup and refuse to run with a placeholder key or a
 missing redact socket — a real `helm install` cannot bypass either
 check even if the renderer was told to.
 
-Two regulatory profiles ship in Phase 1:
+Two regulatory profiles ship today:
 
 - `permissive-dev` — local / evaluation / non-regulated. Loose
-  sampling, judges off, no retention constraints.
-- `eu-ai-act-high-risk` — EU AI Act high-risk systems. Full retention,
-  judges on, escalation workflow on, tightened guardrail chain.
+  sampling, no retention constraints.
+- `eu-ai-act-high-risk` — EU AI Act high-risk systems. Deny-default
+  NetworkPolicy, tightened guardrail chain, pinned sampling, red-team
+  cadence. Judge workers and the escalation service are **not** in this
+  distribution; the profile configures only the OSS substrate.
 
 Other profiles (NIST AI RMF, ISO 42001, SR 11-7, HIPAA) land
 profile-by-profile as rubric content does. See the chart
@@ -91,10 +96,10 @@ what makes the evidence collection automatic.
 
 ## Operational posture
 
-| Concern | Phase 1a state | Pointer |
-|---------|----------------|---------|
-| Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice | [`operations/dr.md`](operations/dr.md) |
-| Upgrade channel | Manual `helm upgrade` in Phase 1a; signed manifest channel + Update Agent in Phase 2 | Chart [`README`](../charts/fabric/README.md) |
+| Concern | Current state (v0.6.x) | Pointer |
+|---------|------------------------|---------|
+| Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice. A DR runbook ships; the wider runbook set (upgrade, rollback, key rotation, collector backpressure) does not yet | [`operations/dr.md`](operations/dr.md) |
+| Upgrade channel | Manual `helm upgrade`. The signed-manifest Update Agent ships as an opt-in subchart (`updateAgent.enabled=true`, requires a real Ed25519 signing key) | Chart [`README`](../charts/fabric/README.md) |
 | High availability | `profile.availability: ha` opt-in (3-node NATS, replicated Postgres, ≥2 worker replicas) | [`specs/008-deployment-model.md`](../specs/008-deployment-model.md) |
 | Image signing | Cosign (keyless via Fulcio), SLSA build provenance, SBOM shipped from `0.1.0`; Helm `.prov` on roadmap | [`SECURITY.md`](../SECURITY.md) §Release signing |
 
@@ -102,6 +107,10 @@ what makes the evidence collection automatic.
 
 Helm `.prov` provenance files (cosign signing of OCI charts is the
 current path); NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles;
-Decision Graph and Telemetry Bridge subcharts; umbrella-chart OCI
-publishing. See the chart README and spec 008 for current Phase 2
-scope.
+Decision Graph and Telemetry Bridge subcharts. See the chart README
+and spec 008 for current Phase 2 scope.
+
+The umbrella chart itself **does** publish as a cosign-signed OCI
+artifact at `oci://ghcr.io/singleaxis/charts/fabric` on each release.
+Subcharts are bundled inside it and are not published or installable
+on their own.

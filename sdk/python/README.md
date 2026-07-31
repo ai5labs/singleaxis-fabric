@@ -36,10 +36,11 @@ Beta — **Phase 1a shipping.**
   the Colang / LLM checks never see raw PII. May block
   (`action == "block"`), with the canned response surfaced on the
   `GuardrailResult`.
-- LLM-call instrumentation: `Decision.llm_call(system=..., model=...)`
-  opens a `fabric.llm_call` child span (kind=CLIENT) populated with
+- LLM-call instrumentation: `Decision.llm_call(provider=..., model=...)`
+  opens a `{operation} {model}` child span (kind=CLIENT) populated with
   the OpenTelemetry GenAI semantic conventions
-  (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`,
+  (`gen_ai.provider.name`, `gen_ai.operation.name`, `gen_ai.request.model`,
+  `gen_ai.usage.input_tokens`,
   `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`)
   alongside `fabric.llm.*` mirrors. Phoenix LLM views, Langfuse cost
   dashboards, and any backend keying off either namespace render
@@ -47,7 +48,8 @@ Beta — **Phase 1a shipping.**
   `set_usage(...)`, `set_response_model(...)`, and `set_attribute(...)`
   for attaching response data on exit.
 - Tool-call instrumentation: `Decision.tool_call(name, call_id=...)`
-  follows the same pattern with `gen_ai.tool.*` + `fabric.tool.*`
+  opens a tool-named `execute_tool` child span with `gen_ai.tool.*` +
+  `fabric.tool.*`
   conventions. Helpful for instrumenting function/tool invocations
   that happen inside an agent turn.
 - OTel helpers: `get_tracer`, `install_default_provider`
@@ -187,7 +189,7 @@ LangGraph and Agent Framework adapters use this async surface.
 async with fabric.decision(session_id=sess, request_id=req) as decision:
     safe_input = await decision.aguard_input(req.body)
 
-    async with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+    async with decision.llm_call(provider="anthropic", model="claude-opus-4-7") as call:
         output = await my_async_llm.complete(safe_input)
         call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
 

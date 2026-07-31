@@ -16,11 +16,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from ._chain import GuardrailChain
-from ._id_validators import warn_if_pii_shaped
+from ._id_validators import check_identifier, warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
-from .tracing import get_tracer
+from .tracing import get_meter, get_tracer
 
 if TYPE_CHECKING:
+    from opentelemetry.metrics import Meter
     from opentelemetry.trace import Tracer
 
     from .content_store import ContentStore
@@ -49,10 +50,23 @@ class FabricConfig:
     """Resolved, validated configuration for a :class:`Fabric` client.
 
     Constructed by :meth:`Fabric.from_env` or by the caller directly.
+
+    ``tenant_id`` and ``agent_id`` are validated on construction. They
+    are whitespace-stripped, must be non-empty, and must not be a
+    placeholder: stringified absence (``undefined``, ``null``, ``none``,
+    ``nil``, ``nan``, ``n/a``, ``(null)``) or an unsubstituted template
+    (``${TENANT}``, ``{{ tenant }}``, ``<your-tenant>``, ``%s``) raises
+    :class:`ValueError`. Copy-paste markers such as ``changeme`` warn
+    but are accepted. Length, character set, case and environment-ish
+    names such as ``staging`` are deliberately **not** validated — see
+    :mod:`fabric._id_validators` for the full rationale.
     """
 
     tenant_id: str
     agent_id: str
+    agent_name: str | None = None
+    agent_version: str | None = None
+    agent_description: str | None = None
     profile: str = DEFAULT_PROFILE
     workflow_id: str | None = None
     execution_id: str | None = None
@@ -80,6 +94,10 @@ class FabricConfig:
             object.__setattr__(self, "tenant_id", self.tenant_id.strip())
         if isinstance(self.agent_id, str):
             object.__setattr__(self, "agent_id", self.agent_id.strip())
+        for attr in ("agent_name", "agent_version", "agent_description"):
+            value = getattr(self, attr)
+            if isinstance(value, str):
+                object.__setattr__(self, attr, value.strip() or None)
         if isinstance(self.profile, str):
             object.__setattr__(self, "profile", self.profile.strip())
         for attr in (
@@ -103,6 +121,16 @@ class FabricConfig:
             raise ValueError("agent_id is required (empty or whitespace only)")
         if not self.profile:
             raise ValueError("profile is required (empty or whitespace only)")
+        # Placeholder rejection — tenant_id and agent_id partition every
+        # span, audit record and downstream isolation check, so an unset
+        # variable rendered as "undefined" / "${TENANT}" must fail on
+        # startup rather than silently merge unrelated tenants. Only the
+        # two partition keys are checked; profile is a closed set the
+        # sidecars validate, and the optional execution_* ids are
+        # correlation hints, not partition keys. Runs after the strip and
+        # empty checks so we never report a value we already rejected.
+        check_identifier("tenant_id", self.tenant_id)
+        check_identifier("agent_id", self.agent_id)
         # PII shape warnings — only after the strip+empty checks above
         # so we don't warn on values we're about to reject anyway. See
         # specs/016-foundational-fixes.md §4.5.
@@ -138,6 +166,7 @@ class Fabric:
         config: FabricConfig,
         *,
         tracer: Tracer | None = None,
+        meter: Meter | None = None,
         presidio: PresidioClient | None = None,
         nemo: NemoClient | None = None,
         guardrail_checkers: list[GuardrailChecker] | None = None,
@@ -145,6 +174,7 @@ class Fabric:
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
+        self._meter = meter or get_meter()
         # Dual-pipeline content store (spec 012 §Content vs trace pipeline).
         # Optional and not auto-wired onto events yet — a follow-up (Wave 3)
         # stamps content_ref URIs onto events using this. Exposed here so the
@@ -233,6 +263,18 @@ class Fabric:
         return self._config.agent_id
 
     @property
+    def agent_name(self) -> str:
+        return self._config.agent_name or self._config.agent_id
+
+    @property
+    def agent_version(self) -> str | None:
+        return self._config.agent_version
+
+    @property
+    def agent_description(self) -> str | None:
+        return self._config.agent_description
+
+    @property
     def profile(self) -> str:
         return self._config.profile
 
@@ -246,6 +288,8 @@ class Fabric:
         decision_id: str | None = None,
         execution_id: str | None = None,
         workflow_id: str | None = None,
+        workflow_name: str | None = None,
+        conversation_compacted: bool = False,
     ) -> Decision:
         """Open a new :class:`~fabric.decision.Decision` context.
 
@@ -276,6 +320,8 @@ class Fabric:
             decision_id=decision_id,
             execution_id=execution_id,
             workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            conversation_compacted=conversation_compacted,
         )
 
     def execution(
@@ -329,6 +375,12 @@ class Fabric:
         """Tracer the SDK emits spans on. Primarily for advanced hosts
         that want to co-locate custom spans under the SDK's scope."""
         return self._tracer
+
+    @property
+    def meter(self) -> Meter:
+        """Meter used for OpenTelemetry GenAI metric instruments."""
+
+        return self._meter
 
     @property
     def guardrail_chain(self) -> GuardrailChain:

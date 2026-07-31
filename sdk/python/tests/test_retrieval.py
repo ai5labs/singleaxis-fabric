@@ -94,7 +94,7 @@ def test_record_retrieval_emits_span_event(span_exporter: InMemorySpanExporter) 
             latency_ms=87,
         )
 
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [ev for ev in span.events if ev.name == "fabric.retrieval"]
     assert len(events) == 1
     attrs = dict(events[0].attributes or {})
@@ -130,7 +130,11 @@ def test_record_retrieval_omits_optional_attrs_when_unset(
         dec.record_retrieval("kg", query="entity:Q42", result_count=0)
 
     event = next(
-        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.retrieval"
+        ev
+        for ev in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
+        if ev.name == "fabric.retrieval"
     )
     attrs = dict(event.attributes or {})
     assert attrs["fabric.retrieval.source"] == "kg"
@@ -149,7 +153,12 @@ def test_record_retrieval_updates_rolling_span_aggregates(
         dec.record_retrieval("kg", query="q2", result_count=1)
         dec.record_retrieval("rag", query="q3", result_count=0)
 
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_RETRIEVAL_COUNT] == 3
     # Sorted, deduped.
     assert attrs[ATTR_RETRIEVAL_SOURCES] == ("kg", "rag")
@@ -173,7 +182,7 @@ def test_record_retrieval_never_exposes_raw_query_on_span(
     with client.decision(session_id="s", request_id="r") as dec:
         dec.record_retrieval("rag", query=raw_query, result_count=1)
 
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     all_values: list[object] = list((span.attributes or {}).values())
     for ev in span.events:
         all_values.extend((ev.attributes or {}).values())

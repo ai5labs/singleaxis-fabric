@@ -133,6 +133,22 @@ fabric:
   # recommended outside dev) or `hmacKeySecret` (Secret name + key)
   # must be set when `.enabled: true`.
   #
+  # DEFAULT IS OFF. The collector now installs by default (see the
+  # umbrella's `otelCollector.enabled`), and this processor cannot
+  # render without a key an operator has to supply. Auto-generating one
+  # is not an option: a `randAlphaNum` key would rotate on every
+  # `helm upgrade`, silently changing every deterministic sampling
+  # decision. Off is also the conservative choice for an audit trail —
+  # the sampler REDUCES data (`rates.decision_summary: 0.1` drops 90%
+  # of decision summaries), so a default install keeps everything.
+  #
+  # Turn it on with a key once telemetry volume is the problem:
+  #   --set otel-collector.fabric.sampler.enabled=true \
+  #   --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
+  #
+  # Both shipped profiles set `enabled` explicitly, so neither is
+  # affected by this default.
+  #
   # `hmacKey` must be a 64-character lowercase hex string (32 bytes).
   # Generate one with:
   #
@@ -144,7 +160,7 @@ fabric:
   # inline value (avoids the key landing in rendered manifests, Helm
   # release storage, and GitOps history).
   sampler:
-    enabled: true
+    enabled: false
     hmacKey: ""
     hmacKeySecret:
       name: ""
@@ -161,15 +177,18 @@ fabric:
 # IMPORTANT: there is no default that works in an L1-only OSS deploy.
 # The historical default `http://fabric-ingest:8080` resolved to the
 # SingleAxis commercial Telemetry Bridge service, which is NOT shipped
-# in this OSS distribution. Leaving the field unset (empty string) is
-# treated as a render-time error so an installer cannot accidentally
-# ship a deployment that drops every span on the floor.
+# in this OSS distribution.
+#
+# WHAT HAPPENS WHEN THIS IS EMPTY: the `otlphttp/fabric` exporter is
+# not rendered at all, and the pipelines fall back to the `debug`
+# exporter. Spans go to the collector pod's stdout and are readable
+# with `kubectl logs`; NOTES.txt prints a loud post-install warning.
+# Nothing is silently dropped, but stdout is NOT durable and is NOT an
+# audit trail — it is a dev posture only. Set a real endpoint before
+# you rely on any retention or compliance claim.
 #
 # Set this to whichever OTLP/HTTP backend the operator wants to fan
 # out to:
-#
-#   --set otel-collector.exporter.endpoint=http://langfuse:3000
-#       (the bundled Langfuse subchart in this umbrella, default port)
 #
 #   --set otel-collector.exporter.endpoint=https://otlp.<datadog>.com:443
 #       (Datadog OTLP intake)
@@ -180,13 +199,30 @@ fabric:
 #   --set otel-collector.exporter.endpoint=http://your-collector:4318
 #       (your own collector chain)
 #
+# The bundled `langfuse` subchart is NOT a drop-in OTLP sink: it is
+# opt-in, needs an external Postgres DSN, and its Service is named
+# `<release>-langfuse` (not `langfuse`). Whether the pinned upstream
+# version accepts OTLP/HTTP on /v1/traces at all is unresolved — see
+# the chart README. Do not point this at it without checking.
+#
 # For partner deployments running the SingleAxis commercial Telemetry
 # Bridge, use the Bridge's ingress endpoint here.
 exporter:
   endpoint: ""
   insecure: true
+  # Fail the render when `endpoint` is empty instead of falling back to
+  # the debug exporter. Default false, so a bare install works and is
+  # loudly warned about. Profiles that make a retention or compliance
+  # claim set this true — pod stdout is not an audit trail, and a
+  # regulated deployment should be forced to name its backend rather
+  # than quietly inherit a dev posture. `eu-ai-act-high-risk` sets it.
+  requireEndpoint: false
 
 # Also write to the debug exporter? Useful in dev, noisy in prod.
+# NOTE: the debug exporter is added automatically whenever
+# `exporter.endpoint` is empty, regardless of this flag — that is the
+# no-silent-drop fallback. This flag adds it ALONGSIDE a configured
+# OTLP endpoint.
 debugExporter:
   enabled: false
   verbosity: basic

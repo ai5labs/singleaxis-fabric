@@ -58,8 +58,8 @@ as a map to the primitive you want to learn:
 | `fabric.execution` span + status | `multi_agent_supervisor`, `human_in_the_loop_approval` |
 | execution `attempt_id` / `attempt` / `retry.*` | `multi_agent_supervisor` |
 | `fabric.step.type` / `step.id` / step retry | `coding_swe_agent` |
-| `fabric.llm_call` (usage, cache, streaming, retry) | `data_analysis_agent`, `customer_support_agent` |
-| `fabric.tool_call` (idempotency, error category, retry) | `coding_swe_agent`, `customer_support_agent` |
+| Dynamic GenAI LLM spans (usage, cache, streaming, retry) | `data_analysis_agent`, `customer_support_agent` |
+| Tool-named `execute_tool` spans (idempotency, error category, retry) | `coding_swe_agent`, `customer_support_agent` |
 | guardrail event + `record_block` / `raise_for_block` | `customer_support_agent`, `content_governance_agent` |
 | `fabric.retrieval` (hashed query) | `rag_knowledge_assistant`, `customer_support_agent` |
 | memory read / write / **erase** / **invalidate** | `rag_knowledge_assistant`, `content_governance_agent` |

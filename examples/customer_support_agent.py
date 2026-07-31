@@ -29,11 +29,11 @@ Fabric primitives demonstrated
 * ``decision.record_block`` / ``raise_for_block`` — canonical guardrail block
 * ``decision.record_retrieval(...)``       — KB / RAG provenance (hashed query)
 * ``decision.remember`` / ``recall``       — long-term memory write/read (hashed)
-* ``decision.llm_call(...)``               — child fabric.llm_call span + GenAI attrs,
+* ``decision.llm_call(...)``               — dynamic GenAI child span + standard attrs,
                                              set_usage / set_cache_usage / set_streaming
 * ``decision.authorize_tool_call(...)``    — pre-execution binary tool gate
 * ``decision.evaluate_policy(...)``        — 5-value policy verdict (refund engine)
-* ``decision.tool_call(...)``              — child fabric.tool_call span, set_idempotency,
+* ``decision.tool_call(...)``              — tool-named child span, set_idempotency,
                                              set_result_count, record_error/ToolErrorCategory,
                                              set_retry
 * ``decision.record_side_effect(...)``     — the committed refund (parent_tool_call_id,
@@ -52,7 +52,7 @@ Telemetry shape (what the asserts verify)
 ``fabric.policy.evaluation``, ``fabric.tool.authorization``,
 ``fabric.side_effect``, ``fabric.escalation``, ``fabric.eval``,
 ``fabric.judge.queued``, ``fabric.checkpoint``, ``fabric.replay``; and the
-child ``fabric.llm_call`` / ``fabric.tool_call`` spans with ``fabric.step.type``.
+dynamic GenAI child spans with ``fabric.step.type``.
 
 How to run
 ----------
@@ -404,7 +404,7 @@ def handle_refund_turn(
         # Wrap in an llm_call child span carrying GenAI semantic-convention
         # attributes plus the fabric.llm.* mirrors.
         with decision.llm_call(
-            system="openai-compatible",
+            provider="openai-compatible",
             model=MODEL,
             temperature=0.2,
             max_tokens=256,
@@ -691,8 +691,10 @@ def run_assertions(spans: list[ReadableSpan]) -> None:
     assert not any(e.name == "fabric.side_effect" for e in escalated.events)
 
     # --- child spans: llm_call + tool_call with step taxonomy -------------
-    llm_spans = [s for s in spans if s.name == "fabric.llm_call"]
-    assert llm_spans, "expected fabric.llm_call child spans"
+    llm_spans = [
+        s for s in spans if s.attributes.get("gen_ai.operation.name") == "chat"
+    ]
+    assert llm_spans, "expected GenAI chat child spans"
     llm = llm_spans[0]
     assert llm.attributes["gen_ai.request.model"] == MODEL
     assert llm.attributes["fabric.step.type"] == "llm_call"
@@ -701,7 +703,9 @@ def run_assertions(spans: list[ReadableSpan]) -> None:
     assert llm.attributes["fabric.llm.usage.cache_read_tokens"] == 96
     assert llm.attributes["fabric.llm.streaming.chunk_count"] == 7
 
-    tool_spans = [s for s in spans if s.name == "fabric.tool_call"]
+    tool_spans = [
+        s for s in spans if s.attributes.get("gen_ai.operation.name") == "execute_tool"
+    ]
     assert any(t.attributes.get("fabric.step.type") == "retrieve" for t in tool_spans)
     refund_tool = next(
         t for t in tool_spans if t.attributes.get("fabric.tool.name") == "issue_refund"

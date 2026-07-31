@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ._util import hash_text, resolve_venv_python
 from .config import SuiteConfig, TargetConfig
-from .results import Finding, ProbeResult, Severity, Verdict
+from .results import CaptureStatus, Finding, ProbeResult, Severity, Verdict
 
 # Timeout for the venv smoke-import probe. Probe execution itself uses
 # ``target.timeout_seconds`` per attempt.
@@ -83,8 +83,6 @@ class PyritSuite:
                     findings=[
                         Finding(
                             attempt_id="n/a",
-                            prompt_hash="",
-                            response_hash="",
                             severity=Severity.INFO,
                             notes=str(e),
                         )
@@ -97,6 +95,7 @@ class PyritSuite:
                     attempt_id=a.attempt_id,
                     prompt_hash=hash_text(a.prompt),
                     response_hash=hash_text(a.response),
+                    capture_status=CaptureStatus.CAPTURED,
                     severity=_map_severity(a.score_value),
                     notes=a.scorer or "",
                 )
@@ -137,8 +136,6 @@ def _error_result(scenario: str, note: str) -> ProbeResult:
         findings=[
             Finding(
                 attempt_id="n/a",
-                prompt_hash="",
-                response_hash="",
                 severity=Severity.INFO,
                 notes=note,
             )

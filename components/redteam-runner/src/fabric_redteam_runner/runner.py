@@ -65,8 +65,6 @@ class Runner:
                         findings=[
                             Finding(
                                 attempt_id="n/a",
-                                prompt_hash="",
-                                response_hash="",
                                 severity=Severity.INFO,
                                 notes=f"no driver registered for suite {suite_cfg.name!r}",
                             )
@@ -77,7 +75,7 @@ class Runner:
             probes.extend(self._run_suite(driver, config.target, suite_cfg))
         finished = datetime.now(UTC)
         return RunResult(
-            run_id="run-" + uuid.uuid4().hex[:12],
+            run_id=uuid.uuid4().hex,
             tenant_id=config.tenant_id,
             agent_id=config.agent_id,
             profile=config.profile,

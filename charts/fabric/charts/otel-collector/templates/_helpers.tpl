@@ -98,31 +98,58 @@ Fail-closed unless the operator has explicitly acknowledged one of:
 {{- $provider := .Values.fabric.redact.existingSocketProvider | default "" -}}
 {{- $accept := .Values.fabric.redact.acceptMissingProvider | default false -}}
 {{- if and (eq $provider "") (not $accept) -}}
-{{- fail (printf "fabric.redact.enabled=true but no socket provider configured. Set fabric.redact.existingSocketProvider to the name of the component mounting %s, or fabric.redact.acceptMissingProvider=true for smoke renders. The Presidio sidecar chart is not yet part of the umbrella release — see components/presidio-sidecar/." .Values.fabric.redact.unixSocket) -}}
+{{- fail (printf "fabric.redact.enabled=true but no socket provider configured. Name the component that mounts %s, or accept a broken redact processor for a smoke render. From the fabric umbrella chart the value paths are prefixed with the subchart alias:\n  --set otel-collector.fabric.redact.existingSocketProvider=<name>\n  --set otel-collector.fabric.redact.acceptMissingProvider=true   (renders only; runtime errors on every event)\nInstalling this subchart directly, drop the `otel-collector.` prefix. The presidio-sidecar subchart IS bundled in the umbrella — enable it with --set presidioSidecar.enabled=true and --set presidio-sidecar.tenantKey.existingSecret=<secret>, then point existingSocketProvider at it." .Values.fabric.redact.unixSocket) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Validate the OTLP exporter endpoint.
+Compute the exporter list for a pipeline.
 
-The exporter endpoint must be set to a real OTLP/HTTP-speaking backend
-(bundled Langfuse, Datadog, Honeycomb, your own collector, or — for
-SingleAxis commercial deployments — the Telemetry Bridge ingest URL).
-A render-time fail here prevents the most common silent-broken state:
-operator installs the chart, the Collector boots happily, every span
-is dropped on egress because the configured endpoint resolves to no
-service in the cluster (the historical default `fabric-ingest:8080`
-was such a phantom — see CHANGELOG 0.1.3).
+There is no OTLP endpoint that works in an L1-only OSS deploy, so
+``exporter.endpoint`` has no default. The historical default
+`fabric-ingest:8080` resolved to the SingleAxis commercial Telemetry
+Bridge and dropped every span on the floor when that service was not
+present (see CHANGELOG 0.1.3). The rule this chart enforces is:
 
-Escape hatch: ``exporter.acceptUnsetEndpoint: true`` lets CI smoke
-renders proceed without a real endpoint. Never set this in a production
-values file; the Collector will boot but every export will fail.
+  A rendered pipeline NEVER points at an endpoint that is not set.
+
+  - ``exporter.endpoint`` set   -> `otlphttp/fabric` is rendered and
+    listed. `debug` is added alongside it when
+    ``debugExporter.enabled: true``.
+  - ``exporter.endpoint`` empty -> `otlphttp/fabric` is NOT rendered
+    at all. The pipeline falls back to `debug`, so spans land in the
+    collector pod's stdout (`kubectl logs`) instead of vanishing, and
+    NOTES.txt prints a loud post-install warning. This is a dev
+    posture: stdout is visible, but it is not durable and it is not
+    an audit trail.
+
+The list is never empty, so the rendered collector config is always
+valid. ``exporter.acceptUnsetEndpoint`` is no longer consulted — an
+unset endpoint is now a supported (and loudly announced) state rather
+than a blanket render-time error, so the escape hatch has nothing to
+escape. Profiles that cannot accept a stdout-only posture set
+``exporter.requireEndpoint: true`` — see validateExporter below.
 */}}
 {{- define "otel-collector.validateExporter" -}}
-{{- $endpoint := .Values.exporter.endpoint | default "" -}}
-{{- $accept := .Values.exporter.acceptUnsetEndpoint | default false -}}
-{{- if and (eq $endpoint "") (not $accept) -}}
-{{- fail "otel-collector.exporter.endpoint is empty. Set it to the OTLP/HTTP backend you want spans to land in (bundled Langfuse: http://langfuse:3000; Datadog/Honeycomb/etc.: their OTLP intake; commercial Telemetry Bridge: the bridge ingress URL). For CI smoke renders only, pass --set otel-collector.exporter.acceptUnsetEndpoint=true. See charts/fabric/charts/otel-collector/values.yaml for example endpoints." -}}
+{{- if and .Values.exporter.requireEndpoint (not .Values.exporter.endpoint) -}}
+{{- fail "otel-collector.exporter.endpoint is empty and this profile sets exporter.requireEndpoint=true. The stdout debug-exporter fallback is a dev posture: pod stdout is not durable and is not an audit trail, so a profile making a retention or compliance claim must name a real backend. Set --set otel-collector.exporter.endpoint=<OTLP/HTTP url> (Datadog/Honeycomb intake, your own collector chain, or the SingleAxis commercial Telemetry Bridge ingress). To render this profile without a backend anyway, pass --set otel-collector.exporter.requireEndpoint=false and understand that spans will only reach pod stdout." -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Exporter name list — see the comment block above.
+*/}}
+{{- define "otel-collector.exporterNames" -}}
+{{- $names := list -}}
+{{- if .Values.exporter.endpoint -}}
+{{- $names = append $names "otlphttp/fabric" -}}
+{{- end -}}
+{{- if or .Values.debugExporter.enabled (not .Values.exporter.endpoint) -}}
+{{- $names = append $names "debug" -}}
+{{- end -}}
+{{- if not $names -}}
+{{- fail "otel-collector: no exporters resolved for the pipeline. This is a chart bug — the debug exporter is meant to be the unconditional fallback when exporter.endpoint is empty." -}}
+{{- end -}}
+{{- join ", " $names -}}
 {{- end -}}

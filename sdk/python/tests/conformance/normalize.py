@@ -6,8 +6,10 @@ The goal is a representation that is byte-identical across runs and
 machines for a fixed scenario input. We therefore drop or zero the
 non-deterministic fields (ids, timestamps, durations, latencies, and
 generated UUIDs) while keeping everything that is part of the wire
-contract — span name, kind, status, the ``fabric.*`` / ``gen_ai.*``
-attribute keys + values, and the ordered list of span events.
+Fabric extension contract — span name, kind, status, the ``fabric.*``
+attribute keys + values, and the ordered list of span events. Standard
+``gen_ai.*`` telemetry is tested separately because it follows the
+independently versioned OpenTelemetry schema.
 
 Hashes are deterministic for a fixed input and are therefore KEPT:
 they are part of the contract a downstream consumer must reproduce.
@@ -49,6 +51,24 @@ _LATENCY_ATTR_KEYS = frozenset(
     }
 )
 
+_FABRIC_V1_GEN_AI_KEYS = frozenset(
+    {
+        "gen_ai.system",
+        "gen_ai.request.model",
+        "gen_ai.request.temperature",
+        "gen_ai.request.top_p",
+        "gen_ai.request.max_tokens",
+        "gen_ai.response.model",
+        "gen_ai.response.finish_reasons",
+        "gen_ai.usage.input_tokens",
+        "gen_ai.usage.output_tokens",
+        "gen_ai.usage.cache_creation_input_tokens",
+        "gen_ai.usage.cache_read_input_tokens",
+        "gen_ai.tool.name",
+        "gen_ai.tool.call.id",
+    }
+)
+
 
 def _normalize_attr_value(value: AttributeValue) -> Any:
     """Convert an OTel attribute value to a JSON-stable form.
@@ -72,6 +92,8 @@ def normalize_attributes(attributes: Mapping[str, AttributeValue] | None) -> dic
         return {}
     out: dict[str, Any] = {}
     for key in sorted(attributes):
+        if key.startswith("gen_ai.") and key not in _FABRIC_V1_GEN_AI_KEYS:
+            continue
         if key in _UUID_ATTR_KEYS or key in _LATENCY_ATTR_KEYS:
             out[key] = PLACEHOLDER
         else:
@@ -104,9 +126,20 @@ def normalize_span(span: ReadableSpan) -> dict[str, Any]:
     line numbers and is not part of the Fabric wire contract.
     """
     status = span.status
-    events = [_normalize_event(e) for e in span.events if e.name != "exception"]
+    events = [
+        _normalize_event(e)
+        for e in span.events
+        if e.name != "exception" and not e.name.startswith("gen_ai.")
+    ]
+    attributes = span.attributes or {}
+    operation = attributes.get("gen_ai.operation.name")
+    name = span.name
+    if operation in {"chat", "embeddings"}:
+        name = "fabric.llm_call"
+    elif operation == "execute_tool":
+        name = "fabric.tool_call"
     return {
-        "name": span.name,
+        "name": name,
         "kind": span.kind.name,
         "status": {
             "code": status.status_code.name,
@@ -126,6 +159,11 @@ def normalize_spans(spans: Sequence[ReadableSpan]) -> list[dict[str, Any]]:
     first by name, then the parent ``fabric.decision``. Within a
     scenario each span name is unique, so name ordering is total.
     """
-    normalized = [normalize_span(s) for s in spans]
+    normalized = [
+        normalize_span(s)
+        for s in spans
+        if (s.attributes or {}).get("gen_ai.operation.name")
+        not in {"retrieval", "create_memory", "search_memory", "delete_memory"}
+    ]
     normalized.sort(key=lambda s: s["name"])
     return normalized

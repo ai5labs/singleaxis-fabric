@@ -380,7 +380,8 @@ jobs:
           # Poll the collector's stdout for the landed span. The debug
           # exporter + batch flush has latency, so retry with a timeout.
           # We require the parent span name, a key fabric.* attribute, and
-          # the LLM child span — all three prove the span arrived intact.
+          # the GenAI operation attribute — all three prove the dynamic
+          # LLM child span arrived intact.
           echo "Scraping collector logs for the landed fabric.decision span..."
           attempts=0
           while [ "${attempts}" -lt 30 ]; do
@@ -388,9 +389,9 @@ jobs:
               --tail=2000 2>/dev/null || true)
             if echo "${LOGS}" | grep -q "fabric.decision" \
                && echo "${LOGS}" | grep -q "fabric.tenant_id" \
-               && echo "${LOGS}" | grep -q "fabric.llm_call"; then
+               && echo "${LOGS}" | grep -q "gen_ai.operation.name"; then
               echo "span-landing assertion PASSED: fabric.decision +" \
-                "fabric.tenant_id + fabric.llm_call all present in" \
+                "fabric.tenant_id + gen_ai.operation.name all present in" \
                 "collector stdout"
               exit 0
             fi
@@ -399,7 +400,7 @@ jobs:
           done
 
           echo "::error::fabric.decision span (or fabric.tenant_id /" \
-            "fabric.llm_call) never appeared in the collector stdout" \
+            "gen_ai.operation.name) never appeared in the collector stdout" \
             "after ~60s. Dumping collector logs:" >&2
           kubectl logs --namespace "${NAMESPACE}" "pod/${POD}" \
             --tail=2000 || true

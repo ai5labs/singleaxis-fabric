@@ -20,7 +20,7 @@ from typing import Any
 
 from ._util import hash_text, resolve_venv_python
 from .config import SuiteConfig, TargetConfig
-from .results import Finding, ProbeResult, Severity, Verdict
+from .results import CaptureStatus, Finding, ProbeResult, Severity, Verdict
 
 # Timeout for the build-time smoke probe of the garak venv. The
 # runner itself sets its own per-probe timeout via ``target.timeout_seconds``
@@ -78,8 +78,6 @@ class GarakSuite:
                     findings=[
                         Finding(
                             attempt_id="n/a",
-                            prompt_hash="",
-                            response_hash="",
                             severity=Severity.INFO,
                             notes=str(e),
                         )
@@ -92,6 +90,7 @@ class GarakSuite:
                     attempt_id=a.attempt_id,
                     prompt_hash=hash_text(a.prompt),
                     response_hash=hash_text(a.response),
+                    capture_status=CaptureStatus.CAPTURED,
                     severity=Severity(a.severity.lower()),
                     notes=a.detector or "",
                 )
@@ -120,8 +119,6 @@ def _error_result(probe: str, note: str) -> ProbeResult:
         findings=[
             Finding(
                 attempt_id="n/a",
-                prompt_hash="",
-                response_hash="",
                 severity=Severity.INFO,
                 notes=note,
             )

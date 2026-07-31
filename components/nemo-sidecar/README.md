@@ -33,13 +33,29 @@ POST /v1/check
   "action":         "allow" | "redact" | "block" | "warn",
   "rail":           "<rail-id>",
   "block_response": "<canned refusal>" | null,
-  "modified_value": "<possibly-rewritten text>"
+  "modified_value": "<the submitted value, rewritten only when action == redact>"
 }
 ```
 
 `action == "block"` is the authoritative blocking signal for the SDK;
 every non-allow action implies a rail fired. `rail` is surfaced on
 the Fabric OTel span event as `nemo:<rail>`.
+
+**`modified_value` contract.** It is a transformation of the submitted
+value and MUST equal that value byte-for-byte unless
+`action == "redact"`. **An assistant completion is not a modified
+value.** A refusal belongs in `block_response`, never in
+`modified_value`.
+
+This is normative because violating it is silent and dangerous. NeMo's
+Colang path runs `LLMRails.generate()`, a chat completion — returning
+that text as the "modified" input replaced the caller's message with
+chatbot output under `allowed: true`, with no error. `RailsChecker`
+enforces the rule for every engine, including operator-supplied ones,
+and logs a warning when an engine violates it.
+
+Callers must honour `allowed` and must never treat `modified_value` as
+a safe substitute for the input on a blocked turn.
 
 ## Status
 

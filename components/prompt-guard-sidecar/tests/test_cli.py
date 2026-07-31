@@ -3,9 +3,16 @@
 
 from __future__ import annotations
 
+import errno
 import logging
+import os
+import shutil
+import socket
+import stat
 import sys
+import tempfile
 import types
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +21,22 @@ import pytest
 from fabric_prompt_guard_sidecar import __main__ as cli_module
 
 UVICORN_RUN = "fabric_prompt_guard_sidecar.__main__.uvicorn.run"
+
+
+@pytest.fixture
+def sock_dir() -> Iterator[Path]:
+    """A directory short enough to hold an AF_UNIX path.
+
+    ``tmp_path`` nests test names several levels deep, which overruns the
+    ~104-byte ``sockaddr_un.sun_path`` limit on macOS and BSD. Socket
+    paths need their own shallow directory.
+    """
+
+    path = Path(tempfile.mkdtemp(prefix="fpgs-"))
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def test_cli_requires_uds_or_port() -> None:
@@ -39,16 +62,27 @@ def test_cli_rejects_out_of_range_threshold() -> None:
         cli_module.main(["--port", "8080", "--allow-passthrough", "--threshold", "1.5"])
 
 
-def test_cli_invokes_uvicorn_on_uds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_invokes_uvicorn_on_uds(sock_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI binds the UDS itself and hands uvicorn the descriptor.
+
+    We pass ``fd=`` rather than ``uds=`` so that uvicorn never runs its
+    unconditional ``os.chmod`` on the socket — see ``bind_uds``. The
+    socket must still be created, bound and listening at the requested
+    path, which is what a caller actually depends on.
+    """
+
     captured: dict[str, Any] = {}
 
     def fake_run(**kwargs: Any) -> None:
         captured.update(kwargs)
 
     monkeypatch.setattr(UVICORN_RUN, fake_run)
-    sock = tmp_path / "sidecar.sock"
+    sock = sock_dir / "sidecar.sock"
     assert cli_module.main(["--uds", str(sock), "--allow-passthrough"]) == 0
-    assert captured["uds"] == str(sock)
+    assert "uds" not in captured, "uds= would re-introduce uvicorn's mandatory chmod"
+    assert isinstance(captured["fd"], int)
+    assert sock.exists()
+    assert stat.S_ISSOCK(sock.stat().st_mode), "path must be a real bound socket"
     assert "app" in captured
 
 
@@ -60,12 +94,78 @@ def test_cli_invokes_uvicorn_on_tcp(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["host"] == "127.0.0.1"
 
 
-def test_cli_unlinks_stale_socket(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sock = tmp_path / "stale.sock"
+def test_cli_unlinks_stale_socket(sock_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stale path is removed and replaced by a live bound socket.
+
+    Previously the CLI only unlinked the stale entry and left binding to
+    uvicorn, so the assertion was simply that the path was gone. Now the
+    CLI binds it itself, so the stronger guarantee holds: the leftover
+    regular file is replaced by an actual socket.
+    """
+
+    sock = sock_dir / "stale.sock"
     sock.write_bytes(b"")
+    assert not stat.S_ISSOCK(sock.stat().st_mode)
     monkeypatch.setattr(UVICORN_RUN, lambda **kw: None)
     cli_module.main(["--uds", str(sock), "--allow-passthrough"])
-    assert not sock.exists()
+    assert sock.exists()
+    assert stat.S_ISSOCK(sock.stat().st_mode)
+
+
+def test_bind_uds_is_owner_only(sock_dir: Path) -> None:
+    target = sock_dir / "permissions.sock"
+    sock = cli_module.bind_uds(str(target))
+    try:
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    finally:
+        sock.close()
+
+
+def test_bind_uds_survives_chmod_refusal(
+    sock_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: a filesystem that refuses chmod must not stop startup.
+
+    Docker Desktop's macOS bind mounts raise ``EINVAL`` when chmod-ing a
+    socket. uvicorn's own UDS path calls ``os.chmod`` unconditionally, so
+    both guardrail sidecars crashed on startup and the documented compose
+    harness could not run on macOS at all. ``bind_uds`` must still return
+    a listening socket, and must say so in the log rather than silently
+    proceeding with unknown permissions.
+    """
+
+    real_chmod = os.chmod
+
+    def refusing_chmod(path: Any, mode: int, *a: Any, **kw: Any) -> None:
+        if str(path).endswith(".sock"):
+            raise OSError(errno.EINVAL, "Invalid argument")
+        real_chmod(path, mode, *a, **kw)
+
+    monkeypatch.setattr(os, "chmod", refusing_chmod)
+    target = sock_dir / "refused.sock"
+
+    with caplog.at_level(logging.WARNING, logger="fabric_prompt_guard_sidecar"):
+        sock = cli_module.bind_uds(str(target))
+
+    try:
+        assert target.exists()
+        assert stat.S_ISSOCK(target.stat().st_mode)
+        # Prove it is genuinely accepting connections, not merely created.
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            client.connect(str(target))
+        finally:
+            client.close()
+    finally:
+        sock.close()
+
+    warnings = " ".join(
+        r.getMessage().lower() for r in caplog.records if r.levelno == logging.WARNING
+    )
+    assert "permission" in warnings
+    assert str(target) in warnings or "chmod" in warnings
 
 
 def test_cli_fails_loud_without_passthrough_when_extra_missing(

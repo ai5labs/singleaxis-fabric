@@ -1,8 +1,8 @@
 ---
 title: Execution & Step capture — outer correlation + lifecycle primitives
-status: draft
-revision: 2
-last_updated: 2026-06-02
+status: implemented
+revision: 3
+last_updated: 2026-07-25
 owner: project-lead
 ---
 
@@ -29,10 +29,10 @@ every call.
 
 This spec introduces two **optional, emit-only** capture primitives:
 
-1. **Execution** (this PR) — an *outer correlation + lifecycle* span,
+1. **Execution** — an *outer correlation + lifecycle* span,
    `fabric.execution`, that demarcates and correlates a run of related
    decisions. It does **not** drive decisions; it brackets them.
-2. **Step** (implemented) — a per-operation taxonomy, `fabric.step.*`,
+2. **Step** — a per-operation taxonomy, `fabric.step.*`,
    stamped on the existing child spans (`fabric.llm_call`,
    `fabric.tool_call`). A *step* is one operation inside an execution (an
    LLM call, a tool call); the taxonomy names its canonical kind and

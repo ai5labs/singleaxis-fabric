@@ -212,7 +212,7 @@ def run_one_turn_with_v04_primitives(
 
         # 7. llm_call wrapping the simulated provider
         with decision.llm_call(
-            system="simulated",
+            provider="simulated",
             model="reference-agent-stub-v1",
         ) as call:
             raw_response = simulated_llm_call(safe_input)

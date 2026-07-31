@@ -5,6 +5,40 @@ OTLP/gRPC:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }
 OTLP/HTTP:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpHttp }}
 Health check:  {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.health }}
 
+{{- if not .Values.exporter.endpoint }}
+
+=====================================================================
+WARNING: NO TELEMETRY BACKEND IS CONFIGURED.
+
+`otel-collector.exporter.endpoint` is empty, so the collector is NOT
+exporting anywhere. Spans and logs are written to this pod's stdout
+via the OTel `debug` exporter and nothing else. Read them with:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "otel-collector.fullname" . }} -f
+
+Pod stdout is not durable, is not queryable, and is NOT an audit
+trail. It survives only as long as the pod and its log rotation. Do
+not make a retention or compliance claim on this install.
+
+Point the collector at a real OTLP/HTTP backend:
+
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} \
+    --set otel-collector.exporter.endpoint=http://your-collector:4318
+
+See charts/fabric/charts/otel-collector/values.yaml for backend
+examples (Datadog, Honeycomb, your own collector chain).
+=====================================================================
+{{- end }}
+{{- if not .Values.fabric.sampler.enabled }}
+
+NOTE: the deterministic HMAC sampler is OFF, so every event is kept.
+That is the safe default for an audit trail but it is the highest
+telemetry volume this chart emits. To downsample, supply a key:
+
+  --set otel-collector.fabric.sampler.enabled=true \
+  --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
+{{- end }}
+
 Fabric processors active:
 {{- if .Values.fabric.guard.enabled }}  - fabricguard (deny-by-default schema allowlist){{- end }}
 {{- if .Values.fabric.redact.enabled }}  - fabricredact (Presidio sidecar redaction){{- end }}
@@ -27,6 +61,8 @@ Set .Values.fabric.policy.bundlePath before relying on the gate.
 {{- if and .Values.fabric.redact.enabled (not (hasKey .Values "presidioSidecar")) }}
 
 NOTE: fabricredact is enabled. Make sure a Presidio sidecar listens
-on {{ .Values.fabric.redact.unixSocket }} inside the pod. This chart
-does not bundle the sidecar yet — see specs/004-telemetry-bridge.md.
+on {{ .Values.fabric.redact.unixSocket }} inside the pod. The
+presidio-sidecar subchart ships in the fabric umbrella but is not
+enabled by default (it needs a tenant HMAC key Secret) — see
+charts/fabric/charts/presidio-sidecar/.
 {{- end }}
