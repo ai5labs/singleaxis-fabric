@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator, Sequence
-from importlib import resources
+from importlib import resources  # nosemgrep
 from pathlib import Path
 from typing import Annotated
 

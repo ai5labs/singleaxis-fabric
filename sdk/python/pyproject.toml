@@ -99,6 +99,9 @@ lakera = [
 ]
 ragas = [
   "ragas>=0.1",
+  # Ragas leaves this transitive dependency unconstrained; keep it above
+  # the versions affected by the published code-execution advisories.
+  "langchain>=0.3.30",
 ]
 cedar = [
   "cedarpy>=0.4",

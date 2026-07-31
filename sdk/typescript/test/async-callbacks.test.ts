@@ -128,7 +128,7 @@ describe("async callback forms record after an await", () => {
 
     const decision = spanByName(SPAN_NAME_DECISION);
     const llm = spanByOperation("chat");
-    expect(llm.parentSpanId).toBe(decision.spanContext().spanId);
+    expect(llm.parentSpanContext?.spanId).toBe(decision.spanContext().spanId);
     expect(llm.spanContext().traceId).toBe(decision.spanContext().traceId);
   });
 

@@ -1488,8 +1488,8 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.7.0
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...HEAD
+[0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.6.0
 [0.5.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.1
 [0.5.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.0
