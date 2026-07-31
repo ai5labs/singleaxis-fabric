@@ -82,11 +82,14 @@ jobs:
         # dynamic-urllib-use-detected is excluded: the only matches are the
         # generic HTTP guardrail/policy adapters, which POST to an
         # operator-supplied endpoint (tenant config, not attacker-controlled;
-        # already flagged with `# noqa: S310`). Excluding the rule keeps it out
-        # of the SARIF entirely rather than uploading suppressed findings.
+        # already flagged with `# noqa: S310`). The Python 3.7 compatibility
+        # rule is inapplicable because every Python package requires 3.11+.
+        # Excluding these rules keeps them out of the SARIF entirely rather
+        # than uploading false-positive findings.
         run: >-
           semgrep scan --config auto --sarif --output semgrep.sarif
           --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+          --exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2
       - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
