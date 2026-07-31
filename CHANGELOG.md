@@ -15,10 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **OpenTelemetry GenAI semantic conventions.** Python and TypeScript now
   emit current provider/operation, agent/workflow/conversation, inference,
   embeddings, tool, retrieval, memory, evaluation, token/cache, response,
-  and opt-in content attributes. GenAI child spans use standard operation
-  names; Python adds the standard token, duration, time-to-first-chunk, and
-  tool-duration histograms. Raw prompts, messages, tool payloads, retrieval
-  content, and memory content remain disabled unless `capture_content=True`.
+  and opt-in content attributes. LLM spans use the standard
+  `{operation} {model}` name and tool spans use the tool name with
+  `gen_ai.operation.name=execute_tool`; Python adds the standard token,
+  duration, time-to-first-chunk, and tool-duration histograms. Raw prompts,
+  messages, tool payloads, retrieval content, and memory content remain
+  disabled unless `capture_content=True`.
   The deprecated `system=` API and legacy attributes remain available for
   v0.6 migrations. See
   [`docs/genai-semantic-conventions.md`](docs/genai-semantic-conventions.md).
