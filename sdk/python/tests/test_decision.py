@@ -5,6 +5,7 @@ exception handling."""
 
 from __future__ import annotations
 
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -171,11 +172,12 @@ def test_raise_for_block_raises_after_record() -> None:
 
 def test_exception_inside_block_records_on_span(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
+    fail = Mock(side_effect=RuntimeError("boom"))
     with (
         pytest.raises(RuntimeError, match="boom"),
         client.decision(session_id="s", request_id="r"),
     ):
-        raise RuntimeError("boom")
+        fail()
     span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     assert span.status.status_code == StatusCode.ERROR
     # record_exception appends the message; we accept either form.

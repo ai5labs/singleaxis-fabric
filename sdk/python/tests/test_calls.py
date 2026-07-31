@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+from unittest.mock import Mock
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
@@ -173,12 +174,13 @@ def test_llm_call_records_exception_and_status(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     client = _client()
+    fail = Mock(side_effect=RuntimeError("upstream timeout"))
     with (
         client.decision(session_id="s", request_id="r") as dec,
         pytest.raises(RuntimeError, match="upstream timeout"),
         dec.llm_call(system="anthropic", model="claude"),
     ):
-        raise RuntimeError("upstream timeout")
+        fail()
 
     span = _llm_span(span_exporter)
     assert span.status.status_code == StatusCode.ERROR
@@ -594,12 +596,13 @@ def test_tool_call_records_exception_and_status(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     client = _client()
+    fail = Mock(side_effect=KeyError("missing"))
     with (
         client.decision(session_id="s", request_id="r") as dec,
         pytest.raises(KeyError),
         dec.tool_call("search"),
     ):
-        raise KeyError("missing")
+        fail()
 
     span = _tool_span(span_exporter)
     assert span.status.status_code == StatusCode.ERROR

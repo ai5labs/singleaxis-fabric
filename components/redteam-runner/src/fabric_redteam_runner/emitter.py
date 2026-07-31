@@ -121,7 +121,8 @@ RED_TEAM_RESULT_FIELDS: tuple[str, ...] = (
 
 @runtime_checkable
 class ResultEmitter(Protocol):
-    def emit(self, result: RunResult) -> None: ...
+    def emit(self, result: RunResult) -> None:
+        raise NotImplementedError
 
 
 @runtime_checkable
@@ -133,7 +134,8 @@ class LogRecordSink(Protocol):
     a protocol means a future change touches one class, and tests do not
     need a LoggerProvider at all."""
 
-    def emit_record(self, *, body: str, attributes: Mapping[str, Any]) -> None: ...
+    def emit_record(self, *, body: str, attributes: Mapping[str, Any]) -> None:
+        raise NotImplementedError
 
 
 class OTelLogSink:

@@ -29,7 +29,6 @@ Two invariants make the join defensible rather than decorative:
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator, Sequence
 from importlib import resources
 from pathlib import Path
@@ -37,8 +36,6 @@ from typing import Annotated
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-
-_LOG = logging.getLogger(__name__)
 
 #: Control ids are lowercase-only and dot-namespaced so that plain
 #: string equality is a valid join predicate in SQL, PromQL, or a
