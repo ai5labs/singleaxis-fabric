@@ -106,11 +106,11 @@ def test_cli_unlinks_stale_socket(sock_dir: Path, monkeypatch: pytest.MonkeyPatc
     assert stat.S_ISSOCK(sock.stat().st_mode)
 
 
-def test_bind_uds_is_owner_group_only(sock_dir: Path) -> None:
+def test_bind_uds_is_owner_only(sock_dir: Path) -> None:
     target = sock_dir / "permissions.sock"
     sock = cli_module.bind_uds(str(target))
     try:
-        assert stat.S_IMODE(target.stat().st_mode) == 0o660
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
     finally:
         sock.close()
 

@@ -60,9 +60,9 @@ def bind_uds(path: str) -> socket.socket:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(path)
     try:
-        # Owner/group access supports co-located callers sharing the pod
-        # fsGroup without exposing the guardrail socket to every local user.
-        os.chmod(path, 0o660)
+        # Restrict the guardrail socket to the sidecar's runtime identity.
+        # Co-located callers should use the same runAsUser.
+        os.chmod(path, 0o600)
     except OSError as exc:
         logger.warning(
             "could not set permissions on %s (%s); continuing with the "
