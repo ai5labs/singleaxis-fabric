@@ -29,14 +29,14 @@ Fabric primitives / attributes demonstrated
   summaries are a Presidio-rail feature, not emitted by this custom rail).
 * ``decision.record_retrieval``       — RAG/account-lookup provenance.
 * ``decision.recall`` (MemoryKind) — read of prior approval memory.
-* ``decision.llm_call`` (LLMCall)     — child ``fabric.llm_call`` span with
+* ``decision.llm_call`` (LLMCall)     — dynamic GenAI child span with
   ``gen_ai.*`` + ``fabric.llm.*`` usage, ``fabric.step.type``.
 * ``decision.evaluate_policy`` (PolicyEngine) — normalized 5-value verdict
   (allow/deny/warn/escalate/redact) emitted as ``fabric.policy.evaluation``,
   carrying ``decision_id`` and ``input_hash``.
 * ``decision.authorize_tool_call`` (ToolAuthorizer) — pre-execution binary gate
   emitting ``fabric.tool.authorization``.
-* ``decision.tool_call`` (ToolCall)   — child ``fabric.tool_call`` span; its
+* ``decision.tool_call`` (ToolCall)   — tool-named ``execute_tool`` span; its
   ``call_id`` links the side effect back to the tool.
 * ``decision.record_side_effect``     — approval-required money movement with
   ``parent_tool_call_id`` linkage, ``ReplayBehavior.SUPPRESS``, ``committed``.
@@ -331,7 +331,7 @@ def run_read_turn(
 
         # 3c. Ask the LLM for the structured intent, wrapped in a child span.
         with decision.llm_call(
-            system="stub", model=STUB_MODEL, temperature=0.0, step_type="plan"
+            provider="stub", model=STUB_MODEL, temperature=0.0, step_type="plan"
         ) as call:
             result = call_llm(system_prompt=SYSTEM_PROMPT, user_message=safe_input)
             call.set_usage(
@@ -407,7 +407,7 @@ def run_wire_turn(
             )
 
             with decision.llm_call(
-                system="stub", model=STUB_MODEL, temperature=0.0, step_type="plan"
+                provider="stub", model=STUB_MODEL, temperature=0.0, step_type="plan"
             ) as call:
                 result = call_llm(system_prompt=SYSTEM_PROMPT, user_message=safe_input)
                 call.set_usage(
@@ -658,13 +658,17 @@ def run_assertions(spans: list[ReadableSpan]) -> None:
     )
     assert "fabric.side_effect.idempotency_key" in se_attrs
     # the linked tool span must actually exist with that call id
-    tool_spans = by_name["fabric.tool_call"]
+    tool_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    ]
     wire_tool = [
         t
         for t in tool_spans
         if dict(t.attributes or {}).get("fabric.tool.call.id") == "tc-wire-1"
     ]
-    assert wire_tool, "no fabric.tool_call span carries the linked call id tc-wire-1"
+    assert wire_tool, "no execute_tool span carries the linked call id tc-wire-1"
 
     # -- wire turn: escalation recorded + span tagged -----------------------
     esc = _events(wire, "fabric.escalation")
@@ -691,13 +695,17 @@ def run_assertions(spans: list[ReadableSpan]) -> None:
     assert "fabric.replay.suppressed_side_effect_ids" in replay_attrs
 
     # -- llm child spans carry usage + step taxonomy ------------------------
-    llm = by_name["fabric.llm_call"]
+    llm = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
     assert len(llm) == 2
     for span in llm:
         la = dict(span.attributes or {})
         assert la["fabric.step.type"] == "plan"
         assert la["gen_ai.usage.input_tokens"] >= 0
-        assert la["fabric.llm.request.model"] == STUB_MODEL
+        assert la["gen_ai.request.model"] == STUB_MODEL
 
     # -- inline evals captured ----------------------------------------------
     assert _events(read, "fabric.eval"), "read turn eval missing"

@@ -24,8 +24,8 @@ You should see (abridged):
 ==> Installing Fabric umbrella chart (permissive-dev profile)
 ==> Tailing collector logs (spans will appear here as the agent runs)
     SpanData: name=fabric.decision tenant_id=acme-demo agent_id=refund-bot
-    SpanData: name=fabric.llm_call gen_ai.usage.input_tokens=24
-    SpanData: name=fabric.tool_call fabric.tool.authorized=true
+    SpanData: name=chat e2e-model-v1 gen_ai.usage.input_tokens=24
+    SpanData: name=e2e_vector_search gen_ai.operation.name=execute_tool
     SpanEvent: fabric.policy.evaluation decision=deny reason="amount $4200 exceeds $2,000 cap"
 ==> Running the demo agent
     llm: Refund of $4,200 exceeds the $2,000 auto-approve cap.

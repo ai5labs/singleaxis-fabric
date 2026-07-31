@@ -46,8 +46,9 @@ export const ATTR_EXECUTION_STATUS = "fabric.execution.status";
 export const EXECUTION_STATUS_COMPLETED = "completed";
 export const EXECUTION_STATUS_FAILED = "failed";
 
-// -- LLM call span (fabric.llm_call) ------------------------------------
+// -- LLM call span ------------------------------------------------------
 
+/** @deprecated Current spans use the GenAI `{operation} {model}` name. */
 export const SPAN_NAME_LLM_CALL = "fabric.llm_call";
 
 // OpenTelemetry GenAI semantic conventions.
@@ -93,8 +94,9 @@ export const FABRIC_LLM_RESPONSE_FINISH_REASONS = "fabric.llm.response.finish_re
 export const FABRIC_LLM_USAGE_INPUT_TOKENS = "fabric.llm.usage.input_tokens";
 export const FABRIC_LLM_USAGE_OUTPUT_TOKENS = "fabric.llm.usage.output_tokens";
 
-// -- Tool call span (fabric.tool_call) ----------------------------------
+// -- Tool call span -----------------------------------------------------
 
+/** @deprecated Current spans use the tool name. */
 export const SPAN_NAME_TOOL_CALL = "fabric.tool_call";
 
 export const GEN_AI_TOOL_NAME = "gen_ai.tool.name";

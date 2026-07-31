@@ -250,7 +250,7 @@ export class ToolCall {
 }
 
 /**
- * Start the `fabric.llm_call` child span and seed its request attributes.
+ * Start a dynamically named GenAI LLM child span and seed its request attributes.
  * Internal — the public entry point is {@link Decision.llmCall}.
  */
 export function startLlmSpan(tracer: Tracer, options: LlmCallOptions): Span {
@@ -300,7 +300,7 @@ export function startLlmSpan(tracer: Tracer, options: LlmCallOptions): Span {
 }
 
 /**
- * Start the `fabric.tool_call` child span and seed its name/call-id.
+ * Start a tool-named `execute_tool` child span and seed its name/call-id.
  * Internal — the public entry point is {@link Decision.toolCall}.
  */
 export function startToolSpan(tracer: Tracer, name: string, options: ToolCallOptions): Span {

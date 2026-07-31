@@ -33,11 +33,11 @@ Fabric primitives / attributes demonstrated
 * decision.record_retrieval  fabric.retrieval event for the SQL schema lookup
                            (source=sql/kg, query_hash, result_count, source_document_ids).
 * decision.authorize_tool_call  pre-execution ToolAuthorizer -> fabric.tool.authorization.
-* decision.tool_call ..... child fabric.tool_call span: set_kind / set_arguments (hashed)
+* decision.tool_call ..... tool-named child span: set_kind / set_arguments (hashed)
                            / set_result (hashed) / set_result_count / set_retry /
                            set_idempotency, plus fabric.step.type / fabric.step.id.
 * decision.checkpoint .... fabric.checkpoint save point (after the SQL ran).
-* decision.llm_call ...... child fabric.llm_call span with GenAI conventions +
+* decision.llm_call ...... dynamic GenAI child span with semantic conventions +
                            set_usage / set_cache_usage (prompt cache) / set_streaming
                            (ttft + chunk_count) / set_retry.
 * decision.record_side_effect  fabric.side_effect event (the query-log write) carrying a
@@ -348,7 +348,7 @@ def run_data_analysis_turn(fab: Fabric, transport: LocalQueueTransport) -> str:
             )
             started = time.monotonic()
             with decision.llm_call(
-                system="openai",
+                provider="openai",
                 model=MODEL,
                 temperature=0.0,
                 max_tokens=256,
@@ -480,10 +480,20 @@ def main() -> int:
     # ASSERTIONS — verify the emitted spans/events form a correct audit trail.
     # ---------------------------------------------------------------
     by_name = {s.name: s for s in spans}
+    llm_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    tool_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    ]
     assert "fabric.execution" in by_name, "execution span missing"
     assert "fabric.decision" in by_name, "decision span missing"
-    assert "fabric.tool_call" in by_name, "tool_call child span missing"
-    assert "fabric.llm_call" in by_name, "llm_call child span missing"
+    assert tool_spans, "execute_tool child span missing"
+    assert llm_spans, "GenAI chat child span missing"
 
     decision_span = by_name["fabric.decision"]
     d_attrs = dict(decision_span.attributes or {})
@@ -570,9 +580,9 @@ def main() -> int:
     assert len(replay["fabric.replay.checkpoint_ids"]) == 1
 
     # LLM child span: GenAI conventions + cache/streaming/retry telemetry.
-    llm_span = by_name["fabric.llm_call"]
+    llm_span = llm_spans[0]
     llm_attrs = dict(llm_span.attributes or {})
-    assert llm_attrs["gen_ai.system"] == "openai"
+    assert llm_attrs["gen_ai.provider.name"] == "openai"
     assert llm_attrs["fabric.step.type"] == "llm_call"
     assert llm_attrs["fabric.step.id"] == "narrate"
     assert llm_attrs["gen_ai.usage.input_tokens"] == 320
@@ -584,7 +594,7 @@ def main() -> int:
     assert llm_span.parent.span_id == decision_span.context.span_id
 
     # Tool child span: hashed args/results, kind, idempotency, retry, step taxonomy.
-    tool_span = by_name["fabric.tool_call"]
+    tool_span = tool_spans[0]
     t_attrs = dict(tool_span.attributes or {})
     assert t_attrs["gen_ai.tool.name"] == "warehouse.run_select"
     assert t_attrs["fabric.tool.kind"] == "sql"

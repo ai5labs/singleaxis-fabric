@@ -2528,12 +2528,12 @@ class Decision(AbstractContextManager["Decision"]):
         """Open a child span for one LLM API call.
 
         Returns an :class:`~fabric._calls.LLMCall` context manager that
-        opens ``fabric.llm_call`` (kind=CLIENT) under the current
-        decision span. The child span is populated with the
-        OpenTelemetry GenAI semantic conventions (``gen_ai.system``,
-        ``gen_ai.request.model``, etc.) and the matching ``fabric.llm.*``
-        mirrors so dashboards keyed on either namespace render
-        natively.
+        opens a dynamically named ``{operation} {model}`` span
+        (kind=CLIENT) under the current decision span. The child span is
+        populated with the OpenTelemetry GenAI semantic conventions
+        (``gen_ai.provider.name``, ``gen_ai.operation.name``,
+        ``gen_ai.request.model``, etc.) and matching ``fabric.llm.*``
+        compatibility mirrors.
 
         Usage::
 
@@ -2638,10 +2638,10 @@ class Decision(AbstractContextManager["Decision"]):
         """Open a child span for one tool / function call.
 
         Returns a :class:`~fabric._calls.ToolCall` context manager that
-        opens ``fabric.tool_call`` (kind=INTERNAL) under the current
-        decision span. The child span is populated with
-        ``gen_ai.tool.name`` and ``fabric.tool.name`` (plus optional
-        ``call.id`` if supplied).
+        opens a tool-named span (kind=INTERNAL) under the current
+        decision span. The child span carries
+        ``gen_ai.operation.name=execute_tool``, ``gen_ai.tool.name``,
+        and ``fabric.tool.name`` (plus an optional call id).
 
         Usage::
 
@@ -2659,8 +2659,8 @@ class Decision(AbstractContextManager["Decision"]):
 
         The generic cross-cutting kwargs (``tags`` / ``baseline`` /
         ``signature``, spec 023) apply here too: their results are stamped
-        on the child ``fabric.tool_call`` span. Calls that omit them stay
-        byte-identical to the pre-023 emission (additive).
+        on the child tool span. Calls that omit them stay byte-identical
+        to the pre-023 attribute emission (additive).
         """
         _ = self.span
         extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}

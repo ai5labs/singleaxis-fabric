@@ -3,7 +3,7 @@
 """MCP (Model Context Protocol) tool-call instrumentation.
 
 Wraps an MCP ``ClientSession.call_tool`` invocation so each call emits
-a ``fabric.tool_call`` child span (kind="mcp") under the active
+a tool-named ``execute_tool`` child span (kind="mcp") under the active
 ``fabric.decision`` and, optionally, runs through a pre-execution tool
 authorizer. Agents that talk to MCP servers get Fabric observability +
 control over their tool calls with near-zero glue.
@@ -251,9 +251,9 @@ async def traced_call_tool(
     transport: str | None = None,
     authorizer: ToolAuthorizer | None = None,
 ) -> Any:
-    """Invoke an MCP tool under a ``fabric.tool_call`` child span.
+    """Invoke an MCP tool under a tool-named ``execute_tool`` child span.
 
-    Opens a ``fabric.tool_call`` span (kind="mcp") under ``decision``,
+    Opens a tool-named span (kind="mcp") under ``decision``,
     optionally runs the call through ``authorizer`` *before* execution,
     awaits ``session.call_tool``, maps the result defensively onto the
     span, and returns the raw result unchanged.

@@ -11,7 +11,7 @@ session via a local Protocol, so the module is always importable — the
 
 - ``traced_call_tool`` / ``InstrumentedMCPSession`` ([mcp] extra):
   wrap MCP ``ClientSession.call_tool`` so each invocation emits a
-  ``fabric.tool_call`` child span (kind="mcp") under the active
+  tool-named ``execute_tool`` child span (kind="mcp") under the active
   ``fabric.decision`` and optionally runs through a pre-execution
   tool authorizer.
 """

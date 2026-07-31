@@ -133,7 +133,7 @@ class ReferenceAgent:
             # Synthetic numbers here; in production the caller passes
             # real token counts from the LLM response.
             with decision.llm_call(
-                system="simulated",
+                provider="simulated",
                 model="reference-agent-stub-v1",
             ) as call:
                 raw_response = self._llm_call(safe_input)

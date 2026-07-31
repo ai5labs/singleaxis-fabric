@@ -335,7 +335,7 @@ def moderate_post(
 
         # 3) DRAFT A MODERATOR RATIONALE (LLM) ----------------------------
         with decision.llm_call(
-            system="openai-compatible",
+            provider="openai-compatible",
             model=MODEL,
             temperature=0.0,
             step_id="draft-rationale",

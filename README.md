@@ -299,8 +299,8 @@ plus:
   and machine-dependent — no timing pass/fail threshold);
 - a **live end-to-end gate** in CI: a real SDK `Decision` is exported
   over OTLP to an in-cluster collector and the `fabric.decision` span
-  (plus a `fabric.llm_call` child and the `fabric.tenant_id` attribute)
-  is asserted to land intact.
+  (plus a dynamically named GenAI child and the `fabric.tenant_id`
+  attribute) is asserted to land intact.
 
 ## What this OSS distribution covers
 

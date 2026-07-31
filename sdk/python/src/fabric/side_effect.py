@@ -95,7 +95,7 @@ class SideEffectRecord(BaseModel):
     """Optional id of the tool call that produced this side effect.
 
     Lets downstream consumers attribute a mutation to the specific
-    ``fabric.tool_call`` span that triggered it. Default ``None``
+    tool-call span that triggered it. Default ``None``
     preserves the prior wire shape for callers that don't track it.
     """
 

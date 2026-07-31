@@ -394,7 +394,7 @@ export class Decision {
   }
 
   /**
-   * Wrap one LLM API call in a `fabric.llm_call` child span (kind=CLIENT).
+   * Wrap one LLM API call in a `{operation} {model}` child span (kind=CLIENT).
    * The span is active for the duration of `fn` and ended afterwards. A
    * thrown error is recorded on the span and re-thrown.
    */
@@ -408,7 +408,7 @@ export class Decision {
   }
 
   /**
-   * Wrap one tool/function call in a `fabric.tool_call` child span
+   * Wrap one tool/function call in a tool-named `execute_tool` child span
    * (kind=INTERNAL). The span is active for the duration of `fn`.
    */
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {

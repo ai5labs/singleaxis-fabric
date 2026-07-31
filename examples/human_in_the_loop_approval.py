@@ -237,6 +237,7 @@ def run_workflow(fab: Fabric, judge_queue: LocalQueueTransport) -> dict[str, Any
     # Outer correlation span. A retry of the same logical task would reuse the
     # execution_id and bump the attempt; here it is attempt 1.
     with fab.execution(
+        execution_id="exec-ap-7781",
         workflow_id="accounts-payable-refunds",
         execution_attempt=1,
         attributes={"fabric.app.env": "prod"},
@@ -245,6 +246,7 @@ def run_workflow(fab: Fabric, judge_queue: LocalQueueTransport) -> dict[str, Any
             session_id="sess-ap-7781",
             request_id="req-ap-7781-001",
             user_id="agent-ap-copilot",
+            decision_id="dec-ap-7781",
             attributes={"fabric.app.feature": "vendor-refund"},
         ) as decision:
             # 1) Guard the raw user instruction (contains a sensitive account no).
@@ -279,7 +281,7 @@ def run_workflow(fab: Fabric, judge_queue: LocalQueueTransport) -> dict[str, Any
             # 4) Draft the refund with the LLM, instrumented as a child span.
             refund_amount = 7_400.00
             with decision.llm_call(
-                system="fireworks",
+                provider="fireworks",
                 model="accounts/fireworks/models/kimi-k2p6",
                 temperature=0.2,
                 max_tokens=256,
@@ -450,7 +452,7 @@ def print_audit_trail(spans: tuple[ReadableSpan, ...]) -> None:
             "fabric.blocked",
             "fabric.side_effect_count",
             "fabric.policy_evaluation_count",
-            "gen_ai.system",
+            "gen_ai.provider.name",
             "gen_ai.request.model",
             "gen_ai.usage.input_tokens",
             "gen_ai.usage.output_tokens",
@@ -572,10 +574,15 @@ def assert_telemetry(spans: tuple[ReadableSpan, ...], result: dict[str, Any]) ->
     assert ckpts and result["checkpoint_id"] in ckpts
 
     # --- LLM child span -----------------------------------------------------
-    assert "fabric.llm_call" in by_name, "expected a fabric.llm_call child span"
-    llm = by_name["fabric.llm_call"][0]
+    llm_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    assert llm_spans, "expected a GenAI chat child span"
+    llm = llm_spans[0]
     la = dict(llm.attributes or {})
-    assert la.get("gen_ai.system") == "fireworks"
+    assert la.get("gen_ai.provider.name") == "fireworks"
     assert la.get("fabric.step.type") == "plan"  # host override of the default
     assert la.get("gen_ai.usage.output_tokens") is not None
     assert la.get("fabric.llm.usage.cache_read_tokens") == 96
@@ -583,8 +590,13 @@ def assert_telemetry(spans: tuple[ReadableSpan, ...], result: dict[str, Any]) ->
     assert f"{llm.context.trace_id:032x}" == result["trace_id"]
 
     # --- tool_call child span -----------------------------------------------
-    assert "fabric.tool_call" in by_name, "expected a fabric.tool_call child span"
-    tc = dict(by_name["fabric.tool_call"][0].attributes or {})
+    tool_spans = [
+        s
+        for s in spans
+        if dict(s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    ]
+    assert tool_spans, "expected an execute_tool child span"
+    tc = dict(tool_spans[0].attributes or {})
     assert tc.get("fabric.tool.name") == "payments.create_refund"
     assert tc.get("fabric.tool.idempotent") is True
 
