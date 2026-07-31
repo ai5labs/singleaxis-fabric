@@ -45,7 +45,12 @@ SCHEMA_PATH = Path(__file__).parent / "schema" / "fabric-decision-v1.schema.json
 
 DECISION_SPAN_NAME = "fabric.decision"
 EXECUTION_SPAN_NAME = "fabric.execution"
-CHILD_SPAN_NAMES = ("fabric.llm_call", "fabric.tool_call")
+GEN_AI_AUXILIARY_OPERATIONS = {
+    "retrieval",
+    "create_memory",
+    "search_memory",
+    "delete_memory",
+}
 
 
 def _load_schema() -> dict[str, Any]:
@@ -110,11 +115,22 @@ def _validate_execution_span(span: ReadableSpan, schema: dict[str, Any]) -> None
 
 def _validate_child_span(span: ReadableSpan, schema: dict[str, Any]) -> None:
     child_schemas = schema["properties"]["child_spans"]["properties"]
-    assert span.name in child_schemas, (
-        f"unknown child span {span.name!r}; must be one of {sorted(child_schemas)}"
-    )
-    child_validator = Draft202012Validator(child_schemas[span.name])
-    _validate(child_validator, _attrs_to_json(span.attributes), f"child span {span.name!r}")
+    attributes = _attrs_to_json(span.attributes)
+    operation = attributes.get("gen_ai.operation.name")
+    schema_name = "fabric.tool_call" if operation == "execute_tool" else "fabric.llm_call"
+    child_schema = child_schemas[schema_name]
+    # The v1 schema freezes Fabric's extension contract. GenAI conventions
+    # evolve independently, so validate the intersection here and assert the
+    # standard naming/operation rules separately below.
+    schema_attributes = {
+        key: value for key, value in attributes.items() if key in child_schema["properties"]
+    }
+    child_validator = Draft202012Validator(child_schema)
+    _validate(child_validator, schema_attributes, f"child span {span.name!r}")
+    if operation == "execute_tool":
+        assert span.name == attributes["gen_ai.tool.name"]
+    else:
+        assert span.name == f"{operation} {attributes['gen_ai.request.model']}"
 
 
 def test_schema_is_a_valid_json_schema() -> None:
@@ -141,8 +157,13 @@ def test_emitted_spans_validate_against_schema(
         _validate_decision_span(span, schema)
 
     for span in spans:
-        if span.name in CHILD_SPAN_NAMES:
+        operation = (span.attributes or {}).get("gen_ai.operation.name")
+        if operation in {"chat", "embeddings", "execute_tool"}:
             _validate_child_span(span, schema)
+        elif operation in GEN_AI_AUXILIARY_OPERATIONS:
+            # These standard-only spans are outside the frozen Fabric v1
+            # extension schema; their operation names are the contract.
+            assert span.name == operation
         elif span.name == EXECUTION_SPAN_NAME:
             _validate_execution_span(span, schema)
         elif span.name != DECISION_SPAN_NAME:

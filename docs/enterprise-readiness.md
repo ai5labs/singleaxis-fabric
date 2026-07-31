@@ -6,7 +6,7 @@ repository — Fabric is Apache 2.0, so you can audit every line yourself.
 
 > **Scope honesty.** This page covers the **OSS substrate**
 > (`singleaxis-fabric`, the SDK + sidecars + collector + Helm chart),
-> which is generally available (v0.6.x) and the layer you deploy. The
+> which is beta (v0.6.x) and the layer you deploy. The
 > **commercial control plane** (Decision Graph, Evidence Bundles, Judge
 > Workers, Expert Review) is pre-GA and is **not** represented as
 > production-ready here — engage SingleAxis for its current status.
@@ -58,9 +58,9 @@ documented supported-version matrix.
 |---|---|
 | Type safety | **`mypy --strict`** on `src` and `tests` |
 | Lint / format | `ruff` check + format |
-| Test suite | **653 tests**, 0 skipped |
+| Test suite | **757 tests**, 0 skipped (Python SDK) |
 | Coverage | **≥85% gate; actual ≈95%** |
-| Wire contract | **31 byte-locked conformance goldens** — the emitted schema cannot drift silently (`fabric.schema_version = 1.0`) |
+| Wire contract | **39 byte-locked conformance goldens** — the emitted schema cannot drift silently (`fabric.schema_version = 1.0`) |
 | Multi-version | Tested on Python 3.11 / 3.12 / 3.13 |
 | API stability | Documented public-surface + deprecation policy ([`api-stability.md`](api-stability.md)) |
 
@@ -71,7 +71,7 @@ documented supported-version matrix.
 | **Pod security** | `runAsNonRoot`, `runAsUser` 1000/65532, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` across the chart |
 | **High availability** | Configurable replicas, **PodDisruptionBudgets**, `topologySpreadConstraints`, liveness/readiness probes, resource requests + limits |
 | **Network policy** | Deny-default NetworkPolicy in the production profile; sidecars cannot egress to the public internet |
-| **Performance overhead** | ~10–30 ms per decision (UDS-local sidecars, async span export, sub-ms regex pre-filter) — typically <5% of an LLM turn |
+| **Performance overhead** | Design budget of ~10–30 ms per decision (UDS-local sidecars, async span export, sub-ms regex pre-filter). The benchmark suite (`sdk/python/benchmarks/`) is opt-in and machine-dependent — this is a target, not a CI-enforced measurement |
 | **Resource safety** | Verified under a 20k+ decision soak: flat memory, no FD/socket leak, bounded backpressure |
 | **Fail-loud config** | The production profile refuses to install without real signing keys, tenant keys, and an exporter endpoint |
 
@@ -91,7 +91,7 @@ documented supported-version matrix.
 | **EU AI Act (high-risk)** | `eu-ai-act-high-risk` Helm profile; per-decision record-keeping (Art. 12); human-oversight escalation hooks (Art. 14) |
 | **HIPAA** | §164.312(b) audit controls — PII never on spans; tenant-scoped audit trail |
 | **SOC 2** | Audit-log substrate + supply-chain controls supporting CC-series criteria |
-| **NIST AI RMF / ISO 42001** | MEASURE/MANAGE telemetry foundation; mappings in [`docs/compliance/`](compliance/) |
+| **NIST AI RMF / ISO 42001** | MEASURE/MANAGE telemetry foundation. Per-control mappings are **roadmap** — none ship in this distribution; the structure they will follow is in [`specs/009-compliance-mapping.md`](../specs/009-compliance-mapping.md) |
 
 A full auditor question-by-question mapping is in
 [`docs/auditor-checklist.md`](auditor-checklist.md).
@@ -117,8 +117,12 @@ Procurement teams should weigh these:
 2. **No third-party SOC 2 / pen-test report yet.** The controls above are real
    and verifiable in-repo; an independent attestation is on the roadmap
    (available to design partners on request).
-3. **TypeScript SDK** is not yet at full conformance parity with Python and is
-   not published to npm.
+3. **TypeScript SDK is emit-surface only, and is not at parity with Python.**
+   It ships 7 modules against Python's 58, and reproduces 19 of the 39 shared
+   conformance goldens. It has **no** framework adapters, no guardrail or
+   policy transports, no MCP instrumentation, and no host-side I/O helpers.
+   It is not published to npm, and its CI job is advisory rather than
+   required. Outstanding work: [`typescript-parity-backlog.md`](typescript-parity-backlog.md).
 4. **The commercial control plane is pre-GA.** Do not deploy Decision Graph /
    Evidence Bundles / Judge Workers / Expert Review as production-critical
    until SingleAxis confirms GA status for your use case.

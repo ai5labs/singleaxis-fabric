@@ -15,7 +15,7 @@ where spans actually go.
 
 ```yaml
 exporter:
-  endpoint: ""        # required at install time; empty fails render
+  endpoint: ""        # no default; empty falls back to pod stdout
   insecure: true      # set false for TLS-fronted backends
 ```
 
@@ -26,32 +26,55 @@ helm install fabric ./charts/fabric \
   --set otel-collector.exporter.endpoint=<URL>
 ```
 
-Render-time validator: if `exporter.endpoint` is empty AND
-`exporter.acceptUnsetEndpoint=false` (the default), the chart
-fails install with a clear message. The escape hatch
-`acceptUnsetEndpoint=true` exists for CI smoke renders only.
+The rule the chart enforces is that **a rendered pipeline never points
+at an endpoint that is not set**:
 
-## Bundled Langfuse (recommended starter)
+- `endpoint` **set** — the `otlphttp/fabric` exporter is rendered and
+  used. `debug` is added alongside it when `debugExporter.enabled=true`.
+- `endpoint` **empty** — `otlphttp/fabric` is not rendered at all. The
+  pipelines fall back to `debug`, so spans land in the collector pod's
+  stdout (`kubectl logs`) instead of vanishing, and `NOTES.txt` prints
+  a loud post-install warning. This is a **dev posture**: visible, but
+  not durable and not an audit trail.
 
-The Helm chart ships a Langfuse subchart. It is **opt-in**: set
-`langfuse.enabled=true` (the default is `false`) to run Langfuse +
-Postgres inside `fabric-system`. To also seed the curated bundle, enable
-the bootstrap Job with `langfuse.bootstrap.enabled=true`.
+There is no longer an `acceptUnsetEndpoint` escape hatch — an unset
+endpoint is a supported, loudly announced state rather than a
+render-time error. If you were passing that flag, drop it.
+
+## Bundled Langfuse (opt-in)
+
+The Helm chart ships a Langfuse subchart. It is **opt-in** and off in
+every shipped profile (`langfuse.enabled` defaults to `false`).
+
+It does **not** bundle a database. The subchart deploys Langfuse only;
+you supply an external Postgres, either inline via `database.url` or by
+reference via `database.dsnSecret.name`. Without one the chart fails at
+render with `langfuse: set database.url or database.dsnSecret.name` —
+it will not deploy a broken instance.
 
 ```bash
 helm install fabric ./charts/fabric \
-  --set otel-collector.exporter.endpoint=http://langfuse:3000 \
   --set langfuse.enabled=true \
+  --set langfuse.database.dsnSecret.name=fabric-langfuse-db \
   --set langfuse.bootstrap.enabled=true
 ```
+
+The Service is named after the release, so with `helm install fabric`
+it resolves at `http://fabric-langfuse:3000` — not `http://langfuse:3000`.
 
 The `langfuse-bootstrap` Job configures the Langfuse instance with
 Fabric's curated score configs, prompt presets, and saved-view URLs
 (idempotent — rerun safe). It is Fabric-built tooling, so its image is
 published at the **Fabric release version** (not Langfuse's upstream
-appVersion) and the chart tags it accordingly by default. Open
-`http://langfuse:3000` (or your Ingress) and your spans appear
-immediately.
+appVersion) and the chart tags it accordingly by default.
+
+> **Do not point the collector's OTLP exporter at the bundled
+> Langfuse yet.** The subchart pins Langfuse v2 (`appVersion 2.93.0`),
+> which is a passive sink written to over its own ingestion API — we
+> have not verified that it accepts OTLP/HTTP at `/v1/traces`. Until
+> that is confirmed, treat the bundled Langfuse as a UI you populate
+> by other means, and send collector traffic to one of the backends
+> below.
 
 ## Arize Phoenix
 

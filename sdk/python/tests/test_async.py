@@ -36,8 +36,6 @@ from fabric import (
 from fabric._calls import (
     FABRIC_LLM_REQUEST_MODEL,
     FABRIC_TOOL_NAME,
-    LLM_CALL_SPAN_NAME,
-    TOOL_CALL_SPAN_NAME,
 )
 from fabric.decision import SPAN_NAME
 from fabric.policy import EngineVerdict
@@ -149,13 +147,13 @@ def test_async_with_emits_same_span_as_sync_with(span_exporter: InMemorySpanExpo
             dec.checkpoint("after-retrieval", checkpoint_id=fixed_ckpt)
 
     drive_sync()
-    sync_span = span_exporter.get_finished_spans()[0]
+    sync_span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     sync_view = _normalize(sync_span)
 
     span_exporter.clear()
 
     asyncio.run(drive_async())
-    async_span = span_exporter.get_finished_spans()[0]
+    async_span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     async_view = _normalize(async_span)
 
     assert async_view == sync_view
@@ -173,7 +171,7 @@ def test_async_exit_records_exception_like_sync(span_exporter: InMemorySpanExpor
             pass
 
     asyncio.run(drive())
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     assert span.status.status_code == StatusCode.ERROR
     assert (span.status.description or "").startswith("RuntimeError")
     assert any(ev.name == "exception" for ev in span.events)
@@ -270,8 +268,9 @@ def test_async_llm_call_opens_and_closes_child_span(
     asyncio.run(drive())
     spans = span_exporter.get_finished_spans()
     names = {s.name for s in spans}
-    assert {SPAN_NAME, LLM_CALL_SPAN_NAME} <= names
-    llm_span = next(s for s in spans if s.name == LLM_CALL_SPAN_NAME)
+    assert SPAN_NAME in names
+    assert any((span.attributes or {}).get("gen_ai.operation.name") == "chat" for span in spans)
+    llm_span = next(s for s in spans if (s.attributes or {}).get("gen_ai.operation.name") == "chat")
     assert _attrs(llm_span)[FABRIC_LLM_REQUEST_MODEL] == "claude-opus-4-7"
 
 
@@ -286,7 +285,9 @@ def test_async_tool_call_opens_and_closes_child_span(
 
     asyncio.run(drive())
     spans = span_exporter.get_finished_spans()
-    tool_span = next(s for s in spans if s.name == TOOL_CALL_SPAN_NAME)
+    tool_span = next(
+        s for s in spans if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     assert _attrs(tool_span)[FABRIC_TOOL_NAME] == "vector_search"
 
 
@@ -302,7 +303,7 @@ def test_record_retrieval_inside_async_block(span_exporter: InMemorySpanExporter
             dec.record_retrieval("rag", query="q", result_count=4)
 
     asyncio.run(drive())
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [e for e in span.events if e.name == "fabric.retrieval"]
     assert len(events) == 1
     assert dict(events[0].attributes or {})["fabric.retrieval.result_count"] == 4
@@ -323,7 +324,9 @@ def test_aevaluate_policy_matches_sync(span_exporter: InMemorySpanExporter) -> N
     sync_eval = drive_sync()
     sync_event = next(
         dict(e.attributes or {})
-        for e in span_exporter.get_finished_spans()[0].events
+        for e in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
         if e.name == "fabric.policy.evaluation"
     )
     span_exporter.clear()
@@ -336,7 +339,9 @@ def test_aevaluate_policy_matches_sync(span_exporter: InMemorySpanExporter) -> N
     async_eval = asyncio.run(drive_async())
     async_event = next(
         dict(e.attributes or {})
-        for e in span_exporter.get_finished_spans()[0].events
+        for e in next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).events
         if e.name == "fabric.policy.evaluation"
     )
 
@@ -356,7 +361,7 @@ def test_aauthorize_tool_call_allows(span_exporter: InMemorySpanExporter) -> Non
 
     auth = asyncio.run(drive())
     assert auth.allowed
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [e for e in span.events if e.name == "fabric.tool.authorization"]
     assert len(events) == 1
     assert dict(events[0].attributes or {})["fabric.tool.authorization.decision"] == "allow"
@@ -378,6 +383,6 @@ def test_aqueue_judge_enqueues_off_loop(span_exporter: InMemorySpanExporter) -> 
     asyncio.run(drive())
     queued = transport.dequeue()
     assert queued is not None
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [e for e in span.events if e.name == "fabric.judge.queued"]
     assert len(events) == 1

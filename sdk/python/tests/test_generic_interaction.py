@@ -674,7 +674,11 @@ def test_cross_cutting_on_tool_call(span_exporter: InMemorySpanExporter) -> None
         ),
     ):
         pass
-    tool_span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.tool_call")
+    tool_span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(tool_span.attributes or {})
     assert attrs["fabric.tags"] == ("owasp-llm:LLM02",)
     assert attrs["fabric.baseline.status"] == "match"

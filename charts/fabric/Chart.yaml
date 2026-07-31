@@ -6,8 +6,8 @@ description: |
   how they are configured. See specs/008-deployment-model.md for the
   authoritative shape.
 type: application
-version: 0.5.1
-appVersion: "0.5.1"
+version: 0.7.0
+appVersion: "0.7.0"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ai-governance
@@ -35,7 +35,7 @@ annotations:
 # internally and are not part of this distribution.
 dependencies:
   - name: otel-collector
-    version: 0.2.0
+    version: 0.3.0
     condition: otelCollector.enabled
     repository: ""
     tags:

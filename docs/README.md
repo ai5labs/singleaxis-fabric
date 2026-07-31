@@ -11,6 +11,8 @@ shorter, action-oriented doors in.
 - [**Architecture**](architecture.md) — the 3-layer mental model
   (SDK / sidecars / collector) and the "never block the agent
   request path" principle. Links to the authoritative specs.
+- [**OpenTelemetry GenAI conventions**](genai-semantic-conventions.md) —
+  standard spans, attributes, metrics, compatibility, and privacy controls.
 - [**Deployment**](deployment.md) — Helm chart, the
   `permissive-dev` and `eu-ai-act-high-risk` profiles, and the
   L1-OSS / L2-control-plane boundary.
@@ -33,7 +35,7 @@ are roadmap; the structure is captured in
 
 ## Status
 
-Phase 1a. The docs cover the surfaces the OSS code ships today.
+Beta — v0.6.x. The docs cover the surfaces the OSS code ships today.
 Anything marked "Roadmap / not yet shipping" in the spec or
 component README is called out explicitly in the docs too — we'd
 rather under-document than overclaim.

@@ -51,15 +51,36 @@ export const EXECUTION_STATUS_FAILED = "failed";
 export const SPAN_NAME_LLM_CALL = "fabric.llm_call";
 
 // OpenTelemetry GenAI semantic conventions.
+export const GEN_AI_OPERATION_NAME = "gen_ai.operation.name";
+export const GEN_AI_PROVIDER_NAME = "gen_ai.provider.name";
 export const GEN_AI_SYSTEM = "gen_ai.system";
 export const GEN_AI_REQUEST_MODEL = "gen_ai.request.model";
 export const GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature";
 export const GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p";
+export const GEN_AI_REQUEST_TOP_K = "gen_ai.request.top_k";
 export const GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
+export const GEN_AI_REQUEST_STREAM = "gen_ai.request.stream";
+export const GEN_AI_REQUEST_REASONING_LEVEL = "gen_ai.request.reasoning.level";
+export const GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID = "gen_ai.request.previous_response.id";
+export const GEN_AI_OUTPUT_TYPE = "gen_ai.output.type";
+export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
 export const GEN_AI_RESPONSE_MODEL = "gen_ai.response.model";
 export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 export const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
 export const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
+export const GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens";
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS =
+  "gen_ai.usage.cache_creation.input_tokens";
+export const GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk";
+export const GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id";
+export const GEN_AI_CONVERSATION_COMPACTED = "gen_ai.conversation.compacted";
+export const GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions";
+export const GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages";
+export const GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages";
+export const GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions";
+export const GEN_AI_PROMPT_NAME = "gen_ai.prompt.name";
+export const GEN_AI_PROMPT_VERSION = "gen_ai.prompt.version";
 
 // Fabric mirrors of the GenAI fields.
 export const FABRIC_LLM_SYSTEM = "fabric.llm.system";
@@ -78,10 +99,15 @@ export const SPAN_NAME_TOOL_CALL = "fabric.tool_call";
 
 export const GEN_AI_TOOL_NAME = "gen_ai.tool.name";
 export const GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id";
+export const GEN_AI_TOOL_TYPE = "gen_ai.tool.type";
+export const GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description";
+export const GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments";
+export const GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result";
 
 export const FABRIC_TOOL_NAME = "fabric.tool.name";
 export const FABRIC_TOOL_CALL_ID = "fabric.tool.call.id";
 export const FABRIC_TOOL_RESULT_COUNT = "fabric.tool.result_count";
+export const FABRIC_STEP_TYPE = "fabric.step.type";
 export const FABRIC_TOOL_ARGS_HASH = "fabric.tool.arguments_hash";
 export const FABRIC_TOOL_RESULT_HASH = "fabric.tool.result_hash";
 export const FABRIC_TOOL_KIND = "fabric.tool.kind";

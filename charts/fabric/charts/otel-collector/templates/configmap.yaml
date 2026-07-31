@@ -1,6 +1,7 @@
 {{- include "otel-collector.validateSampler" . -}}
 {{- include "otel-collector.validateRedact" . -}}
 {{- include "otel-collector.validateExporter" . -}}
+{{- $exporters := include "otel-collector.exporterNames" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -74,11 +75,13 @@ data:
         send_batch_size: {{ .Values.batch.sendBatchSize }}
 
     exporters:
+      {{- if .Values.exporter.endpoint }}
       otlphttp/fabric:
         endpoint: {{ .Values.exporter.endpoint | quote }}
         tls:
           insecure: {{ .Values.exporter.insecure }}
-      {{- if .Values.debugExporter.enabled }}
+      {{- end }}
+      {{- if or .Values.debugExporter.enabled (not .Values.exporter.endpoint) }}
       debug:
         verbosity: {{ .Values.debugExporter.verbosity }}
       {{- end }}
@@ -106,18 +109,10 @@ data:
             - fabricsampler
             {{- end }}
             - batch
-          exporters:
-            - otlphttp/fabric
-            {{- if .Values.debugExporter.enabled }}
-            - debug
-            {{- end }}
+          exporters: [{{ $exporters }}]
         {{- if .Values.fabric.guard.traceProcessingEnabled }}
         traces:
           receivers: [otlp]
           processors: [memory_limiter, fabricguard, batch]
-          {{- if .Values.debugExporter.enabled }}
-          exporters: [otlphttp/fabric, debug]
-          {{- else }}
-          exporters: [otlphttp/fabric]
-          {{- end }}
+          exporters: [{{ $exporters }}]
         {{- end }}

@@ -16,6 +16,7 @@ Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deploymen
 - [x] Fabric-authored Layer 1 subcharts:
   - [`otel-collector/`](./charts/otel-collector) — telemetry processors
   - [`nemo-sidecar/`](./charts/nemo-sidecar) — NeMo Colang guardrails
+  - [`presidio-sidecar/`](./charts/presidio-sidecar) — Presidio PII redaction
   - [`langfuse/`](./charts/langfuse) — local observability UI
   - [`redteam-runner/`](./charts/redteam-runner) — scheduled adversarial probes
   - [`update-agent/`](./charts/update-agent) — GitOps signed-manifest pull
@@ -45,8 +46,16 @@ helm install fabric . \
 helm install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=<uuid>
+    --set tenant.id=<uuid> \
+    --set update-agent.config.trustedKeys[0].publicKey=<base64-ed25519-key> \
+    --set otel-collector.fabric.redact.existingSocketProvider=<sidecar-name> \
+    --set otel-collector.exporter.endpoint=<your-otlp-http-backend>
 ```
+
+The `eu-ai-act-high-risk` profile fails closed: it will not render
+without a real Ed25519 manifest-signing key, a Presidio socket
+provider, and a real OTLP backend. That is deliberate — see
+[Profiles and defaults](#profiles-and-defaults).
 
 ### Contributor note on `Chart.lock`
 
@@ -54,6 +63,108 @@ The repo intentionally does not check in `Chart.lock`. Subchart
 versions are pinned in `Chart.yaml`; operators regenerate the lock
 locally with `helm dependency update`. This avoids stale digests
 diverging across branches when contributors bump a subchart.
+
+If you have a `Chart.lock` left over from an older checkout,
+`helm dependency build` fails with *"the lock file (Chart.lock) is
+out of sync with the dependencies file (Chart.yaml)"* — delete it or
+run `helm dependency update` to regenerate.
+
+## Defaults: what a bare `helm install` gives you
+
+`helm install fabric .` with no profile installs the **otel-collector
+only**. Every other subchart stays off, because each needs something
+the chart cannot invent for you (a tenant HMAC key, an Ed25519 signing
+key, a Postgres DSN, a live red-team target).
+
+| Subchart | Default | Why |
+|----------|---------|-----|
+| `otel-collector` | **on** | Without it a Fabric install captures nothing |
+| `nemo-sidecar` | off | Needs a Colang rails bundle |
+| `presidio-sidecar` | off | Needs a tenant HMAC key Secret |
+| `langfuse` | off | Needs an **external** Postgres DSN — see below |
+| `redteam-runner` | off | CronJob attacks a live endpoint you must name |
+| `update-agent` | off | Needs a real Ed25519 manifest-signing key |
+
+### The collector's two honest defaults
+
+**No exporter endpoint is set.** There is no OTLP endpoint that works
+in an L1-only OSS deploy, so `otel-collector.exporter.endpoint` has no
+default. When it is empty the chart does **not** render an
+`otlphttp/fabric` exporter pointed at `""` — it renders the OTel
+`debug` exporter instead, and `NOTES.txt` prints a loud post-install
+warning. Spans land in the collector pod's stdout:
+
+```bash
+kubectl -n fabric-system logs -l app.kubernetes.io/name=otel-collector -f
+```
+
+Nothing is silently dropped, but **stdout is not durable and is not an
+audit trail**. It is a dev posture. Before any retention or compliance
+claim, point the collector at a real backend:
+
+```bash
+helm upgrade fabric . -n fabric-system \
+    --set otel-collector.exporter.endpoint=http://your-collector:4318
+```
+
+**The HMAC sampler is off.** `otel-collector.fabric.sampler` needs a
+32-byte key the chart will not generate for you — an auto-generated key
+would rotate on every `helm upgrade` and silently change every
+deterministic sampling decision. Off is also the conservative choice
+for an audit trail: the sampler *reduces* data (its default
+`decision_summary` rate drops 90% of decision summaries), so a bare
+install keeps everything. Turn it on with a key once volume is the
+problem:
+
+```bash
+--set otel-collector.fabric.sampler.enabled=true \
+--set otel-collector.fabric.sampler.hmacKeySecret.name=fabric-otel-sampler-key
+```
+
+## Profiles and defaults
+
+Both shipped profiles set every toggle they care about explicitly, so
+neither is affected by the umbrella defaults above.
+
+- **`permissive-dev`** — otel-collector + nemo-sidecar, single replica,
+  redaction off, sampler on with a *known-constant* dev key, and the
+  debug exporter on. No exporter endpoint: this profile has no backend
+  to export to, so spans go to pod stdout by design. Not for
+  production.
+- **`eu-ai-act-high-risk`** — deny-default NetworkPolicy, guard with
+  `dropUnknownClasses`, redaction pinned on, sampler keyed from a
+  Secret, update-agent admission fail-closed. It renders **only** when
+  you supply the real secrets it refuses to fake:
+  1. `update-agent.config.trustedKeys[0].publicKey` — a real base64
+     Ed25519 key.
+  2. `otel-collector.fabric.redact.existingSocketProvider` — the
+     component mounting the Presidio socket (or enable the bundled
+     `presidioSidecar` and point at it).
+
+  3. `otel-collector.exporter.endpoint` — this profile sets
+     `exporter.requireEndpoint: true`, which disables the stdout
+     fallback. A profile that makes a retention claim must name a real
+     backend rather than inherit a dev posture.
+
+  For a dry render only, all three gates have escape hatches:
+  `--set update-agent.config.allowPlaceholderKey=true`,
+  `--set otel-collector.fabric.redact.acceptMissingProvider=true`, and
+  `--set otel-collector.exporter.requireEndpoint=false`. Never set any
+  of them in a real install.
+
+### Langfuse is opt-in and does not bundle Postgres
+
+The `langfuse` subchart is a thin wrapper around the upstream Langfuse
+image. **It ships no database.** `langfuse.enabled=true` without
+`langfuse.database.url` or `langfuse.database.dsnSecret.name` fails at
+render time rather than deploying a pod that cannot start. Two further
+caveats before you wire the collector to it:
+
+- The Service is named `<release>-langfuse` (e.g. `fabric-langfuse`),
+  not `langfuse`.
+- Whether the pinned upstream version accepts OTLP/HTTP on
+  `/v1/traces` at all is **unverified**. Do not assume the bundled
+  Langfuse is a drop-in OTLP sink for `exporter.endpoint`.
 
 ## Latency posture (cross-cutting)
 
@@ -127,6 +238,23 @@ Verification instructions ship with each release — see
 
 ```bash
 helm lint charts/fabric
+helm template test charts/fabric > /dev/null
 helm template test charts/fabric --values charts/fabric/profiles/permissive-dev.yaml > /dev/null
-helm template test charts/fabric --values charts/fabric/profiles/eu-ai-act-high-risk.yaml > /dev/null
+
+# eu-ai-act-high-risk fails closed on two secrets it refuses to fake.
+# These two flags affect rendering only — never use them to install.
+helm template test charts/fabric \
+    --values charts/fabric/profiles/eu-ai-act-high-risk.yaml \
+    --set update-agent.config.allowPlaceholderKey=true \
+    --set otel-collector.fabric.redact.acceptMissingProvider=true \
+    --set otel-collector.exporter.requireEndpoint=false > /dev/null
+
+# Subchart render assertions:
+./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh
+./charts/fabric/charts/otel-collector/tests/test-traces-pipeline.sh
 ```
+
+Note that `helm lint` does **not** propagate a subchart's `fail` into
+its exit code — it logs `[INFO] Fail: ...` and still reports
+`0 chart(s) failed`. Always run `helm template` as well; it is the
+command that actually exits non-zero on a fail-closed gate.

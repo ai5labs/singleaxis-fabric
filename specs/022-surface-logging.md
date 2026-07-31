@@ -1,14 +1,13 @@
 ---
 title: Agent Surface Logging
-status: draft
-revision: 1
-last_updated: 2026-06-10
+status: implemented
+revision: 2
+last_updated: 2026-07-25
 owner: project-lead
 ---
 
 # Spec 022 — Agent Surface Logging
 
-**Status:** proposed (v0.7 target)
 **Depends on:** spec 002 (architecture), the existing hash-on-span privacy contract.
 
 ## Goal

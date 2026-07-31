@@ -1,14 +1,14 @@
 ---
 title: Generic Interaction Capture
-status: draft
-revision: 1
-last_updated: 2026-06-10
+status: implemented
+revision: 2
+last_updated: 2026-07-25
 owner: project-lead
 ---
 
 # Spec 023 — Generic Interaction Capture
 
-**Status:** proposed (v0.7 target, builds on spec 022)
+**Depends on:** spec 022 (agent surface logging).
 **Goal:** make the OSS layer the **best generic product on the market for
 capturing *every* interaction an agentic system has** — not a fixed list of
 known surfaces, but a universal, extensible capture model with generic

@@ -27,8 +27,14 @@ def resolve_venv_python(venv: Path | None) -> Path | None:
 
 
 def hash_text(text: str) -> str:
-    """Deterministic short hash for prompt/response bodies. We never
-    ship raw probe bodies into telemetry — the hash is enough to
-    dedupe and correlate across runs."""
+    """Deterministic digest for prompt/response bodies. We never ship
+    raw probe bodies into telemetry — the digest is enough to dedupe
+    and correlate across runs.
 
-    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).hexdigest()
+    SHA-256, 64 lowercase hex. This used to be blake2b/16 (32 hex),
+    which meant the value in a field named ``prompt_hash`` was not the
+    digest the identifier contract (spec 024 §6.3, ``Sha256``) says it
+    is. Anything that tried to verify evidence against it would fail,
+    and nothing did, so nobody noticed."""
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

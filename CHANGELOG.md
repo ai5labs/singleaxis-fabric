@@ -8,8 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-31
+
 ### Added
 
+- **OpenTelemetry GenAI semantic conventions.** Python and TypeScript now
+  emit current provider/operation, agent/workflow/conversation, inference,
+  embeddings, tool, retrieval, memory, evaluation, token/cache, response,
+  and opt-in content attributes. GenAI child spans use standard operation
+  names; Python adds the standard token, duration, time-to-first-chunk, and
+  tool-duration histograms. Raw prompts, messages, tool payloads, retrieval
+  content, and memory content remain disabled unless `capture_content=True`.
+  The deprecated `system=` API and legacy attributes remain available for
+  v0.6 migrations. See
+  [`docs/genai-semantic-conventions.md`](docs/genai-semantic-conventions.md).
 - **Agent surface logging (Python SDK).** Fabric now captures every way
   an agent touches the outside world, each as an additive `fabric.*`
   span event with metadata + SHA-256 hashes (raw data never on the
@@ -38,6 +50,176 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `SignatureResult`, `SignatureCheck`, `Taxonomy`, `TaxonomyEntry`,
   `bundled_taxonomy_names`. All additive: the conformance goldens stay
   byte-identical and `fabric.schema_version` remains `1.0`. (spec 023)
+
+### Changed (chart defaults — **behaviour change**)
+
+- **The OTel Collector now installs by default.**
+  `otelCollector.enabled` in `charts/fabric/values.yaml` flips
+  `false` → `true`. Previously a bare
+  `helm install fabric ./charts/fabric` rendered **zero** Kubernetes
+  resources — every subchart was gated off and `namespace.create` was
+  `false` — so an operator following the README without a profile got
+  a successful-looking no-op install and no telemetry anywhere. A
+  Fabric install with no collector captures nothing, so this default
+  was wrong. Every other subchart (Presidio, NeMo, Langfuse, red-team
+  runner, update agent) stays opt-in: each needs a secret, a signing
+  key, or an external database the operator must supply.
+- **An unset exporter endpoint no longer fails the render — it falls
+  back to the debug exporter.** `otel-collector.exporter.endpoint`
+  still has no default, but the `otlphttp/fabric` exporter is now
+  rendered only when it is set. With it empty the logs and traces
+  pipelines use `debug`, so spans land in the collector pod's stdout
+  and are readable with `kubectl logs`, and `NOTES.txt` prints a loud
+  post-install warning. **Nothing is silently dropped — but stdout is
+  not durable and is not an audit trail.** This replaces the previous
+  `exporter.acceptUnsetEndpoint=true` escape hatch, which rendered a
+  live `otlphttp` exporter pointed at `""` and failed every export
+  with no operator-visible signal.
+- **HMAC tail sampling ships off.**
+  `otel-collector.fabric.sampler.enabled` flips `true` → `false`. It
+  could not render without a key an operator has to supply, and
+  auto-generating one would rotate it on every `helm upgrade`,
+  silently changing every deterministic sampling decision. Off is also
+  the conservative choice for an audit trail: the sampler *reduces*
+  data (`rates.decision_summary: 0.1` drops 90% of decision
+  summaries), so a default install now keeps every event. Both shipped
+  profiles set `enabled` explicitly and are unaffected.
+- **`permissive-dev` no longer exports to itself.** The profile set
+  `otel-collector.exporter.endpoint: http://localhost:4318`, which is
+  the collector's *own* OTLP/HTTP receiver (it binds `0.0.0.0:4318`) —
+  every span was re-exported into the pod that emitted it. The
+  endpoint is now unset, so the profile uses the debug exporter.
+- **`otel-collector` subchart `0.2.0` → `0.3.0`**, with the matching
+  constraint bump in `charts/fabric/Chart.yaml`. Both must move
+  together or `helm dependency build` fails.
+
+### Changed (docs / scope)
+
+- **README OCI publishing claim corrected — it was inverted.** The
+  README claimed the `otel-collector` subchart publishes standalone at
+  `oci://ghcr.io/singleaxis/charts/otel-collector` and that
+  umbrella-chart OCI publishing was still to come. Both were wrong:
+  the `publish-chart` job in `.github/workflows/release.yml` packages
+  and cosign-signs **only** the umbrella, at
+  `oci://ghcr.io/singleaxis/charts/fabric`, exactly as
+  `charts/fabric/README.md` already said. `docs/deployment.md` no
+  longer lists umbrella OCI publishing as roadmap.
+- **TypeScript SDK parity stated plainly.** The README Status section
+  and `docs/enterprise-readiness.md` now say what the TypeScript SDK
+  is: an **emit-surface-only** capture library — 7 modules against
+  Python's 58, reproducing 19 of the 39 shared conformance goldens,
+  with no framework adapters, no guardrail or policy transports, no
+  MCP instrumentation, no host-side I/O helpers, not published to npm,
+  and gated by an advisory rather than required CI job. It is not a
+  drop-in substitute for the Python SDK, and there is no Go SDK.
+  Outstanding mirror work: [`docs/typescript-parity-backlog.md`](docs/typescript-parity-backlog.md).
+- **Presidio sidecar is bundled, not missing.** `docs/deployment.md`
+  said the umbrella did not yet bundle the Presidio subchart. It has
+  been a declared dependency since the subchart landed; the accurate
+  statement is that the `eu-ai-act-high-risk` profile does not
+  *enable* it, because it needs a real tenant HMAC key. Wording
+  corrected; no values changed.
+- **Bundled Langfuse documentation corrected on three counts.**
+  `docs/exporting-to-your-observability-backend.md` claimed
+  `langfuse.enabled=true` runs "Langfuse + Postgres inside
+  `fabric-system`" — the subchart bundles **no** database and
+  fail-closes at render without an external DSN. Its Service resolves
+  at `<release>-langfuse`, not `langfuse`, so the recommended
+  `http://langfuse:3000` endpoint pointed at nothing. And the pinned
+  upstream version (`appVersion 2.93.0`) is not a verified OTLP sink,
+  so the page no longer recommends aiming the collector at it. The
+  example command now includes the required DSN flag.
+- **`docs/enterprise-readiness.md` counts and claims trued up.** Test
+  suite 653 → **757**; conformance goldens 31 → **39**; the NIST AI
+  RMF / ISO 42001 row no longer links to `docs/compliance/`, which
+  contains no mapping files and says so — per-control mappings are
+  roadmap (spec 009). The `~10–30 ms` per-decision figure is now
+  labelled a design budget rather than a measurement, matching the
+  README's existing posture and the spec 005 correction in 0.5.0. The
+  page's "generally available" framing is now "beta", reconciling it
+  with the "Pre-1.0" statement two sections below and with the README.
+- **README status reconciled to the release line.** "Beta — Phase 1a
+  shipping" → "Beta — v0.6.x"; `docs/deployment.md`'s operational
+  posture table drops its stale "Phase 1a state" column header and
+  no longer defers the Update Agent to "Phase 2" (it ships as an
+  opt-in subchart today).
+- **`docs/architecture.md` no longer says L2 components are in this
+  repo.** The sentence "everything else in the repo (judge workers,
+  escalation service, decision graph, telemetry bridge, update agent,
+  admin UI)" listed five components that are commercial and absent
+  here; only the update agent is in-tree. The page's own scope note
+  already said so.
+- **README no longer implies the full human-in-the-loop loop ships in
+  OSS.** "Fabric ships all five" is now explicit that the escalation
+  item is partial: the OSS distribution gives the pause-and-emit
+  primitive and the adapter wiring, not the reviewer queue or the
+  signed-verdict resume (spec 007).
+- **`docs/quickstart.md` backend-rendering claim softened.** It
+  asserted that Phoenix and Langfuse "render Fabric traces natively
+  from this release onward" — a claim about third-party UI behaviour
+  with no recorded smoke render behind it. It now says the `gen_ai.*`
+  conventions are emitted correctly and stops short of per-backend
+  verification. The Langfuse bootstrap sentence is now conditional on
+  the subchart being enabled, which no shipped profile does.
+
+### Changed (spec status)
+
+- **Spec front-matter moved off blanket `draft`.** Per the vocabulary
+  in `specs/000-overview.md`, 006 (LLM-as-Judge), 007 (Escalation),
+  019 (Policy Engine), 020 (Execution & Step), 021 (ReplayMetadata),
+  022 (Surface Logging) and 023 (Generic Interaction Capture) are now
+  `implemented` — each carries an explicit L1 OSS scope boundary and
+  each OSS primitive it names ships with frozen conformance goldens.
+  001, 002, 003, 004, 008, 009, 010 and 012 move to `accepted`:
+  decided designs whose remaining halves are commercial or unbuilt,
+  where `implemented` would promise an OSS reader code they cannot
+  obtain. 005 (Inline Guardrails) and 011 (Roadmap) stay `draft` —
+  005's in-process transport claim is contradicted by the shipped UDS
+  sidecars, and a roadmap is never `implemented`. The index table in
+  `specs/README.md` gains the two missing rows for 022 and 023 and a
+  note that 013–018 and 024 are allocated elsewhere in the same
+  numbering series, so the next unused public number is 025.
+
+### Removed
+
+- **`components/telemetry-bridge/` is gone from the OSS working tree,
+  and is now gitignored.** To be precise about what did and did not
+  happen: the directory was **never tracked and never released** —
+  `git log -- components/telemetry-bridge` was empty — so no consumer
+  ever had it and no published artifact changes. It was uncommitted
+  Layer 2 work sitting at a Layer 1 path, one `git add .` away from
+  being published under Apache-2.0 while its own README called it
+  commercial. It has been relocated to the SingleAxis private
+  repository, and `/components/telemetry-bridge/` is now in
+  `.gitignore` so it cannot reappear here. `components/README.md`
+  already listed it under "Not here (Layer 2 / Layer 3)" and needed no
+  edit; spec [`004-telemetry-bridge.md`](specs/004-telemetry-bridge.md)
+  stays as the public design of record.
+
+### Operator action required
+
+If you install `charts/fabric` **without** `--values profiles/<name>.yaml`
+and were relying on the previous all-subcharts-off default, a bare
+`helm install`/`helm upgrade` now creates a collector Deployment,
+Service, ServiceAccount and ConfigMap. Pass
+`--set otelCollector.enabled=false` to keep the old empty render.
+Installs that use either shipped profile are unaffected — both set the
+toggle explicitly.
+
+If you installed with `--set otel-collector.exporter.acceptUnsetEndpoint=true`,
+drop the flag. An unset endpoint is now a supported (loudly warned)
+posture that routes spans to the collector pod's stdout, rather than a
+live exporter pointed at an empty string.
+
+If you relied on the collector's default HMAC tail sampling to hold
+telemetry volume down, it is now off: re-enable it explicitly with
+`--set otel-collector.fabric.sampler.enabled=true` plus
+`--set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>`.
+
+If `helm dependency build` fails with "the lock file (Chart.lock) is
+out of sync with the dependencies file (Chart.yaml)", you have a stale
+`Chart.lock` from an earlier checkout — it is intentionally
+uncommitted. Run `helm dependency update` to regenerate it.
 
 ## [0.6.0] - 2026-06-02
 
@@ -1306,7 +1488,9 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.7.0
+[0.6.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.6.0
 [0.5.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.1
 [0.5.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.0
 [0.4.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.4.1

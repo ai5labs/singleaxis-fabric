@@ -57,6 +57,9 @@ import {
 export interface DecisionClientIdentity {
   tenantId: string;
   agentId: string;
+  agentName: string;
+  agentVersion?: string;
+  agentDescription?: string;
   profile: string;
   workflowId?: string;
   executionId?: string;
@@ -89,6 +92,8 @@ export interface DecisionIds {
    * {@link DecisionIds.executionId}.
    */
   workflowId?: string;
+  workflowName?: string;
+  conversationCompacted?: boolean;
 }
 
 /** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
@@ -331,6 +336,19 @@ export class Decision {
     span.setAttribute(ATTR_TENANT, identity.tenantId);
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
+    span.setAttribute("gen_ai.operation.name", "invoke_agent");
+    span.setAttribute("gen_ai.agent.name", identity.agentName);
+    span.setAttribute("gen_ai.agent.id", identity.agentId);
+    span.setAttribute("gen_ai.conversation.id", ids.sessionId);
+    if (identity.agentVersion !== undefined) {
+      span.setAttribute("gen_ai.agent.version", identity.agentVersion);
+    }
+    if (identity.agentDescription !== undefined) {
+      span.setAttribute("gen_ai.agent.description", identity.agentDescription);
+    }
+    if (ids.conversationCompacted) {
+      span.setAttribute("gen_ai.conversation.compacted", true);
+    }
     // Resolve the execution-correlation metadata with precedence:
     //   explicit DecisionIds value > active execution (ALS) > FabricConfig.
     // A decision opened outside any execution falls back to the config exactly
@@ -347,6 +365,7 @@ export class Decision {
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
     if (workflowId !== undefined) {
       span.setAttribute(ATTR_WORKFLOW, workflowId);
+      span.setAttribute("gen_ai.workflow.name", ids.workflowName ?? workflowId);
     }
     if (executionId !== undefined) {
       span.setAttribute(ATTR_EXECUTION, executionId);
@@ -396,7 +415,7 @@ export class Decision {
     const span = startToolSpan(this.tracer, name, options);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
-      const tool = new ToolCall(span);
+      const tool = new ToolCall(span, options.captureContent ?? false);
       return runAndEnd(span, () => fn(tool));
     });
   }

@@ -25,10 +25,12 @@ only interact with three layers.
 | **Sidecars** | Presidio (PII redaction) and NeMo Guardrails (Colang rails), exposed over Unix domain sockets. Shipped as container images; deployed alongside the agent pod. | Same pod or same node as the agent. | Synchronously on `guard_input` / `guard_output_*`, but over a UDS — no TCP, no DNS, design-budget sub-millisecond transport (benchmark suite is a follow-up release). |
 | **Collector** | An OpenTelemetry Collector distribution pre-configured with the Fabric processor chain (tail sampling, attribute allowlisting, tenant scoping). | One or more per-cluster deployments. | Asynchronously — the SDK exports batched spans over OTLP; the agent request path never waits for this. |
 
-Everything else in the repo (judge workers, escalation service,
-decision graph, telemetry bridge, update agent, admin UI) runs
-asynchronously off the OTel stream or over a message broker. The
-agent's request path never blocks on any of them.
+Everything else in the picture runs asynchronously off the OTel stream
+or over a message broker: judge workers, the escalation service, the
+decision graph, the telemetry bridge, and the admin UI are **L2
+commercial and not in this repository**; the update agent is in this
+repository as an opt-in subchart. The agent's request path never blocks
+on any of them.
 
 ## The one principle to internalize
 

@@ -273,10 +273,21 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "agent-framework-core", marker = "extra == 'agent-framework'", specifier = ">=0.1,<2.0" },
+    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34" },
+    { name = "cedarpy", marker = "extra == 'cedar'", specifier = ">=0.4" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.80,<2.0" },
+    { name = "cryptography", marker = "extra == 'dev'", specifier = ">=42" },
+    { name = "cryptography", marker = "extra == 'signing'", specifier = ">=42" },
+    { name = "deepeval", marker = "extra == 'deepeval'", specifier = ">=0.21" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'lakera'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'opa'", specifier = ">=0.27" },
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.2,<2.0" },
     { name = "litellm", marker = "extra == 'crewai'", specifier = ">=1.83.7" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11.2" },
+    { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6" },
     { name = "opentelemetry-api", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otlp'", specifier = ">=1.41" },
@@ -289,9 +300,12 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.8,<3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ragas", marker = "extra == 'ragas'", specifier = ">=0.1" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.9" },
+    { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
 ]
-provides-extras = ["agent-framework", "anthropic", "bedrock", "cohere", "crewai", "dev", "langgraph", "openai", "otel-langchain", "otlp"]
+provides-extras = ["agent-framework", "anthropic", "aws", "bedrock", "cedar", "cohere", "crewai", "deepeval", "dev", "lakera", "langgraph", "mcp", "nats", "opa", "openai", "otel-langchain", "otlp", "ragas", "redis", "signing"]
 
 [[package]]
 name = "typing-extensions"

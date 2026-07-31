@@ -37,6 +37,14 @@ otelCollector:
   enabled: true
 otel-collector:
   replicaCount: 2
+  # A high-risk deployment must name a real OTLP/HTTP backend. With no
+  # endpoint the chart's default posture is a debug exporter writing to
+  # pod stdout — visible, but not durable and not an audit trail. This
+  # profile makes a retention claim, so it fails the render instead of
+  # inheriting a dev posture. The operator supplies the endpoint (and
+  # an egressTo rule below that reaches it) at install time.
+  exporter:
+    requireEndpoint: true
   networkPolicy:
     enabled: true
     # Tighten ingress: only pods within fabric-system may post OTLP.

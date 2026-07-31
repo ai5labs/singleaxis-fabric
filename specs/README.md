@@ -10,6 +10,10 @@ Specs are numbered with a three-digit zero-padded prefix. New specs take
 the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
+Numbers 013-018 and 024 are allocated to specs in the SingleAxis
+commercial repository, which shares this numbering series. They are
+intentionally absent here; the next unused public number is 025.
+
 ## Status values
 
 Every spec declares a `Status` in its header:
@@ -37,18 +41,20 @@ Every spec declares a `Status` in its header:
 | # | Title | Status |
 |---|-------|--------|
 | [000](000-overview.md) | Overview & conventions | accepted |
-| [001](001-product-vision.md) | Product vision & positioning | draft |
-| [002](002-architecture.md) | Eight-layer architecture & Fabric Control Plane | draft |
-| [003](003-decision-graph.md) | Decision Graph — unified provenance artifact | draft |
-| [004](004-telemetry-bridge.md) | Telemetry Bridge & sanitized egress | draft |
+| [001](001-product-vision.md) | Product vision & positioning | accepted |
+| [002](002-architecture.md) | Eight-layer architecture & Fabric Control Plane | accepted |
+| [003](003-decision-graph.md) | Decision Graph — unified provenance artifact | accepted |
+| [004](004-telemetry-bridge.md) | Telemetry Bridge & sanitized egress | accepted |
 | [005](005-guardrails-inline.md) | Inline guardrails & latency budget | draft |
-| [006](006-llm-as-judge.md) | LLM-as-Judge architecture | draft |
-| [007](007-escalation-workflow.md) | Escalation, pause, and SASF review loop | draft |
-| [008](008-deployment-model.md) | Deployment model & Helm chart | draft |
-| [009](009-compliance-mapping.md) | Regulation-to-layer mapping | draft |
-| [010](010-development-standards.md) | Development, testing, and release standards | draft |
+| [006](006-llm-as-judge.md) | LLM-as-Judge architecture | implemented |
+| [007](007-escalation-workflow.md) | Escalation, pause, and SASF review loop | implemented |
+| [008](008-deployment-model.md) | Deployment model & Helm chart | accepted |
+| [009](009-compliance-mapping.md) | Regulation-to-layer mapping | accepted |
+| [010](010-development-standards.md) | Development, testing, and release standards | accepted |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
-| [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | draft |
-| [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | draft |
-| [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | draft |
-| [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | draft |
+| [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | accepted |
+| [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | implemented |
+| [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | implemented |
+| [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | implemented |
+| [022](022-surface-logging.md) | Agent surface logging — MCP inventory, skills, delegation, hooks, file access | implemented |
+| [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |

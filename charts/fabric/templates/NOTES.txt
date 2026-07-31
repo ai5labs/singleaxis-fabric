@@ -14,6 +14,9 @@ Subcharts enabled:
 {{- if .Values.nemoSidecar.enabled }}
   - nemo-sidecar          (NeMo Colang inline guardrails)
 {{- end }}
+{{- if .Values.presidioSidecar.enabled }}
+  - presidio-sidecar      (Presidio PII redaction over UDS)
+{{- end }}
 {{- if .Values.langfuse.enabled }}
   - langfuse              (local observability UI)
 {{- end }}
@@ -22,6 +25,43 @@ Subcharts enabled:
 {{- end }}
 {{- if .Values.updateAgent.enabled }}
   - update-agent          (manifest-channel admission webhook)
+{{- end }}
+
+{{- if .Values.otelCollector.enabled }}
+{{- $otel := index .Values "otel-collector" }}
+{{- if not $otel.exporter.endpoint }}
+
+=====================================================================
+WARNING: NO TELEMETRY BACKEND IS CONFIGURED.
+
+`otel-collector.exporter.endpoint` is empty, so the collector exports
+nowhere. Spans and logs are written to the collector pod's stdout via
+the OTel `debug` exporter and nothing else. Read them with:
+
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/name=otel-collector -f
+
+Pod stdout is not durable, is not queryable, and is NOT an audit
+trail — it survives only as long as the pod and its log rotation. Do
+not make a retention or compliance claim on this install.
+
+Point the collector at a real OTLP/HTTP backend:
+
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} \
+    --set otel-collector.exporter.endpoint=http://your-collector:4318
+
+Backend examples (Datadog, Honeycomb, your own collector chain) are
+in charts/fabric/charts/otel-collector/values.yaml.
+=====================================================================
+{{- end }}
+{{- if not $otel.fabric.sampler.enabled }}
+
+NOTE: the deterministic HMAC sampler is OFF, so every event is kept.
+That is the safe default for an audit trail and the highest telemetry
+volume this chart emits. To downsample, supply a key:
+
+  --set otel-collector.fabric.sampler.enabled=true \
+  --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
+{{- end }}
 {{- end }}
 
 What to do next:

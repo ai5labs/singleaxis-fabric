@@ -26,7 +26,6 @@ from fabric._calls import (
     FABRIC_TOOL_KIND,
     FABRIC_TOOL_NAME,
     FABRIC_TOOL_RESULT_COUNT,
-    TOOL_CALL_SPAN_NAME,
 )
 from fabric.integrations.mcp import (
     FABRIC_MCP_SERVER,
@@ -97,7 +96,11 @@ def test_traced_call_tool_happy_path(span_exporter: InMemorySpanExporter) -> Non
     assert result is session._result
     assert session.calls == [{"name": "get_weather", "arguments": args}]
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_NAME] == "get_weather"
     assert attrs[FABRIC_TOOL_KIND] == "mcp"
@@ -120,7 +123,11 @@ def test_traced_call_tool_error_result(span_exporter: InMemorySpanExporter) -> N
     with client.decision(session_id="s", request_id="r") as dec:
         asyncio.run(traced_call_tool(dec, session, "flaky_tool"))
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR] is True
     assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "mcp_tool_error"
@@ -136,7 +143,11 @@ def test_traced_call_tool_no_arguments(span_exporter: InMemorySpanExporter) -> N
         asyncio.run(traced_call_tool(dec, session, "ping"))
 
     assert session.calls == [{"name": "ping", "arguments": None}]
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     # no arguments => no args hash, no mcp server/transport stamped
     assert FABRIC_TOOL_ARGS_HASH not in attrs
@@ -157,7 +168,11 @@ def test_traced_call_tool_unsized_content(span_exporter: InMemorySpanExporter) -
     with client.decision(session_id="s", request_id="r") as dec:
         asyncio.run(traced_call_tool(dec, session, "weird"))
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     assert FABRIC_TOOL_RESULT_COUNT not in attrs
 
@@ -171,7 +186,11 @@ def test_traced_call_tool_plain_result(span_exporter: InMemorySpanExporter) -> N
         result = asyncio.run(traced_call_tool(dec, session, "echo", {"x": 1}))
 
     assert result == {"ok": True}
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     assert FABRIC_TOOL_ERROR not in attrs
     assert FABRIC_TOOL_RESULT_COUNT not in attrs
@@ -187,7 +206,11 @@ def test_traced_call_tool_unserializable_result(span_exporter: InMemorySpanExpor
     with client.decision(session_id="s", request_id="r") as dec:
         asyncio.run(traced_call_tool(dec, session, "weird"))
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     # the result hash still lands (hashed, never the raw result)
     assert "fabric.tool.result_hash" in attrs
@@ -236,7 +259,11 @@ def test_instrumented_session_call_tool(span_exporter: InMemorySpanExporter) -> 
         result = asyncio.run(wrapped.call_tool("read_file", {"path": "/etc/hosts"}))
 
     assert result is session._result
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_KIND] == "mcp"
     assert attrs[FABRIC_MCP_SERVER] == "fs-mcp"

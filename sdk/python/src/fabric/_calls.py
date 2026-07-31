@@ -23,6 +23,8 @@ once the call returns. Setters write to both namespaces.
 from __future__ import annotations
 
 import hashlib
+import json
+import time
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from enum import StrEnum
@@ -32,6 +34,7 @@ from typing import TYPE_CHECKING, Self
 from opentelemetry.trace import SpanKind
 
 if TYPE_CHECKING:
+    from opentelemetry.metrics import Histogram, Meter
     from opentelemetry.trace import Span, Tracer
 
 
@@ -40,25 +43,60 @@ def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-# OpenTelemetry GenAI semantic conventions (still in development status
-# in upstream `opentelemetry-semantic-conventions`; pinned here so a
-# rename in upstream surfaces as a single-file diff in Fabric).
+# OpenTelemetry GenAI semantic conventions 1.42.0 (development).
+#
+# `gen_ai.system` and the underscore-separated cache keys are retained as
+# compatibility aliases for the v0.6 wire contract. All new telemetry uses
+# the current dotted names and `gen_ai.provider.name`.
+GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
+GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 GEN_AI_SYSTEM = "gen_ai.system"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
 GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature"
 GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p"
+GEN_AI_REQUEST_TOP_K = "gen_ai.request.top_k"
 GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens"
+GEN_AI_REQUEST_STREAM = "gen_ai.request.stream"
+GEN_AI_REQUEST_REASONING_LEVEL = "gen_ai.request.reasoning.level"
+GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID = "gen_ai.request.previous_response.id"
+GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats"
+GEN_AI_OUTPUT_TYPE = "gen_ai.output.type"
+GEN_AI_RESPONSE_ID = "gen_ai.response.id"
 GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
+GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk"
+GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens"
 # OTel GenAI prompt-cache token mirrors. The upstream convention names
 # these on the *input* side (cache reads/writes are charged against the
 # prompt), so we mirror Fabric's cache counters onto these keys.
-GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens"
-GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens"
+GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens"
+GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation.input_tokens"
+GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY = "gen_ai.usage.cache_read_input_tokens"
+GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS_LEGACY = "gen_ai.usage.cache_creation_input_tokens"
+GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
+GEN_AI_CONVERSATION_COMPACTED = "gen_ai.conversation.compacted"
+GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions"
+GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages"
+GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
+GEN_AI_PROMPT_NAME = "gen_ai.prompt.name"
+GEN_AI_PROMPT_VERSION = "gen_ai.prompt.version"
 GEN_AI_TOOL_NAME = "gen_ai.tool.name"
 GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
+GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
+GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments"
+GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
+ERROR_TYPE = "error.type"
+
+GEN_AI_CLIENT_TOKEN_USAGE = "gen_ai.client.token.usage"  # noqa: S105
+GEN_AI_CLIENT_OPERATION_DURATION = "gen_ai.client.operation.duration"
+GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK = "gen_ai.client.operation.time_to_first_chunk"
+GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK = "gen_ai.client.operation.time_per_output_chunk"
+GEN_AI_EXECUTE_TOOL_DURATION = "gen_ai.execute_tool.duration"
 
 # Fabric extension namespace — mirror of the GenAI fields plus
 # governance-specific additions that don't have a standard equivalent.
@@ -135,8 +173,17 @@ FABRIC_STEP_ATTEMPT = "fabric.step.attempt"
 FABRIC_STEP_RETRY_REASON = "fabric.step.retry.reason"
 FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID = "fabric.step.retry.previous_attempt_id"
 
+# Legacy names retained as exported compatibility constants. Current spans are
+# dynamically named according to the GenAI convention.
 LLM_CALL_SPAN_NAME = "fabric.llm_call"
 TOOL_CALL_SPAN_NAME = "fabric.tool_call"
+
+
+def _json_value(value: object) -> str:
+    """Encode a structured GenAI attribute for OTLP span transport."""
+
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
 
 # Default canonical step type per child-span kind.
 _DEFAULT_LLM_STEP_TYPE = "llm_call"
@@ -225,15 +272,32 @@ class LLMCall(AbstractContextManager["LLMCall"]):
     turn, single thread. Don't share an instance across coroutines.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         *,
         tracer: Tracer,
-        system: str,
+        meter: Meter | None,
+        provider: str,
         model: str,
+        operation_name: str = "chat",
+        emit_legacy_attributes: bool = True,
         temperature: float | None = None,
         top_p: float | None = None,
+        top_k: int | None = None,
         max_tokens: int | None = None,
+        stream: bool | None = None,
+        reasoning_level: str | None = None,
+        previous_response_id: str | None = None,
+        encoding_formats: Sequence[str] | None = None,
+        output_type: str | None = None,
+        conversation_id: str | None = None,
+        conversation_compacted: bool | None = None,
+        prompt_name: str | None = None,
+        prompt_version: str | None = None,
+        system_instructions: object | None = None,
+        input_messages: object | None = None,
+        tool_definitions: object | None = None,
+        capture_content: bool = False,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -241,10 +305,14 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
     ) -> None:
-        if not system:
-            raise ValueError("LLMCall: system is required (e.g. 'anthropic')")
+        if not provider:
+            raise ValueError("LLMCall: provider is required (e.g. 'anthropic')")
         if not model:
             raise ValueError("LLMCall: model is required")
+        if not operation_name:
+            raise ValueError("LLMCall: operation_name is required")
+        if prompt_version is not None and prompt_name is None:
+            raise ValueError("LLMCall: prompt_version requires prompt_name")
         _validate_step_metadata(
             step_id=step_id,
             step_type=step_type,
@@ -254,11 +322,28 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
         )
         self._tracer = tracer
-        self._system = system
+        self._meter = meter
+        self._provider = provider
         self._model = model
+        self._operation_name = operation_name
+        self._emit_legacy_attributes = emit_legacy_attributes
         self._temperature = temperature
         self._top_p = top_p
+        self._top_k = top_k
         self._max_tokens = max_tokens
+        self._stream = stream
+        self._reasoning_level = reasoning_level
+        self._previous_response_id = previous_response_id
+        self._encoding_formats = tuple(encoding_formats or ())
+        self._output_type = output_type
+        self._conversation_id = conversation_id
+        self._conversation_compacted = conversation_compacted
+        self._prompt_name = prompt_name
+        self._prompt_version = prompt_version
+        self._system_instructions = system_instructions
+        self._input_messages = input_messages
+        self._tool_definitions = tool_definitions
+        self._capture_content = capture_content
         self._step_id = step_id
         self._step_type = step_type
         self._step_attempt_id = step_attempt_id
@@ -267,8 +352,38 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
+        self._started_at: float | None = None
+        self._response_model: str | None = None
+        self._input_tokens: int | None = None
+        self._output_tokens: int | None = None
+        self._ttft_seconds: float | None = None
+        self._token_histogram: Histogram | None = None
+        self._duration_histogram: Histogram | None = None
+        self._ttft_histogram: Histogram | None = None
+        self._chunk_histogram: Histogram | None = None
+        if meter is not None:
+            self._token_histogram = meter.create_histogram(
+                GEN_AI_CLIENT_TOKEN_USAGE,
+                unit="{token}",
+                description="Number of input and output tokens used.",
+            )
+            self._duration_histogram = meter.create_histogram(
+                GEN_AI_CLIENT_OPERATION_DURATION,
+                unit="s",
+                description="GenAI operation duration.",
+            )
+            self._ttft_histogram = meter.create_histogram(
+                GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK,
+                unit="s",
+                description="Time from request issuance to the first response chunk.",
+            )
+            self._chunk_histogram = meter.create_histogram(
+                GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK,
+                unit="s",
+                description="Time elapsed between output chunks.",
+            )
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> Self:  # noqa: PLR0912
         if self._cm is not None:
             # Re-entry without prior __exit__ would orphan the first
             # span (leak it on the tracer). Fail loud.
@@ -277,17 +392,21 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 "(do not nest `with call:` on the same instance)"
             )
         self._cm = self._tracer.start_as_current_span(
-            LLM_CALL_SPAN_NAME,
+            f"{self._operation_name} {self._model}",
             kind=SpanKind.CLIENT,
             record_exception=True,
             set_status_on_exception=True,
         )
         self._span = self._cm.__enter__()
+        self._started_at = time.perf_counter()
         # Standard GenAI conventions
-        self._span.set_attribute(GEN_AI_SYSTEM, self._system)
+        self._span.set_attribute(GEN_AI_OPERATION_NAME, self._operation_name)
+        self._span.set_attribute(GEN_AI_PROVIDER_NAME, self._provider)
         self._span.set_attribute(GEN_AI_REQUEST_MODEL, self._model)
+        if self._emit_legacy_attributes:
+            self._span.set_attribute(GEN_AI_SYSTEM, self._provider)
         # Fabric mirror
-        self._span.set_attribute(FABRIC_LLM_SYSTEM, self._system)
+        self._span.set_attribute(FABRIC_LLM_SYSTEM, self._provider)
         self._span.set_attribute(FABRIC_LLM_REQUEST_MODEL, self._model)
         # Step taxonomy: ``fabric.step.type`` always (defaults to
         # "llm_call"); id + attempt/retry metadata only when supplied.
@@ -307,9 +426,42 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         if self._top_p is not None:
             self._span.set_attribute(GEN_AI_REQUEST_TOP_P, self._top_p)
             self._span.set_attribute(FABRIC_LLM_REQUEST_TOP_P, self._top_p)
+        if self._top_k is not None:
+            self._span.set_attribute(GEN_AI_REQUEST_TOP_K, self._top_k)
         if self._max_tokens is not None:
             self._span.set_attribute(GEN_AI_REQUEST_MAX_TOKENS, self._max_tokens)
             self._span.set_attribute(FABRIC_LLM_REQUEST_MAX_TOKENS, self._max_tokens)
+        if self._stream:
+            self._span.set_attribute(GEN_AI_REQUEST_STREAM, True)
+        if self._reasoning_level is not None:
+            self._span.set_attribute(GEN_AI_REQUEST_REASONING_LEVEL, self._reasoning_level)
+        if self._previous_response_id is not None:
+            self._span.set_attribute(
+                GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID, self._previous_response_id
+            )
+        if self._encoding_formats:
+            self._span.set_attribute(GEN_AI_REQUEST_ENCODING_FORMATS, self._encoding_formats)
+        if self._output_type is not None:
+            self._span.set_attribute(GEN_AI_OUTPUT_TYPE, self._output_type)
+        if self._conversation_id is not None:
+            self._span.set_attribute(GEN_AI_CONVERSATION_ID, self._conversation_id)
+        if self._conversation_compacted:
+            self._span.set_attribute(GEN_AI_CONVERSATION_COMPACTED, True)
+        if self._prompt_name is not None:
+            self._span.set_attribute(GEN_AI_PROMPT_NAME, self._prompt_name)
+        if self._prompt_version is not None:
+            self._span.set_attribute(GEN_AI_PROMPT_VERSION, self._prompt_version)
+        if self._capture_content:
+            if self._system_instructions is not None:
+                self._span.set_attribute(
+                    GEN_AI_SYSTEM_INSTRUCTIONS, _json_value(self._system_instructions)
+                )
+            if self._input_messages is not None:
+                self._span.set_attribute(GEN_AI_INPUT_MESSAGES, _json_value(self._input_messages))
+            if self._tool_definitions is not None:
+                self._span.set_attribute(
+                    GEN_AI_TOOL_DEFINITIONS, _json_value(self._tool_definitions)
+                )
         return self
 
     def __exit__(
@@ -320,9 +472,35 @@ class LLMCall(AbstractContextManager["LLMCall"]):
     ) -> bool | None:
         if self._cm is None:
             raise RuntimeError("LLMCall.__exit__ called before __enter__")
+        elapsed = time.perf_counter() - self._started_at if self._started_at is not None else None
+        metric_attrs: dict[str, str | int] = {
+            GEN_AI_OPERATION_NAME: self._operation_name,
+            GEN_AI_PROVIDER_NAME: self._provider,
+            GEN_AI_REQUEST_MODEL: self._model,
+        }
+        if self._response_model is not None:
+            metric_attrs[GEN_AI_RESPONSE_MODEL] = self._response_model
+        if exc is not None:
+            metric_attrs[ERROR_TYPE] = type(exc).__name__
+        if elapsed is not None and self._duration_histogram is not None:
+            self._duration_histogram.record(elapsed, attributes=metric_attrs)
+        if self._token_histogram is not None:
+            if self._input_tokens is not None:
+                self._token_histogram.record(
+                    self._input_tokens,
+                    attributes={**metric_attrs, "gen_ai.token.type": "input"},
+                )
+            if self._output_tokens is not None:
+                self._token_histogram.record(
+                    self._output_tokens,
+                    attributes={**metric_attrs, "gen_ai.token.type": "output"},
+                )
+        if self._ttft_seconds is not None and self._ttft_histogram is not None:
+            self._ttft_histogram.record(self._ttft_seconds, attributes=metric_attrs)
         result = self._cm.__exit__(exc_type, exc, tb)
         self._span = None
         self._cm = None
+        self._started_at = None
         return result
 
     # -- async context manager -------------------------------------------
@@ -361,6 +539,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         *,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
         finish_reason: str | Sequence[str] | None = None,
     ) -> None:
         """Attach token counts and finish reason from the LLM response.
@@ -378,6 +557,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 raise TypeError(f"input_tokens must be int, got {type(input_tokens).__name__}")
             if input_tokens < 0:
                 raise ValueError("input_tokens must be non-negative")
+            self._input_tokens = input_tokens
             self.span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, input_tokens)
             self.span.set_attribute(FABRIC_LLM_USAGE_INPUT_TOKENS, input_tokens)
         if output_tokens is not None:
@@ -385,8 +565,17 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 raise TypeError(f"output_tokens must be int, got {type(output_tokens).__name__}")
             if output_tokens < 0:
                 raise ValueError("output_tokens must be non-negative")
+            self._output_tokens = output_tokens
             self.span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, output_tokens)
             self.span.set_attribute(FABRIC_LLM_USAGE_OUTPUT_TOKENS, output_tokens)
+        if reasoning_tokens is not None:
+            if not isinstance(reasoning_tokens, int) or isinstance(reasoning_tokens, bool):
+                raise TypeError(
+                    f"reasoning_tokens must be int, got {type(reasoning_tokens).__name__}"
+                )
+            if reasoning_tokens < 0:
+                raise ValueError("reasoning_tokens must be non-negative")
+            self.span.set_attribute(GEN_AI_USAGE_REASONING_OUTPUT_TOKENS, reasoning_tokens)
         if finish_reason is not None:
             reasons = (finish_reason,) if isinstance(finish_reason, str) else tuple(finish_reason)
             self.span.set_attribute(GEN_AI_RESPONSE_FINISH_REASONS, reasons)
@@ -399,8 +588,56 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         """
         if not model:
             raise ValueError("response model id must be non-empty")
+        self._response_model = model
         self.span.set_attribute(GEN_AI_RESPONSE_MODEL, model)
         self.span.set_attribute(FABRIC_LLM_RESPONSE_MODEL, model)
+
+    def set_response(
+        self,
+        *,
+        response_id: str | None = None,
+        model: str | None = None,
+        finish_reasons: str | Sequence[str] | None = None,
+        output_messages: object | None = None,
+    ) -> None:
+        """Attach standard completion metadata and opt-in structured output."""
+
+        if response_id is not None:
+            if not response_id:
+                raise ValueError("response_id must be non-empty")
+            self.span.set_attribute(GEN_AI_RESPONSE_ID, response_id)
+        if model is not None:
+            self.set_response_model(model)
+        if finish_reasons is not None:
+            reasons = (
+                (finish_reasons,) if isinstance(finish_reasons, str) else tuple(finish_reasons)
+            )
+            self.span.set_attribute(GEN_AI_RESPONSE_FINISH_REASONS, reasons)
+            self.span.set_attribute(FABRIC_LLM_RESPONSE_FINISH_REASONS, reasons)
+        if output_messages is not None:
+            if not self._capture_content:
+                raise ValueError("output_messages requires capture_content=True on llm_call")
+            self.span.set_attribute(GEN_AI_OUTPUT_MESSAGES, _json_value(output_messages))
+
+    def set_embedding_result(
+        self,
+        *,
+        dimension_count: int | None = None,
+        input_tokens: int | None = None,
+        response_model: str | None = None,
+    ) -> None:
+        """Attach standard embeddings response metadata."""
+
+        if dimension_count is not None:
+            if not isinstance(dimension_count, int) or isinstance(dimension_count, bool):
+                raise TypeError("dimension_count must be int")
+            if dimension_count < 0:
+                raise ValueError("dimension_count must be non-negative")
+            self.span.set_attribute(GEN_AI_EMBEDDINGS_DIMENSION_COUNT, dimension_count)
+        if input_tokens is not None:
+            self.set_usage(input_tokens=input_tokens)
+        if response_model is not None:
+            self.set_response_model(response_model)
 
     def set_cache_usage(
         self,
@@ -426,6 +663,10 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 raise ValueError("cache_read_tokens must be non-negative")
             self.span.set_attribute(FABRIC_LLM_USAGE_CACHE_READ_TOKENS, cache_read_tokens)
             self.span.set_attribute(GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, cache_read_tokens)
+            if self._emit_legacy_attributes:
+                self.span.set_attribute(
+                    GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY, cache_read_tokens
+                )
         if cache_creation_tokens is not None:
             if not isinstance(cache_creation_tokens, int) or isinstance(
                 cache_creation_tokens, bool
@@ -437,6 +678,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 raise ValueError("cache_creation_tokens must be non-negative")
             self.span.set_attribute(FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS, cache_creation_tokens)
             self.span.set_attribute(GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, cache_creation_tokens)
+            if self._emit_legacy_attributes:
+                self.span.set_attribute(
+                    GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS_LEGACY,
+                    cache_creation_tokens,
+                )
 
     def set_streaming(
         self,
@@ -458,12 +704,31 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             if ttft_ms < 0:
                 raise ValueError("ttft_ms must be non-negative")
             self.span.set_attribute(FABRIC_LLM_STREAMING_TTFT_MS, ttft_ms)
+            self._ttft_seconds = float(ttft_ms) / 1000.0
+            self.span.set_attribute(GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK, self._ttft_seconds)
         if chunk_count is not None:
             if not isinstance(chunk_count, int) or isinstance(chunk_count, bool):
                 raise TypeError(f"chunk_count must be int, got {type(chunk_count).__name__}")
             if chunk_count < 0:
                 raise ValueError("chunk_count must be non-negative")
             self.span.set_attribute(FABRIC_LLM_STREAMING_CHUNK_COUNT, chunk_count)
+
+    def record_output_chunk(self, *, elapsed_ms: float | int) -> None:
+        """Record the standard time-per-output-chunk metric."""
+
+        if not isinstance(elapsed_ms, (int, float)) or isinstance(elapsed_ms, bool):
+            raise TypeError(f"elapsed_ms must be a number, got {type(elapsed_ms).__name__}")
+        if elapsed_ms < 0:
+            raise ValueError("elapsed_ms must be non-negative")
+        if self._chunk_histogram is not None:
+            self._chunk_histogram.record(
+                float(elapsed_ms) / 1000.0,
+                attributes={
+                    GEN_AI_OPERATION_NAME: self._operation_name,
+                    GEN_AI_PROVIDER_NAME: self._provider,
+                    GEN_AI_REQUEST_MODEL: self._model,
+                },
+            )
 
     def set_retry(self, *, count: int, reason: str | None = None) -> None:
         """Record per-call provider/transport retries for this LLM call.
@@ -514,8 +779,13 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self,
         *,
         tracer: Tracer,
+        meter: Meter | None,
         name: str,
         call_id: str | None = None,
+        tool_type: str | None = None,
+        description: str | None = None,
+        agent_name: str | None = None,
+        capture_content: bool = False,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -535,8 +805,13 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
         )
         self._tracer = tracer
+        self._meter = meter
         self._name = name
         self._call_id = call_id
+        self._tool_type = tool_type
+        self._description = description
+        self._agent_name = agent_name
+        self._capture_content = capture_content
         self._step_id = step_id
         self._step_type = step_type
         self._step_attempt_id = step_attempt_id
@@ -551,6 +826,14 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._extra_attributes = extra_attributes
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
+        self._started_at: float | None = None
+        self._duration_histogram: Histogram | None = None
+        if meter is not None:
+            self._duration_histogram = meter.create_histogram(
+                GEN_AI_EXECUTE_TOOL_DURATION,
+                unit="s",
+                description="Duration of a single tool execution.",
+            )
 
     def __enter__(self) -> Self:
         if self._cm is not None:
@@ -559,14 +842,23 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 "(do not nest `with tool:` on the same instance)"
             )
         self._cm = self._tracer.start_as_current_span(
-            TOOL_CALL_SPAN_NAME,
+            self._name,
             kind=SpanKind.INTERNAL,
             record_exception=True,
             set_status_on_exception=True,
         )
         self._span = self._cm.__enter__()
+        self._started_at = time.perf_counter()
+        self._span.set_attribute(GEN_AI_OPERATION_NAME, "execute_tool")
         self._span.set_attribute(GEN_AI_TOOL_NAME, self._name)
         self._span.set_attribute(FABRIC_TOOL_NAME, self._name)
+        if self._tool_type is not None:
+            self._span.set_attribute(GEN_AI_TOOL_TYPE, self._tool_type)
+            self._span.set_attribute(FABRIC_TOOL_KIND, self._tool_type)
+        if self._description is not None:
+            self._span.set_attribute(GEN_AI_TOOL_DESCRIPTION, self._description)
+        if self._agent_name is not None:
+            self._span.set_attribute("gen_ai.agent.name", self._agent_name)
         # Step taxonomy: ``fabric.step.type`` always (defaults to
         # "tool_call"); id + attempt/retry metadata only when supplied.
         _stamp_step_metadata(
@@ -595,9 +887,24 @@ class ToolCall(AbstractContextManager["ToolCall"]):
     ) -> bool | None:
         if self._cm is None:
             raise RuntimeError("ToolCall.__exit__ called before __enter__")
+        if self._duration_histogram is not None and self._started_at is not None:
+            attrs: dict[str, str] = {
+                GEN_AI_TOOL_NAME: self._name,
+            }
+            if self._tool_type is not None:
+                attrs[GEN_AI_TOOL_TYPE] = self._tool_type
+            if self._agent_name is not None:
+                attrs["gen_ai.agent.name"] = self._agent_name
+            if exc is not None:
+                attrs[ERROR_TYPE] = type(exc).__name__
+            self._duration_histogram.record(
+                time.perf_counter() - self._started_at,
+                attributes=attrs,
+            )
         result = self._cm.__exit__(exc_type, exc, tb)
         self._span = None
         self._cm = None
+        self._started_at = None
         return result
 
     # -- async context manager -------------------------------------------
@@ -633,7 +940,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise ValueError("result count must be non-negative")
         self.span.set_attribute(FABRIC_TOOL_RESULT_COUNT, count)
 
-    def set_arguments(self, payload: str) -> None:
+    def set_arguments(self, payload: str, *, capture: bool | None = None) -> None:
         """Record a SHA-256 hash of the tool call's arguments.
 
         The tenant serializes their arguments (e.g. a dict) to a string
@@ -644,8 +951,11 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
+        should_capture = self._capture_content if capture is None else capture
+        if should_capture:
+            self.span.set_attribute(GEN_AI_TOOL_CALL_ARGUMENTS, payload)
 
-    def set_result(self, payload: str) -> None:
+    def set_result(self, payload: str, *, capture: bool | None = None) -> None:
         """Record a SHA-256 hash of the tool call's result.
 
         Same privacy contract as :meth:`set_arguments` — the tenant
@@ -655,6 +965,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
+        should_capture = self._capture_content if capture is None else capture
+        if should_capture:
+            self.span.set_attribute(GEN_AI_TOOL_CALL_RESULT, payload)
 
     def set_kind(self, kind: str) -> None:
         """Record the tool's kind (``fabric.tool.kind``).
@@ -667,6 +980,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if not kind:
             raise ValueError("kind must be non-empty")
         self.span.set_attribute(FABRIC_TOOL_KIND, kind)
+        self.span.set_attribute(GEN_AI_TOOL_TYPE, kind)
 
     def record_error(self, category: ToolErrorCategory | str) -> None:
         """Mark the tool call as errored without an exception being raised.

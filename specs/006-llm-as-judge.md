@@ -1,8 +1,8 @@
 ---
 title: LLM-as-Judge Architecture
-status: draft
-revision: 2
-last_updated: 2026-05-27
+status: implemented
+revision: 3
+last_updated: 2026-07-25
 owner: project-lead
 ---
 

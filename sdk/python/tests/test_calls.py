@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 
@@ -54,13 +55,27 @@ from fabric._calls import (
     GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
-    LLM_CALL_SPAN_NAME,
-    TOOL_CALL_SPAN_NAME,
 )
 
 
 def _client() -> Fabric:
     return Fabric(FabricConfig(tenant_id="acme", agent_id="support-bot"))
+
+
+def _llm_span(span_exporter: InMemorySpanExporter) -> ReadableSpan:
+    return next(
+        span
+        for span in span_exporter.get_finished_spans()
+        if (span.attributes or {}).get("gen_ai.operation.name") in {"chat", "embeddings"}
+    )
+
+
+def _tool_span(span_exporter: InMemorySpanExporter) -> ReadableSpan:
+    return next(
+        span
+        for span in span_exporter.get_finished_spans()
+        if (span.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
 
 
 # ---------- llm_call ----------
@@ -77,7 +92,7 @@ def test_llm_call_emits_child_span_under_decision(
         pass
 
     spans = span_exporter.get_finished_spans()
-    llm_span = next(s for s in spans if s.name == LLM_CALL_SPAN_NAME)
+    llm_span = _llm_span(span_exporter)
     decision_span = next(s for s in spans if s.name == "fabric.decision")
     assert llm_span.kind == SpanKind.CLIENT
     assert llm_span.parent is not None
@@ -95,7 +110,7 @@ def test_llm_call_writes_both_namespaces_on_entry(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[GEN_AI_SYSTEM] == "anthropic"
     assert attrs[GEN_AI_REQUEST_MODEL] == "claude-opus-4-7"
@@ -115,7 +130,7 @@ def test_llm_call_set_usage_writes_both_namespaces(
     ):
         call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[GEN_AI_USAGE_INPUT_TOKENS] == 42
     assert attrs[GEN_AI_USAGE_OUTPUT_TOKENS] == 210
@@ -135,7 +150,7 @@ def test_llm_call_set_usage_with_sequence_finish_reasons(
     ):
         call.set_usage(finish_reason=["stop", "max_tokens"])
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ("stop", "max_tokens")
 
@@ -148,7 +163,7 @@ def test_llm_call_set_response_model(span_exporter: InMemorySpanExporter) -> Non
     ):
         call.set_response_model("gpt-5-2025-04-01-preview")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[GEN_AI_RESPONSE_MODEL] == "gpt-5-2025-04-01-preview"
     assert attrs[FABRIC_LLM_RESPONSE_MODEL] == "gpt-5-2025-04-01-preview"
@@ -165,7 +180,7 @@ def test_llm_call_records_exception_and_status(
     ):
         raise RuntimeError("upstream timeout")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     assert span.status.status_code == StatusCode.ERROR
 
 
@@ -173,7 +188,7 @@ def test_llm_call_rejects_empty_system() -> None:
     client = _client()
     with (
         client.decision(session_id="s", request_id="r") as dec,
-        pytest.raises(ValueError, match="system is required"),
+        pytest.raises(ValueError, match="provider is required"),
     ):
         dec.llm_call(system="", model="m")
 
@@ -308,7 +323,7 @@ def test_llm_call_optional_request_attrs_omitted_when_unset(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert GEN_AI_REQUEST_TEMPERATURE not in attrs
     assert FABRIC_LLM_REQUEST_TEMPERATURE not in attrs
@@ -327,7 +342,7 @@ def test_llm_call_set_cache_usage_writes_both_namespaces(
     ):
         call.set_cache_usage(cache_read_tokens=1000, cache_creation_tokens=200)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_LLM_USAGE_CACHE_READ_TOKENS] == 1000
     assert attrs[FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS] == 200
@@ -345,7 +360,7 @@ def test_llm_call_cache_usage_absent_when_not_called(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_LLM_USAGE_CACHE_READ_TOKENS not in attrs
     assert FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS not in attrs
@@ -383,7 +398,7 @@ def test_llm_call_set_streaming_stamps_attributes(
     ):
         call.set_streaming(ttft_ms=120, chunk_count=42)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_LLM_STREAMING_TTFT_MS] == 120
     assert attrs[FABRIC_LLM_STREAMING_CHUNK_COUNT] == 42
@@ -399,7 +414,7 @@ def test_llm_call_streaming_absent_when_not_called(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_LLM_STREAMING_TTFT_MS not in attrs
     assert FABRIC_LLM_STREAMING_CHUNK_COUNT not in attrs
@@ -435,7 +450,7 @@ def test_llm_call_set_retry_stamps_count_and_reason(
     ):
         call.set_retry(count=1, reason="rate_limit")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_LLM_RETRY_COUNT] == 1
     assert attrs[FABRIC_LLM_RETRY_REASON] == "rate_limit"
@@ -449,7 +464,7 @@ def test_llm_call_set_retry_reason_optional(span_exporter: InMemorySpanExporter)
     ):
         call.set_retry(count=0)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_LLM_RETRY_COUNT] == 0
     assert FABRIC_LLM_RETRY_REASON not in attrs
@@ -463,7 +478,7 @@ def test_llm_call_retry_absent_when_not_called(span_exporter: InMemorySpanExport
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_LLM_RETRY_COUNT not in attrs
     assert FABRIC_LLM_RETRY_REASON not in attrs
@@ -493,7 +508,7 @@ def test_tool_call_emits_child_span_under_decision(
         tool.set_result_count(7)
 
     spans = span_exporter.get_finished_spans()
-    tool_span = next(s for s in spans if s.name == TOOL_CALL_SPAN_NAME)
+    tool_span = _tool_span(span_exporter)
     decision_span = next(s for s in spans if s.name == "fabric.decision")
     assert tool_span.kind == SpanKind.INTERNAL
     assert tool_span.parent is not None
@@ -512,7 +527,7 @@ def test_tool_call_with_call_id(span_exporter: InMemorySpanExporter) -> None:
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[GEN_AI_TOOL_CALL_ID] == "call_abc123"
     assert attrs[FABRIC_TOOL_CALL_ID] == "call_abc123"
@@ -586,7 +601,7 @@ def test_tool_call_records_exception_and_status(
     ):
         raise KeyError("missing")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     assert span.status.status_code == StatusCode.ERROR
 
 
@@ -617,7 +632,7 @@ def test_tool_call_set_arguments_hashes_payload(span_exporter: InMemorySpanExpor
     ):
         tool.set_arguments(raw)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     assert attrs[FABRIC_TOOL_ARGS_HASH] == expected
@@ -635,7 +650,7 @@ def test_tool_call_set_result_hashes_payload(span_exporter: InMemorySpanExporter
     ):
         tool.set_result(raw)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     assert attrs[FABRIC_TOOL_RESULT_HASH] == expected
@@ -651,7 +666,7 @@ def test_tool_call_set_kind_stamps_attribute(span_exporter: InMemorySpanExporter
     ):
         tool.set_kind("retrieval")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_KIND] == "retrieval"
 
@@ -664,7 +679,7 @@ def test_tool_call_record_error_stamps_attributes(span_exporter: InMemorySpanExp
     ):
         tool.record_error("payment_declined")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR] is True
     assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "payment_declined"
@@ -738,7 +753,7 @@ def test_tool_call_record_error_accepts_enum(span_exporter: InMemorySpanExporter
     ):
         tool.record_error(ToolErrorCategory.TIMEOUT)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR] is True
     # Stamped as the raw string value, not the enum repr.
@@ -757,7 +772,7 @@ def test_tool_call_record_error_accepts_raw_string(
     ):
         tool.record_error("payment_declined")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "payment_declined"
 
@@ -789,7 +804,7 @@ def test_tool_call_set_retry_stamps_count_and_reason(
     ):
         tool.set_retry(count=2, reason="timeout")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_RETRY_COUNT] == 2
     assert attrs[FABRIC_TOOL_RETRY_REASON] == "timeout"
@@ -803,7 +818,7 @@ def test_tool_call_retry_absent_when_not_called(span_exporter: InMemorySpanExpor
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_TOOL_RETRY_COUNT not in attrs
     assert FABRIC_TOOL_RETRY_REASON not in attrs
@@ -829,7 +844,7 @@ def test_tool_call_set_idempotency_stamps_attributes(
     ):
         tool.set_idempotency(idempotent=True, key="idem-tool-1")
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_IDEMPOTENT] is True
     assert attrs[FABRIC_TOOL_IDEMPOTENCY_KEY] == "idem-tool-1"
@@ -845,7 +860,7 @@ def test_tool_call_set_idempotency_key_optional(
     ):
         tool.set_idempotency(idempotent=False)
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_IDEMPOTENT] is False
     assert FABRIC_TOOL_IDEMPOTENCY_KEY not in attrs
@@ -861,7 +876,7 @@ def test_tool_call_idempotency_absent_when_not_called(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_TOOL_IDEMPOTENT not in attrs
     assert FABRIC_TOOL_IDEMPOTENCY_KEY not in attrs
@@ -888,7 +903,7 @@ def test_llm_call_auto_stamps_step_type(span_exporter: InMemorySpanExporter) -> 
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_TYPE] == "llm_call"
 
@@ -901,7 +916,7 @@ def test_tool_call_auto_stamps_step_type(span_exporter: InMemorySpanExporter) ->
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_TYPE] == "tool_call"
 
@@ -914,7 +929,7 @@ def test_llm_call_step_type_host_override(span_exporter: InMemorySpanExporter) -
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_TYPE] == "plan"
 
@@ -927,7 +942,7 @@ def test_tool_call_step_type_host_override(span_exporter: InMemorySpanExporter) 
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_TYPE] == "act"
 
@@ -942,7 +957,7 @@ def test_step_metadata_absent_when_not_provided(span_exporter: InMemorySpanExpor
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert FABRIC_STEP_ID not in attrs
     assert FABRIC_STEP_ATTEMPT_ID not in attrs
@@ -959,7 +974,7 @@ def test_step_id_stamped_when_provided(span_exporter: InMemorySpanExporter) -> N
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    span = _llm_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_ID] == "step-42"
 
@@ -981,7 +996,7 @@ def test_step_retry_metadata_stamped_when_provided(
     ):
         pass
 
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    span = _tool_span(span_exporter)
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_STEP_ID] == "step-1"
     assert attrs[FABRIC_STEP_ATTEMPT_ID] == "step-attempt-2"
@@ -1014,7 +1029,7 @@ def test_step_retry_independent_from_execution_attempt(
         pass
 
     spans = span_exporter.get_finished_spans()
-    tool_span = next(s for s in spans if s.name == TOOL_CALL_SPAN_NAME)
+    tool_span = _tool_span(span_exporter)
     decision_span = next(s for s in spans if s.name == "fabric.decision")
     tool_attrs = dict(tool_span.attributes or {})
     decision_attrs = dict(decision_span.attributes or {})

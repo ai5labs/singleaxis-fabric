@@ -79,7 +79,12 @@ def test_decision_id_minted_when_not_supplied(span_exporter: InMemorySpanExporte
     # uuid4-shaped: parseable as a UUID with version 4.
     assert UUID(minted).version == 4
     # Stamped on the span as fabric.decision_id.
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_DECISION_ID] == minted
 
 
@@ -92,7 +97,12 @@ def test_decision_id_supplied_verbatim_and_independent_of_request(
         assert dec.decision_id == "dec-99"
         assert dec.request_id == "req-1"
         assert dec.decision_id != dec.request_id
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_DECISION_ID] == "dec-99"
     assert attrs[ATTR_REQUEST] == "req-1"
 
@@ -101,7 +111,12 @@ def test_span_omits_user_when_not_provided(span_exporter: InMemorySpanExporter) 
     client = _client()
     with client.decision(session_id="s", request_id="r"):
         pass
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert ATTR_USER not in attrs
 
 
@@ -109,7 +124,12 @@ def test_extra_attributes_flow_through(span_exporter: InMemorySpanExporter) -> N
     client = _client()
     with client.decision(session_id="s", request_id="r", attributes={"agent.tier": "gold"}):
         pass
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs["agent.tier"] == "gold"
 
 
@@ -118,7 +138,7 @@ def test_record_block_marks_span_error(span_exporter: InMemorySpanExporter) -> N
     with client.decision(session_id="s", request_id="r") as dec:
         dec.record_block(_blocking_result())
         assert dec.blocked is not None
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     attrs = dict(span.attributes or {})
     assert attrs[ATTR_BLOCKED] is True
     assert attrs[ATTR_BLOCK_POLICIES] == ("presidio:pii_email",)
@@ -156,7 +176,7 @@ def test_exception_inside_block_records_on_span(span_exporter: InMemorySpanExpor
         client.decision(session_id="s", request_id="r"),
     ):
         raise RuntimeError("boom")
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     assert span.status.status_code == StatusCode.ERROR
     # record_exception appends the message; we accept either form.
     assert (span.status.description or "").startswith("RuntimeError")
@@ -196,7 +216,12 @@ def test_schema_version_stamped_on_decision_span(
     fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
     with fabric.decision(session_id="s", request_id="r"):
         pass
-    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    attrs = dict(
+        next(
+            s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+        ).attributes
+        or {}
+    )
     assert attrs[ATTR_SCHEMA_VERSION] == SCHEMA_VERSION
 
 
@@ -209,7 +234,7 @@ def test_schema_version_stamped_on_event_types(
         dec.remember(kind=MemoryKind.EPISODIC, key="k", content="v")
         dec.record_side_effect("api_mutation", target_system="salesforce", operation="case.update")
         dec.checkpoint("after-retrieval")
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     stamped = {
         ev.name
         for ev in span.events
@@ -225,7 +250,7 @@ def test_recall_emits_memory_event_with_direction_read(
     fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
     with fabric.decision(session_id="s", request_id="r") as decision:
         decision.recall(kind=MemoryKind.EPISODIC, key="last_query", content="hello")
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [e for e in span.events if e.name == "fabric.memory"]
     assert len(events) == 1
     attrs = dict(events[0].attributes or {})
@@ -241,7 +266,7 @@ def test_remember_and_recall_in_same_decision_aggregate(
     with fabric.decision(session_id="s", request_id="r") as decision:
         decision.remember(kind=MemoryKind.EPISODIC, key="x", content="written")
         decision.recall(kind=MemoryKind.EPISODIC, key="y", content="read")
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     attrs = dict(span.attributes or {})
     assert attrs["fabric.memory_write_count"] == 1
     assert attrs["fabric.memory_read_count"] == 1
@@ -256,7 +281,7 @@ def test_recall_content_hash_matches_remember_hash_for_same_input(
     with fabric.decision(session_id="s", request_id="r") as decision:
         decision.remember(kind=MemoryKind.EPISODIC, key="a", content=content)
         decision.recall(kind=MemoryKind.EPISODIC, key="b", content=content)
-    span = span_exporter.get_finished_spans()[0]
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     events = [e for e in span.events if e.name == "fabric.memory"]
     h0 = dict(events[0].attributes or {})["fabric.memory.content_hash"]
     h1 = dict(events[1].attributes or {})["fabric.memory.content_hash"]

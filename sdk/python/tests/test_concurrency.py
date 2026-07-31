@@ -106,7 +106,8 @@ def test_sequential_sync_calls_do_not_trip(span_exporter: InMemorySpanExporter) 
         d.record_retrieval("rag", query="q", result_count=1)
         d.checkpoint("step")
     spans = span_exporter.get_finished_spans()
-    assert len(spans) == 1
+    assert len(spans) == 3
+    assert any(span.name == "fabric.decision" for span in spans)
 
 
 def test_sequential_async_calls_do_not_trip(span_exporter: InMemorySpanExporter) -> None:

@@ -11,8 +11,17 @@
 set -euo pipefail
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# `fabric.sampler.enabled` defaults to false (the chart ships without a
+# key so a bare install can render). Every assertion below is about the
+# validator that only runs when the sampler is ON, so turn it on
+# explicitly. Individual cases still override it — see the
+# "sampler disabled" case at the bottom.
+#
+# `exporter.endpoint` is left unset on purpose: an empty endpoint is a
+# supported state now (the chart falls back to the debug exporter), so
+# these renders exercise the sampler validator and nothing else.
 COMMON_ARGS=(
-  --set "exporter.acceptUnsetEndpoint=true"
+  --set "fabric.sampler.enabled=true"
 )
 VALID_HEX="00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 

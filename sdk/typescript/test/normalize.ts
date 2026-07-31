@@ -36,6 +36,22 @@ const LATENCY_ATTR_KEYS = new Set<string>([
   "fabric.retrieval.latency_ms",
 ]);
 
+const FABRIC_V1_GEN_AI_KEYS = new Set<string>([
+  "gen_ai.system",
+  "gen_ai.request.model",
+  "gen_ai.request.temperature",
+  "gen_ai.request.top_p",
+  "gen_ai.request.max_tokens",
+  "gen_ai.response.model",
+  "gen_ai.response.finish_reasons",
+  "gen_ai.usage.input_tokens",
+  "gen_ai.usage.output_tokens",
+  "gen_ai.usage.cache_creation_input_tokens",
+  "gen_ai.usage.cache_read_input_tokens",
+  "gen_ai.tool.name",
+  "gen_ai.tool.call.id",
+]);
+
 type Json = unknown;
 
 function normalizeAttrValue(value: unknown): Json {
@@ -53,6 +69,9 @@ export function normalizeAttributes(
     return out;
   }
   for (const key of Object.keys(attributes).sort()) {
+    if (key.startsWith("gen_ai.") && !FABRIC_V1_GEN_AI_KEYS.has(key)) {
+      continue;
+    }
     if (UUID_ATTR_KEYS.has(key) || LATENCY_ATTR_KEYS.has(key)) {
       out[key] = PLACEHOLDER;
     } else {
@@ -109,10 +128,17 @@ export function normalizeSpan(span: ReadableSpan): NormalizedSpan {
   // Normalize undefined/"" -> null.
   const description = span.status.message ? span.status.message : null;
   const events = span.events
-    .filter((e) => e.name !== "exception")
+    .filter((e) => e.name !== "exception" && !e.name.startsWith("gen_ai."))
     .map((e) => normalizeEvent({ name: e.name, attributes: e.attributes }));
+  const operation = span.attributes["gen_ai.operation.name"];
+  let name = span.name;
+  if (operation === "chat" || operation === "embeddings") {
+    name = "fabric.llm_call";
+  } else if (operation === "execute_tool") {
+    name = "fabric.tool_call";
+  }
   return {
-    name: span.name,
+    name,
     kind: SPAN_KIND_NAME[span.kind] ?? String(span.kind),
     status: {
       code: STATUS_CODE_NAME[span.status.code] ?? String(span.status.code),
