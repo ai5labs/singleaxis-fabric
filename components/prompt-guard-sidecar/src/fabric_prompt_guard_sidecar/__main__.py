@@ -47,12 +47,9 @@ def bind_uds(path: str) -> socket.socket:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(path)
     try:
-        # S103: 0o666 is deliberate. The socket is the sidecar's only
-        # ingress and its peer runs as a different uid in the compose /
-        # pod setup; access is fenced by the containing directory's
-        # permissions, not the socket's. This matches the mode uvicorn
-        # itself applies when given uds=.
-        os.chmod(path, 0o666)  # noqa: S103
+        # Owner/group access supports co-located callers sharing the pod
+        # fsGroup without exposing the guardrail socket to every local user.
+        os.chmod(path, 0o660)
     except OSError as exc:
         logger.warning(
             "could not set permissions on %s (%s); continuing with the "

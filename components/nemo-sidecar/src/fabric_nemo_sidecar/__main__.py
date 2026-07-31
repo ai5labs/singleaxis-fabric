@@ -60,11 +60,9 @@ def bind_uds(path: str) -> socket.socket:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(path)
     try:
-        # S103: 0o666 is deliberate and matches uvicorn's own UDS mode.
-        # The socket is reachable only through its directory, which is
-        # what actually gates access; an unreadable socket would simply
-        # make the sidecar unusable by its co-located caller.
-        os.chmod(path, 0o666)  # noqa: S103
+        # Owner/group access supports co-located callers sharing the pod
+        # fsGroup without exposing the guardrail socket to every local user.
+        os.chmod(path, 0o660)
     except OSError as exc:
         logger.warning(
             "could not set permissions on %s (%s); continuing with the "
