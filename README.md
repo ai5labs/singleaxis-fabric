@@ -24,7 +24,7 @@ evidence generation land with the SingleAxis commercial control plane.
 [API stability](docs/api-stability.md) ·
 [Reference agent](examples/reference-agent/) ·
 [Specs](specs/) ·
-[SASF white paper v2.3](https://singleaxis.ai/research/sasf-framework-v2-3)
+[Download the SASF white paper v2.3 (PDF)](https://github.com/singleaxis/sasf/releases/download/v2.3/SASF_White_Paper_v2_3.pdf)
 
 </div>
 
