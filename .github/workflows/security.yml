@@ -23,16 +23,26 @@ jobs:
     name: Secret scanning (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       # gitleaks-action@v2 now requires a paid licence for orgs. Run
       # the upstream binary directly instead — same detection engine,
-      # no licence key, no managed SaaS dependency.
+      # no licence key, no managed SaaS dependency. The tarball is
+      # SHA256-verified against the release's published checksums.txt
+      # before extraction so a compromised mirror can't inject a
+      # trojaned binary into /usr/local/bin.
       - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
         run: |
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz" \
-            | tar -xz -C /usr/local/bin gitleaks
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLo checksums.txt "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\$" checksums.txt | sha256sum --check -
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
           gitleaks version
       - name: Run gitleaks
         run: gitleaks detect --source . --redact --verbose --exit-code 1
@@ -45,9 +55,9 @@ jobs:
       # Needed to upload trivy-fs.sarif to the Code Scanning API.
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # Pin is `v`-prefixed — upstream dropped unprefixed release tags.
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -62,7 +72,7 @@ jobs:
           # MEDIUMs were failing this job even after HIGH/CRITICAL
           # fixes. Keep the SARIF scoped to our declared gate.
           limit-severities-for-sarif: "true"
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
@@ -70,14 +80,17 @@ jobs:
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
-    container: semgrep/semgrep
+    # Image pinned by manifest-list digest (Docker Hub, tag 1.174.0);
+    # a floating `semgrep/semgrep` would let upstream pushes change SAST
+    # results (or worse) between runs without any repo-side diff.
+    container: semgrep/semgrep@sha256:f1f7b71861c7b28b6e0f661225a2c4f58a484f5d0f182465c6d6b3b22f972ade # 1.174.0
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     permissions:
       contents: read
       # Needed to upload semgrep.sarif to the Code Scanning API.
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Run Semgrep
         # dynamic-urllib-use-detected is excluded: the only matches are the
         # generic HTTP guardrail/policy adapters, which POST to an
@@ -90,7 +103,7 @@ jobs:
           semgrep scan --config auto --sarif --output semgrep.sarif
           --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
           --exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -99,8 +112,8 @@ jobs:
     name: OSV dependency scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: google/osv-scanner-action/osv-scanner-action@v1.9.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: google/osv-scanner-action/osv-scanner-action@19ec1116569a47416e11a45848722b1af31a857b # v1.9.0
         with:
           scan-args: |-
             --recursive
@@ -117,15 +130,15 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: ossf/scorecard-action@v2.4.0
+      - uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46 # v2.4.0
         with:
           results_file: scorecard.sarif
           results_format: sarif
           publish_results: true
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:
           sarif_file: scorecard.sarif

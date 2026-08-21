@@ -30,8 +30,11 @@ repos:
       - id: mixed-line-ending
         args: ["--fix=lf"]
 
+  # Kept in lockstep with the gitleaks version pinned in
+  # `.github/workflows/security.yml` (currently v8.30.1) so local-loop
+  # scans and the CI gate run the same detection engine and rule set.
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.4
+    rev: v8.30.1
     hooks:
       - id: gitleaks
 

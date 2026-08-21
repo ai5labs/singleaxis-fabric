@@ -19,7 +19,7 @@ jobs:
     name: DCO sign-off check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       - name: Check DCO sign-off on all PR commits
@@ -73,10 +73,10 @@ jobs:
       github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - uses: wagoid/commitlint-github-action@v6
+      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6
         with:
           configFile: .commitlintrc.yaml
 
@@ -84,18 +84,18 @@ jobs:
     name: Pre-commit hooks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: pre-commit/action@v3.0.1
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
 
   markdown-lint:
     name: Markdown lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: DavidAnson/markdownlint-cli2-action@v17
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: DavidAnson/markdownlint-cli2-action@db43aef879112c3119a410d69f66701e0d530809 # v17
         with:
           globs: "**/*.md"
 
@@ -104,8 +104,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
-      - uses: lycheeverse/lychee-action@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
           args: --verbose --no-progress --config lychee.toml '**/*.md'
           fail: true
@@ -114,8 +114,8 @@ jobs:
     name: Validate spec front-matter
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install validator
@@ -164,8 +164,8 @@ jobs:
     name: Python lint + types
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install ruff
@@ -207,8 +207,8 @@ jobs:
           - components/update-agent
           - sdk/python
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install package with dev extras
@@ -280,8 +280,8 @@ jobs:
           - package: sdk/python
             threshold: 85
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package with dev extras
@@ -301,9 +301,9 @@ jobs:
     # no-op SUCCESS on pure-Python / docs / chart PRs and doesn't spend
     # Node setup time. Not in the required-ruleset — informational only.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         with:
           filters: |
             ts:
@@ -312,7 +312,7 @@ jobs:
       - name: Short-circuit if no TypeScript SDK changes
         if: steps.filter.outputs.ts != 'true'
         run: echo "No sdk/typescript changes; skipping Node lint/build/test."
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.filter.outputs.ts == 'true'
         with:
           node-version: "20"
@@ -341,8 +341,8 @@ jobs:
     name: Helm / Kubernetes lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: "v3.15.0"
       - name: Helm lint (umbrella, if scaffolded)
@@ -396,10 +396,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build (no push)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -428,10 +428,10 @@ jobs:
           - update-agent
           - langfuse-bootstrap
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build ${{ matrix.component }} (no push)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/${{ matrix.component }}
           file: components/${{ matrix.component }}/Dockerfile
@@ -451,13 +451,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build collector image for scan
         # Reuses the same Dockerfile as collector-image-build but
         # tags separately (fabric-otelcol:trivy) so the two jobs
         # can run in parallel without racing on the :pr tag.
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -471,7 +471,7 @@ jobs:
         # `@0.36.0` (no prefix) was failing CI with "unable to find
         # version 0.36.0" — the unprefixed `0.24.0` tag that used to
         # resolve was removed upstream at some point.
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: fabric-otelcol:trivy
@@ -485,7 +485,7 @@ jobs:
           # trips exit-code:1. We want HIGH/CRITICAL as the gate.
           limit-severities-for-sarif: "true"
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
@@ -495,8 +495,8 @@ jobs:
     name: SPDX license headers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: apache/skywalking-eyes/header@v0.8.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: apache/skywalking-eyes/header@61275cc80d0798a405cb070f7d3a8aaf7cf2c2c1 # v0.8.0
         with:
           config: .licenserc.yaml
 
@@ -504,8 +504,8 @@ jobs:
     name: Component metadata consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install validator

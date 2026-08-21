@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: ci-green
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       - name: Ensure tag points to a commit on main
@@ -65,7 +65,7 @@ jobs:
     outputs:
       notes: ${{ steps.extract.outputs.notes }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Validate CHANGELOG `[Unreleased]` keep-alive
         # SPEC 016 §4.6: every release must leave a live `[Unreleased]`
         # section AND a matching `[Unreleased]: ...HEAD` link reference
@@ -104,20 +104,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           path: .
           format: spdx-json
           output-file: sbom.spdx.json
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           path: .
           format: cyclonedx-json
           output-file: sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom
           path: |
@@ -134,8 +134,8 @@ jobs:
       id-token: write       # cosign keyless sign via Fulcio
       attestations: write   # actions/attest-build-provenance
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sbom
           path: .
@@ -145,7 +145,7 @@ jobs:
           ARCHIVE="singleaxis-fabric-${VERSION}.tar.gz"
           git archive --format=tar.gz --prefix="singleaxis-fabric-${VERSION}/" -o "${ARCHIVE}" HEAD
           sha256sum "${ARCHIVE}" sbom.spdx.json sbom.cdx.json > SHA256SUMS
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign artifacts (keyless via Fulcio)
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -161,13 +161,13 @@ jobs:
           cosign sign-blob --yes sbom.cdx.json \
             --output-signature sbom.cdx.json.sig \
             --output-certificate sbom.cdx.json.pem
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: |
             singleaxis-fabric-*.tar.gz
             sbom.spdx.json
             sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-bundle
           path: |
@@ -197,11 +197,11 @@ jobs:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/fabric-otelcol
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -211,7 +211,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -219,7 +219,7 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - name: Build and push (multi-arch)
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -231,7 +231,7 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign image (keyless via Fulcio)
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -251,7 +251,7 @@ jobs:
             echo "cosign sign ${ref}"
             cosign sign --yes "${ref}"
           done <<< "${TAGS}"
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -279,11 +279,11 @@ jobs:
     env:
       REGISTRY: ghcr.io
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -293,7 +293,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
           tags: |
@@ -301,7 +301,7 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - name: Build and push (multi-arch)
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/${{ matrix.component }}
           file: components/${{ matrix.component }}/Dockerfile
@@ -313,7 +313,7 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign image (keyless via Fulcio)
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -328,7 +328,7 @@ jobs:
             echo "cosign sign ${ref}"
             cosign sign --yes "${ref}"
           done <<< "${TAGS}"
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -347,8 +347,8 @@ jobs:
       OCI_REF: oci://ghcr.io/${{ github.repository_owner }}/charts
       CHART_DIR: charts/fabric
     steps:
-      - uses: actions/checkout@v6
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: "v3.15.0"
       # Both logins are needed: `helm push` uses the helm-specific
@@ -356,7 +356,7 @@ jobs:
       # to pull the just-pushed manifest by digest. Without docker
       # login, cosign hits a 401 from ghcr.io/token on signing.
       - name: Log in to GHCR (docker auth for cosign)
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -400,7 +400,7 @@ jobs:
           # helm push writes `Digest: sha256:...` to stderr/stdout.
           digest=$(echo "${out}" | awk '/Digest:/ {print $2}')
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign chart artifact
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -409,7 +409,7 @@ jobs:
           ref="ghcr.io/${{ github.repository_owner }}/charts/${CHART_NAME}:${{ steps.package.outputs.chart_version }}@${{ steps.push.outputs.digest }}"
           echo "cosign sign ${ref}"
           cosign sign --yes "${ref}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: chart-package
           path: dist/*.tgz
@@ -427,8 +427,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Build sdist and wheel
@@ -436,7 +436,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: sdk/python/dist
           # Don't fail the release if we somehow publish the same
@@ -458,15 +458,15 @@ jobs:
     permissions:
       contents: write       # softprops/action-gh-release creates the release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-bundle
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: chart-package
           path: dist
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           name: ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.notes }}
