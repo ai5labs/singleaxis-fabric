@@ -1,36 +1,38 @@
 # @singleaxis/fabric (TypeScript SDK)
 
-TypeScript capture core for SingleAxis Fabric. It opens OpenTelemetry
-spans per agent decision and emits the **same** `fabric.*` / `gen_ai.*`
-span + event wire contract as the
-[Python SDK](../python/README.md), so traces from a Node agent land in
-your collector byte-identical to traces from a Python agent.
+TypeScript **emit-surface-only** capture core for SingleAxis Fabric. It
+opens OpenTelemetry spans per agent decision and emits the `fabric.*` /
+`gen_ai.*` span + event wire contract shared with the
+[Python SDK](../python/README.md).
 
 ## Status
 
-**Full wire-contract parity — conformance-validated.** This package emits
-every `fabric.*` span and event the Python SDK does, byte-for-byte. It is
-proven by the conformance test
-([`test/conformance.test.ts`](test/conformance.test.ts)), which runs the
-equivalent TypeScript interactions and deep-equal-asserts the normalized
-spans against the **same** golden fixtures the Python conformance suite
-uses (`../python/tests/conformance/goldens/*.json`). The goldens are read
-from that shared location, never copied, and a guard test fails if a new
-Python golden ever lands without matching TypeScript coverage.
+**Not at parity with the Python SDK — not a drop-in substitute.** This is
+a capture library only: 7 modules against Python's 58, reproducing **19 of
+the 39 shared conformance goldens**. It has no framework adapters (e.g.
+LangGraph / CrewAI bridges), no guardrail or policy transports (sidecar
+clients, OPA/Cedar engines), no MCP instrumentation, and no host-side I/O
+helpers. Outstanding work is tracked in
+[`docs/typescript-parity-backlog.md`](../../docs/typescript-parity-backlog.md);
+npm publishing is planned after parity.
 
-Reproduced and passing goldens (all 18): `bare_decision`, `llm_call`,
-`tool_call`, `guardrail_redaction`, `guardrail_block`,
-`content_ref_stamped`, `escalation`, `retrieval`, `memory_read_write`,
-`side_effect`, `checkpoint`, `eval_record`, `queue_judge`, `policy_allow`,
-`policy_deny`, `policy_fail_closed`, `tool_authorization_allow`,
+Conformance-validated against the **same** golden fixtures the Python
+suite uses (`../python/tests/conformance/goldens/*.json`) by
+[`test/conformance.test.ts`](test/conformance.test.ts). The goldens are
+read from that shared location, never copied. Reproduced goldens (19):
+`bare_decision`, `execution`, `llm_call`, `tool_call`,
+`guardrail_redaction`, `guardrail_block`, `content_ref_stamped`,
+`escalation`, `retrieval`, `memory_read_write`, `side_effect`,
+`checkpoint`, `eval_record`, `queue_judge`, `policy_allow`, `policy_deny`,
+`policy_fail_closed`, `tool_authorization_allow`,
 `tool_authorization_deny`.
 
 ### Capture core vs. host integrations
 
-The TypeScript SDK is a **pure capture library**: every primitive takes
+The SDK is a **pure capture library**: every primitive takes
 host-computed metadata and emits the wire contract (hashing raw content
 locally — raw payloads never reach the trace). It deliberately does **not**
-ship the Python SDK's host-side _integration_ helpers that perform I/O:
+ship host-side _integration_ helpers that perform I/O:
 
 - **Sidecar clients** (Presidio / NeMo over a Unix socket) — in TS the host
   runs its own guardrail/redaction service and passes the verdict to
@@ -40,16 +42,16 @@ ship the Python SDK's host-side _integration_ helpers that perform I/O:
   `recordToolAuthorization`.
 - **Queue transports** (SQS, NATS, Redis) and **framework adapters**
   (LangGraph, CrewAI) — the host enqueues / bridges; the SDK records.
+- **MCP instrumentation** — not implemented; see the parity backlog.
 
-This keeps the package dependency-light and runtime-agnostic. The emitted
-telemetry is identical either way — the engine that produces a verdict
-lives in the host, not the capture library.
+This keeps the package dependency-light and runtime-agnostic. The engine
+that produces a verdict lives in the host, not the capture library.
 
 ## Recording primitives
 
 Beyond `llmCall` / `toolCall`, the `Decision` records the full Fabric
-event surface. Each hashes raw content locally and folds rolling
-counters / distinct-value sets onto the decision span:
+event surface it implements. Each hashes raw content locally and folds
+rolling counters / distinct-value sets onto the decision span:
 
 ```ts
 fabric.decision({ sessionId: "s", requestId: "r" }, (d) => {
@@ -87,16 +89,25 @@ to stamp `fabric.blocked` and the `guardrail_blocked` status on the span.
 
 ## Install
 
-```bash
-npm install @singleaxis/fabric
-```
-
-Or from a checkout of this repository:
+The package is **not published to npm** (publishing is planned
+post-parity; `package.json` is marked `"private": true`). Build from a
+checkout of this repository:
 
 ```bash
 cd sdk/typescript
-npm install
-npm run build
+npm ci
+npm run build       # tsup -> CJS + ESM + types into dist/
+```
+
+Then reference the local build directly from your app, e.g.:
+
+```jsonc
+// package.json of the consuming project
+{
+  "dependencies": {
+    "@singleaxis/fabric": "file:../singleaxis-fabric/sdk/typescript"
+  }
+}
 ```
 
 The package depends on `@opentelemetry/api` and
