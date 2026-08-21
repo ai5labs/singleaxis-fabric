@@ -66,7 +66,7 @@ span is identical to the sync path.
 ```python
 async with fabric.decision(session_id="sess-1", request_id="req-1") as decision:
     safe_input = await decision.aguard_input(user_message)
-    async with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+    async with decision.llm_call(provider="anthropic", model="claude-opus-4-7") as call:
         answer = await my_async_llm.complete(safe_input)
         call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
     safe_answer = await decision.aguard_output_final(answer)
@@ -117,7 +117,7 @@ child spans with the OpenTelemetry GenAI semantic conventions
 Fabric `fabric.llm.*` / `fabric.tool.*` mirrors:
 
 ```python
-with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+with decision.llm_call(provider="anthropic", model="claude-opus-4-7") as call:
     response = anthropic_client.messages.create(...)
     call.set_usage(
         input_tokens=response.usage.input_tokens,

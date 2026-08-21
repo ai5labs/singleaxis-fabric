@@ -14,7 +14,7 @@ CrewAI (installed via extras — the core SDK stays framework-neutral).
 
 ## Status
 
-Beta — **Phase 1a shipping.**
+Beta — v0.7.x.
 
 ### Shipping now
 
@@ -272,9 +272,12 @@ with fabric.decision(
     decision.set_attribute("llm.model", "claude-opus-4-7")
 ```
 
-`guard_input` / `guard_output_*` are no-ops that raise
-`GuardrailNotConfiguredError` unless `FABRIC_PRESIDIO_UNIX_SOCKET` is
-set (or a `PresidioClient` is passed to `Fabric(...)` directly).
+`guard_input` / `guard_output_*` raise `GuardrailNotConfiguredError`
+(fail-loud by design) unless at least one rail is wired: set
+`FABRIC_PRESIDIO_UNIX_SOCKET` for PII redaction and/or
+`FABRIC_NEMO_UNIX_SOCKET` for Colang policy rails — either alone is
+enough (or pass a `PresidioClient` / `NemoClient` to `Fabric(...)`
+directly).
 
 ## Environment variables
 
@@ -317,7 +320,7 @@ flat dump — read the module docstrings for detail):
 - `tracing.py` — OTel helpers (`get_tracer`, `install_default_provider`)
 - `auto_instrument.py` — opt-in `opentelemetry-instrumentation-*` hookup
 - internal leaf modules: `_attributes.py`, `_calls.py`, `_chain.py`,
-  `_id_validators.py`, `_uds.py`, `_version.py`
+  `_crosscut.py`, `_id_validators.py`, `_uds.py`, `_version.py`
 
 **Adapters & extensions** (each extras-gated)
 

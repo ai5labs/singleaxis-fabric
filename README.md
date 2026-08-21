@@ -129,9 +129,17 @@ from fabric import Fabric, FabricConfig, install_default_provider
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 # One-time: point the SDK at your OTel Collector (or any OTLP sink).
+# Raises with a clear message if the env var is unset — set it before
+# running (e.g. export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318).
+endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if not endpoint:
+    raise SystemExit(
+        "Set OTEL_EXPORTER_OTLP_ENDPOINT to your OTel Collector's OTLP/HTTP "
+        "endpoint (e.g. http://localhost:4318) before running this example."
+    )
 install_default_provider(
     service_name="support-bot",
-    exporter=OTLPSpanExporter(endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]),
+    exporter=OTLPSpanExporter(endpoint=endpoint),
 )
 
 # Tenant + agent identity are required. Either pass them explicitly:
@@ -265,7 +273,7 @@ Authoritative design: [`specs/002-architecture.md`](specs/002-architecture.md).
 
 ## Status
 
-**Beta — v0.6.x.** The `specs/` directory is the design of record.
+**Beta — v0.7.x.** The `specs/` directory is the design of record.
 What's in this repo runs and is tested; anything marked "roadmap" is
 explicitly called out. We'd rather under-document than overclaim.
 

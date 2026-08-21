@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `aiohttp` to 3.14.3 and `cryptography` to 50.0.0 in the SDK lockfile
+  (CVE-2026-69244, CVE-2026-69247); same for the NeMo sidecar's `aiohttp`.
+- Known issue: chromadb 1.5.8 (transitive via the `[crewai]` extra only) is
+  affected by CVE-2026-45829 (pre-auth code execution). **No fixed release
+  exists upstream yet**; newer crewai resolutions pull older, still-affected
+  chromadb versions. The core SDK does not depend on chromadb — only
+  installs using the `[crewai]` extra are exposed. Tracked for the next
+  crewai/chromadb upstream releases.
+
+### Fixed
+
+- Docs reconciled to v0.7.x across root README, docs README, and SDK README
+  (a 0.7.0-era note incorrectly claimed these already said v0.6.x).
+- Quickstart and walkthrough now teach `llm_call(provider=...)` instead of the
+  deprecated `system=` alias.
+- Removed a phantom `[model]` extra from api-stability docs; corrected
+  `[langchain]` → `[otel-langchain]` in auto-instrumentation docs; fixed a
+  nonexistent `from_env(enable_auto_instrumentation=True)` reference.
+- `GuardrailNotConfiguredError` now names the exact remedy (env vars / kwargs)
+  instead of only stating the problem.
+- `PolicyAdapterError` on HTTP transport failure now states the fail-closed
+  deny consequence explicitly.
+
 ## [0.7.0] - 2026-07-31
 
 ### Added
@@ -1488,10 +1513,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
----
-
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...HEAD
-[0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.6.0
 [0.5.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.1
 [0.5.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.0

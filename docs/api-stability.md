@@ -29,7 +29,7 @@ Anything else is **internal** and carries no compatibility guarantee:
 
 Optional integrations (the `[langgraph]`, `[crewai]`, `[agent-framework]`,
 `[opa]`, `[deepeval]`, `[ragas]`, `[nats]`, `[redis]`, `[aws]`, `[mcp]`,
-`[otlp]`, `[model]` extras) are public but version-tracked against their
+`[otlp]` extras) are public but version-tracked against their
 upstream libraries; their adapters may change to follow upstream API shifts
 within a minor release.
 

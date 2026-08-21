@@ -56,8 +56,8 @@ crewai = [
 # the LLM SDK itself separately; the Instrumentor hooks whatever
 # version is present at runtime.
 #
-# Enable via `Fabric.enable_auto_instrumentation()` or
-# `Fabric.from_env(enable_auto_instrumentation=True)`.
+# Enable via `Fabric.enable_auto_instrumentation()` (or the module-level
+# `fabric.auto_instrument.enable_auto_instrumentation()`).
 #
 # Content capture is disabled by default (raw prompts/completions do
 # not land on spans) per Fabric's compliance posture. Override with

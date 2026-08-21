@@ -35,7 +35,7 @@ are roadmap; the structure is captured in
 
 ## Status
 
-Beta — v0.6.x. The docs cover the surfaces the OSS code ships today.
+Beta — v0.7.x. The docs cover the surfaces the OSS code ships today.
 Anything marked "Roadmap / not yet shipping" in the spec or
 component README is called out explicitly in the docs too — we'd
 rather under-document than overclaim.

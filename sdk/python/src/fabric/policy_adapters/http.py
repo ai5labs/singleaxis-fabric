@@ -62,7 +62,13 @@ class HTTPPolicyAdapter:
             with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:  # noqa: S310
                 payload = json.loads(resp.read())
         except urllib.error.URLError as exc:
-            raise PolicyAdapterError(f"HTTP transport failed: {exc}") from exc
+            raise PolicyAdapterError(
+                f"HTTP transport failed ({exc}). This is a connectivity problem, not a "
+                "policy verdict — the SDK converts adapter failures to a fail-closed "
+                "decision='deny' with reason='adapter raised: ...' on the decision span. "
+                "Check the endpoint URL/network; if you need transport failures to be "
+                "distinguishable from policy denials, monitor reason=, not decision=."
+            ) from exc
         except json.JSONDecodeError as exc:
             raise PolicyAdapterError(f"response not JSON: {exc}") from exc
 

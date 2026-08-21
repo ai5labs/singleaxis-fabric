@@ -881,7 +881,13 @@ class Decision(AbstractContextManager["Decision"]):
     def _run_chain(self, *, phase: GuardrailPhase, path: str, value: str) -> str:
         chain = self._client.guardrail_chain
         if not chain.has_rails:
-            raise GuardrailNotConfiguredError(f"no guardrail rails configured for phase={phase!r}")
+            raise GuardrailNotConfiguredError(
+                f"no guardrail rails configured for phase={phase!r}. "
+                "Wire the Presidio sidecar (env FABRIC_PRESIDIO_UNIX_SOCKET, or pass "
+                "presidio= to Fabric/FabricConfig) and/or the NeMo sidecar "
+                "(env FABRIC_NEMO_UNIX_SOCKET, or pass nemo=). Fabric raises instead of "
+                "passing unguarded content — see docs/quickstart.md, 'Wiring the guardrails'."
+            )
         result = chain.check(phase=phase, path=path, value=value)
         # Thread the *raw* pre-redaction ``value`` (the audit-relevant
         # content) through to the event recorder so it can store it in the

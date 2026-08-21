@@ -33,7 +33,7 @@ Highlight:
 ```python
 fabric = Fabric(FabricConfig(tenant_id="acme-demo", agent_id="refund-bot"))
 with fabric.decision(session_id=...) as d:
-    with d.llm_call(system="anthropic", model="claude-haiku-4-5") as call:
+    with d.llm_call(provider="anthropic", model="claude-haiku-4-5") as call:
         ...
         call.set_usage(input_tokens=..., output_tokens=...)
 ```
