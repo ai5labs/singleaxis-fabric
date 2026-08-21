@@ -92,7 +92,11 @@ def _resolve_env(value: Any) -> Any:
 
 
 def _expand_env_refs(raw: str) -> str:
-    """Expand ``${env:NAME}`` occurrences. Unknown names become empty."""
+    """Expand ``${env:NAME}`` occurrences. A reference to a variable
+    that is not set raises — a silent empty string would send requests
+    with, e.g., ``Authorization: Bearer `` and produce probe results
+    that look valid while running unauthenticated.
+    """
 
     out: list[str] = []
     i = 0
@@ -107,6 +111,12 @@ def _expand_env_refs(raw: str) -> str:
             break
         out.append(raw[i:start])
         name = raw[start + len("${env:") : end]
-        out.append(os.environ.get(name, ""))
+        if name not in os.environ:
+            raise ValueError(
+                f"config references unset environment variable ${{env:{name}}} — "
+                "set it before running; unresolved refs previously expanded to an "
+                "empty string, which silently sent unauthenticated requests"
+            )
+        out.append(os.environ[name])
         i = end + 1
     return "".join(out)

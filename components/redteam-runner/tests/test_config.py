@@ -66,7 +66,7 @@ def test_env_refs_expand_from_environment(
     assert cfg.target.headers["Authorization"] == "Bearer real-token"
 
 
-def test_env_ref_missing_becomes_empty(
+def test_env_ref_missing_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,8 +83,10 @@ def test_env_ref_missing_becomes_empty(
             "suites": [],
         },
     )
-    cfg = load_run_config(path)
-    assert cfg.target.headers["X"] == ""
+    # A silent empty expansion would send requests with, e.g.,
+    # "Authorization: Bearer " and look valid while unauthenticated.
+    with pytest.raises(ValueError, match=r"unset environment variable \$\{env:DOES_NOT_EXIST\}"):
+        load_run_config(path)
 
 
 def test_top_level_must_be_mapping(tmp_path: Path) -> None:
