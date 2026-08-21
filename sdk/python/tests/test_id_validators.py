@@ -4,10 +4,10 @@
 
 Two guards live in that module and are tested here.
 
-``warn_if_pii_shaped`` covers the spec 016 §4.5 acceptance criteria:
-email-shaped and phone-shaped identifier values emit a one-shot
-``UserWarning``; ``FABRIC_QUIET_PII_WARN=1`` suppresses; ``*_name``
-fields are not checked (they are explicitly human-readable in the spec).
+``warn_if_pii_shaped`` acceptance criteria: email-shaped and
+phone-shaped identifier values emit a one-shot ``UserWarning``;
+``FABRIC_QUIET_PII_WARN=1`` suppresses; ``*_name`` fields are not
+checked (they are explicitly human-readable by contract).
 
 ``check_identifier`` covers placeholder rejection for the two partition
 keys ``tenant_id`` / ``agent_id``. The acceptance half of that suite

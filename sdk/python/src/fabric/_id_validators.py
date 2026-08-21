@@ -17,7 +17,7 @@ is emitted per process via Python's :mod:`warnings` default filter; set
 intent is *not* validation — opaque-but-email-shaped IDs are sometimes
 intentional. The intent is to make the silent leak loud exactly once, so
 an operator notices before a year of traces accumulate.
-See specs/016-foundational-fixes.md §4.5.
+
 
 **Placeholder identifiers** (:func:`check_identifier`) — here the intent
 *is* validation, but narrowly. ``tenant_id`` and ``agent_id`` are the
@@ -80,7 +80,7 @@ __all__ = [
 ENV_QUIET = "FABRIC_QUIET_PII_WARN"
 ENV_ALLOW_PLACEHOLDER = "FABRIC_ALLOW_PLACEHOLDER_IDS"
 
-# Regex shapes per spec 016 §4.5 — deliberately permissive to err on
+# Regex shapes for PII-shaped identifiers — deliberately permissive to err on
 # the side of flagging.
 _LIKELY_EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _LIKELY_PHONE = re.compile(r"^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$")

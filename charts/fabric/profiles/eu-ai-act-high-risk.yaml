@@ -2,8 +2,10 @@
 #
 # Locked fields (see profile.lockedFields) MUST NOT be overridden by
 # tenant values — a tenant wanting different behaviour should switch
-# to a less strict profile. Fabric enforces the lock-list in the
-# update-agent manifest validator (Phase 2).
+# to a less strict profile. Enforcement is two layers: the parent
+# chart fails at render/template time on any locked override, and the
+# update-agent admission backstop keeps the flags set on collector
+# ConfigMaps in watched namespaces. See docs/regulatory-profiles.md.
 #
 # NOTE: Production EU AI Act deployments also require judge-workers and
 # escalation-service from the SingleAxis-internal distribution (Layer 2).

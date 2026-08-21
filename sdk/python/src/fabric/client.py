@@ -132,8 +132,9 @@ class FabricConfig:
         check_identifier("tenant_id", self.tenant_id)
         check_identifier("agent_id", self.agent_id)
         # PII shape warnings — only after the strip+empty checks above
-        # so we don't warn on values we're about to reject anyway. See
-        # specs/016-foundational-fixes.md §4.5.
+        # so we don't warn on values we're about to reject anyway. The
+        # warning fires exactly once per process; human-readable
+        # ``*_name`` fields are exempt (see _id_validators).
         warn_if_pii_shaped("tenant_id", self.tenant_id)
         warn_if_pii_shaped("agent_id", self.agent_id)
         warn_if_pii_shaped("execution_attempt_id", self.execution_attempt_id)

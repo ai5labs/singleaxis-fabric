@@ -172,7 +172,7 @@ Lives in `sdk/python/src/fabric/policy.py` (new in v0.4).
 ### Relationship to `GuardrailAction`
 
 `PolicyDecision` and `GuardrailAction` (`sdk/python/src/fabric/guardrails.py`,
-extended in spec 016) share four of five values. The only divergence
+extended alongside it) share four of five values. The only divergence
 is the refusal term:
 
 - `GuardrailAction` uses **`block`** — security/guardrail convention

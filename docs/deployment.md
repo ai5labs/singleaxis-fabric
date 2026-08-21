@@ -130,7 +130,7 @@ Rules of engagement:
   will reconcile over it without telling you the escape hatch was
   open.
 
-| Concern | Current state (v0.6.x) | Pointer |
+| Concern | Current state (v0.7.x) | Pointer |
 |---------|------------------------|---------|
 | Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice. A DR runbook ships; the wider runbook set (upgrade, rollback, key rotation, collector backpressure) does not yet | [`operations/dr.md`](operations/dr.md) |
 | Upgrade channel | Manual `helm upgrade`. The signed-manifest Update Agent ships as an opt-in subchart (`updateAgent.enabled=true`, requires a real Ed25519 signing key) | Chart [`README`](../charts/fabric/README.md) |

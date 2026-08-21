@@ -8,7 +8,7 @@
 #
 # The SDK ships trace spans; without this pipeline the collector
 # returns 404 on `/v1/traces` and the chart silently drops them on the
-# floor. See spec 016 §4.1.
+# floor.
 #
 # Requires: helm 3, bash. Run from repo root or from this directory.
 
@@ -53,7 +53,7 @@ if ! grep -q -F -- "${expected_processors}" <<<"${default_render}"; then
   fail "traces pipeline processors don't match the expected chain (memory_limiter, fabricguard, fabricsampler, batch)"
 fi
 if ! grep -qE 'exporters:[[:space:]]*\[otlphttp/fabric\]' <<<"${default_render}"; then
-  fail "traces pipeline exporters don't match spec 016 §4.1 ([otlphttp/fabric])"
+  fail "traces pipeline exporters don't match the expected [otlphttp/fabric]"
 fi
 pass "traces pipeline has correct processors + exporters"
 

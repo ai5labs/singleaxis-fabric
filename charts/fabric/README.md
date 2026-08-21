@@ -25,7 +25,6 @@ Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deploymen
       of the public OSS distribution.
 - [ ] Decision Graph subchart (Phase 2 — awaiting Postgres migration story)
 - [ ] Telemetry Bridge subchart (Phase 2)
-- [ ] Signed manifest channel + Update Agent (Phase 2)
 - [ ] `values.schema.json` (Phase 2 — after subchart shape stabilizes)
 - [ ] Production profiles beyond EU AI Act: NIST RMF, ISO-42001,
       SR-11-7, HIPAA (profile-by-profile as rubrics land)

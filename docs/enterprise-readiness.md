@@ -6,7 +6,7 @@ repository — Fabric is Apache 2.0, so you can audit every line yourself.
 
 > **Scope honesty.** This page covers the **OSS substrate**
 > (`singleaxis-fabric`, the SDK + sidecars + collector + Helm chart),
-> which is beta (v0.6.x) and the layer you deploy. The
+> which is beta (v0.7.x) and the layer you deploy. The
 > **commercial control plane** (Decision Graph, Evidence Bundles, Judge
 > Workers, Expert Review) is pre-GA and is **not** represented as
 > production-ready here — engage SingleAxis for its current status.
@@ -111,7 +111,7 @@ A full auditor question-by-question mapping is in
 
 Procurement teams should weigh these:
 
-1. **Pre-1.0.** The SDK is v0.6.x; the public API may change before 1.0
+1. **Pre-1.0.** The SDK is v0.7.x; the public API may change before 1.0
    (policy in `SECURITY.md` / `api-stability.md`). The **wire contract** is
    conformance-locked and stable.
 2. **No third-party SOC 2 / pen-test report yet.** The controls above are real
