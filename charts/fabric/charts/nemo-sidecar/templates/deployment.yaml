@@ -42,6 +42,14 @@ spec:
             - "--rails-config"
             - "{{ .Values.railsConfigMap.mountPath }}"
             {{- end }}
+          {{- if .Values.auth.tokenSecret.name }}
+          env:
+            - name: FABRIC_SIDECAR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.tokenSecret.name }}
+                  key: {{ .Values.auth.tokenSecret.key }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

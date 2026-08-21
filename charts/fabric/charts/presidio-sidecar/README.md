@@ -34,6 +34,36 @@ helm install presidio charts/fabric/charts/presidio-sidecar \
 The Secret is mounted read-only at `/etc/fabric/tenant/` and passed to
 the sidecar via `--tenant-key-file`.
 
+## Auth: shared token on `/v1/*`
+
+By default the TCP listener is unauthenticated. Set `auth.tokenSecret`
+to have every `/v1/*` request require an `X-Fabric-Token` header
+matching a Secret (`FABRIC_SIDECAR_TOKEN`, constant-time compare);
+`/healthz` stays open for probes. Recommended whenever the Service is
+reachable beyond one namespace:
+
+```sh
+kubectl create secret generic fabric-presidio-token \
+  --from-literal=token="$(openssl rand -hex 32)"
+```
+
+```yaml
+auth:
+  tokenSecret:
+    name: fabric-presidio-token
+    key: token
+```
+
+Unset (default) → behaviour unchanged. Same-pod UDS callers are
+unaffected either way.
+
+## Network isolation
+
+`networkPolicy.enabled` defaults to **true**: ingress is restricted to
+same-namespace pods, egress to DNS only. Same-pod UDS traffic rides
+loopback and is unaffected. Widen `networkPolicy.ingressFrom` for
+cross-namespace callers — and set `auth.tokenSecret` when you do.
+
 ## Phase 1 scope
 
 - Shared `Deployment` + `Service` mode (TCP) for smoke tests and dev
@@ -67,6 +97,9 @@ default) if you need cross-request correlatability of redacted values.
 | `tenantKey.secretKey` | `tenant.key` | Key within the Secret; also the mounted filename under `/etc/fabric/tenant/`. |
 | `redactionMode` | `hmac` | Redaction strategy (`hmac` or `tag`); passed via `--redaction-mode`. |
 | `allowPassthrough` | `false` | Dev only. Passes `--allow-passthrough` so the sidecar starts with the no-op analyzer when the `[presidio]` extra is absent. |
+| `auth.tokenSecret.name` | `""` | Secret holding the shared token for `/v1/*` auth (`X-Fabric-Token`). Empty → auth off. |
+| `auth.tokenSecret.key` | `token` | Key within the token Secret. |
+| `networkPolicy.enabled` | `true` | Ingress same-namespace only; egress DNS-only. Same-pod UDS unaffected. |
 | `service.port` | `8080` | Container + Service TCP port. |
 
 ## Latency posture (published budget)

@@ -15,13 +15,15 @@ spec:
     - Egress
   ingress:
     # Presidio sidecar is typically reached via UDS in same-pod
-    # topology; this policy covers the alternate sidecar-as-Service
-    # deployment, allowing ingress on the sidecar port from agent pods.
+    # topology (loopback — unaffected by this policy); this policy
+    # covers the alternate sidecar-as-Service deployment. Default:
+    # same-namespace pods only. Widen via `ingressFrom` for callers
+    # in other namespaces, and prefer auth.tokenSecret when you do.
     - from:
         {{- with .Values.networkPolicy.ingressFrom }}
         {{- toYaml . | nindent 8 }}
         {{- else }}
-        - namespaceSelector: {}
+        - podSelector: {}
         {{- end }}
       ports:
         - protocol: TCP

@@ -12,17 +12,22 @@ Timeout is read from ``FABRIC_REQUEST_TIMEOUT_MS`` at app-build time
 (default 800). Concurrency of the dedicated pool is
 ``FABRIC_LIMIT_CONCURRENCY`` (default 16) so it doesn't outstrip the
 uvicorn-level cap that ``__main__`` also applies.
+
+When ``FABRIC_SIDECAR_TOKEN`` is set, ``/v1/check`` additionally
+requires an ``X-Fabric-Token`` HTTP header matching it (constant-time
+compare). Unset → auth off, behaviour unchanged.
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 
 from fabric_nemo_sidecar._version import __version__
 from fabric_nemo_sidecar.rails import (
@@ -56,6 +61,18 @@ def _pool_size() -> int:
     return max(1, n)
 
 
+def _auth_token() -> str:
+    """Shared token for the TCP ``/v1/*`` routes, read from the env.
+
+    Set via ``FABRIC_SIDECAR_TOKEN`` (chart value ``auth.token`` wires
+    it from a Secret). Unset or empty → auth is disabled and behaviour
+    matches pre-0.7 releases exactly; UDS callers are unaffected either
+    way because the check is HTTP-header-only.
+    """
+
+    return os.getenv("FABRIC_SIDECAR_TOKEN", "")
+
+
 def build_app(engine: RailsEngine | None = None) -> FastAPI:
     """Construct the FastAPI app with the given rails engine."""
 
@@ -82,11 +99,26 @@ def build_app(engine: RailsEngine | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    token = _auth_token()
+
+    async def require_token(
+        x_fabric_token: str = Header(default="", alias="X-Fabric-Token"),
+    ) -> None:
+        if not hmac.compare_digest(x_fabric_token.encode(), token.encode()):
+            raise HTTPException(
+                status_code=401,
+                detail="missing or invalid X-Fabric-Token header",
+            )
+
+    # Applied to /v1/* only; /healthz stays open for k8s probes. Empty
+    # list when no token is configured → zero behavioural change.
+    auth_deps: list[Depends] = [Depends(require_token)] if token else []
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
-    @app.post("/v1/check", response_model=CheckResponse)
+    @app.post("/v1/check", response_model=CheckResponse, dependencies=auth_deps)
     def check(request: CheckRequest) -> CheckResponse:
         future = executor.submit(checker.check, request)
         try:

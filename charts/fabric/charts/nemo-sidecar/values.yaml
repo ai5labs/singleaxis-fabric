@@ -45,6 +45,23 @@ service:
   type: ClusterIP
   port: 8080
 
+# Shared-token auth on the TCP /v1/* routes. When `tokenSecret.name`
+# is set, the sidecar receives FABRIC_SIDECAR_TOKEN from that Secret
+# and every /v1/* request must carry a matching X-Fabric-Token header
+# (constant-time compare); /healthz stays open for probes. Empty name
+# (default) → auth off, behaviour unchanged. Recommended whenever the
+# TCP Service is reachable beyond one namespace. Same-pod UDS callers
+# are unaffected (they send no token and auth stays off unless you
+# opt in).
+auth:
+  tokenSecret:
+    # Name of an existing Secret holding the shared token. Create with:
+    #   kubectl create secret generic fabric-nemo-token \
+    #     --from-literal=token="$(openssl rand -hex 32)"
+    name: ""
+    # Key within that Secret.
+    key: "token"
+
 resources:
   limits:
     cpu: "1000m"
@@ -102,13 +119,16 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# NetworkPolicy. Default off — see otel-collector/values.yaml. The
-# typical NeMo deployment is same-pod via UDS, in which case this
-# policy is a no-op. The sidecar-as-Service deployment (smoke/dev)
-# is what `ingressFrom` covers. `egressTo` is for NeMo's
+# NetworkPolicy. Default ON so the shipped TCP listener is not a
+# cluster-wide oracle. Production runs same-pod via UDS, which rides
+# loopback inside the agent pod and is unaffected by this policy. The
+# sidecar-as-Service deployment (smoke/dev) gets ingress restricted to
+# same-namespace pods by default; widen via `ingressFrom` if callers
+# live in other namespaces (and set auth.tokenSecret — see above).
+# Egress is DNS-only to kube-system; `egressTo` is for NeMo's
 # content-safety rail when it calls out to an LLM provider for
-# refusal generation; DNS to kube-system is always allowed.
+# refusal generation.
 networkPolicy:
-  enabled: false
+  enabled: true
   ingressFrom: []
   egressTo: []
