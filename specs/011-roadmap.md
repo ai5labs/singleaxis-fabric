@@ -24,7 +24,7 @@ or **not started** rather than quietly reworded, and where an exit
 criterion closed unproven it is carried forward by name.
 `CHANGELOG.md` is the authoritative per-release record; this spec
 sequences, it does not enumerate. The current release line is
-v0.6.0.
+v0.7.x.
 
 This spec stays `status: draft` permanently. The vocabulary in spec
 000 defines `accepted` as "implementation may begin" and
@@ -182,15 +182,17 @@ deliverable below carries its actual state.
   first is named `[otel-langchain]`; the other two are
   orchestration **adapter** extras, not auto-instrumentation — a
   distinction this spec previously blurred.
-- **Collector trace processors — partial.** `fabricguard` registers
-  a traces variant alongside logs
-  (`components/otel-collector-fabric/processor/fabricguardprocessor/factory.go`)
-  and the chart renders a `traces:` pipeline carrying it.
-  `fabricsampler`, `fabricredact` and `fabricpolicy` each register
-  logs only. So field allowlisting applies to spans; HMAC sampling,
-  Presidio redaction and policy enforcement still do not. The
-  original claim that all four register as trace processors was
-  wrong and is retracted here.
+- **Collector trace processors — shipped in the current line.**
+  `fabricguard` registered a traces variant alongside logs from the
+  start; the current unreleased work adds traces variants to
+  `fabricsampler`, `fabricredact` and `fabricpolicy`
+  (`*/factory.go` now register both), and the chart chains all four
+  into the `traces:` pipeline under the same toggles as logs. This
+  closes the gap this section previously retracted: field
+  allowlisting, HMAC sampling, Presidio redaction and policy
+  enforcement now apply to spans, not just log records. The Phase 3
+  carry-forward item is done; what remains open here is only the
+  executed verification (see Phase 3 "backend render verification").
 - **Bundled-Langfuse default exporter — not shipped as described;
   a narrower version of the goal landed instead.**
   `charts/fabric/charts/langfuse/` ships a minimal wrapper, but
@@ -277,10 +279,11 @@ of claims already made.
   accepted on: same wire contract, validated against the same
   shared goldens, versioned independently, host-side I/O out of
   scope.
-- **Remaining collector processors on traces.** `fabricsampler`,
-  `fabricredact` and `fabricpolicy` handle spans as well as log
-  records, so the chart's privacy and policy promises apply to the
-  signal the SDK actually emits.
+- **Remaining collector processors on traces — done** in the current
+  line (see Phase 2, "Collector trace processors"). Exit criterion
+  "all four collector processors handle traces" is met; verification
+  of the end-to-end render is tracked under "backend render
+  verification" below.
 - **A real default sink.** When `langfuse.enabled` is true, default
   the collector's `exporter.endpoint` to the bundled service rather
   than requiring the operator to name it — which first requires

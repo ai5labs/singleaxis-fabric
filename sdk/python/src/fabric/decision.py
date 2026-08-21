@@ -373,7 +373,7 @@ class Decision(AbstractContextManager["Decision"]):
             raise ValueError("request_id is required")
         # PII shape warnings on per-turn identifiers. These attach to
         # every emitted span; flagging email/phone shapes once per
-        # process keeps a quiet leak loud. See specs/016 §4.5.
+        # process keeps a quiet leak loud.
         warn_if_pii_shaped("session_id", session_id)
         warn_if_pii_shaped("request_id", request_id)
         warn_if_pii_shaped("user_id", user_id)

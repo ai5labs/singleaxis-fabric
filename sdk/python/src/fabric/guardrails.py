@@ -20,7 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 GuardrailPhase = Literal["input", "output_stream", "output_final"]
 # v0.4: added 'allow' (passed through cleanly) and 'escalate' (deferred to
-# human reviewer). See spec 016 §guardrail-action-vocabulary.
+# human reviewer). The five-value vocabulary is shared with PolicyDecision;
+# see specs/019-policy-engine.md for the divergence rationale ('block' vs
+# 'deny').
 GuardrailAction = Literal["allow", "redact", "warn", "block", "escalate"]
 
 

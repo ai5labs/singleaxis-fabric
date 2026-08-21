@@ -8,6 +8,21 @@ owner: project-lead
 
 # 002 — Eight-Layer Architecture & Fabric Control Plane
 
+> **Scope note (2026-08-22).** The eight-layer model, latency tiers,
+> and event flows below are the design of record for the full
+> topology. What actually ships in this OSS distribution: the Python
+> SDK + framework adapters (L1/L2 emit surface), the Fabric OTel
+> Collector distribution with its four processors, the Presidio / NeMo
+> / Prompt-Guard sidecars (L5), the red-team runner (L4), the
+> update-agent, and an optional Langfuse wrapper (L3) — installed via
+> `charts/fabric`. **Not** in a bare OSS install: the NATS JetStream
+> bus, judge workers (L6), the escalation service, the Decision Graph
+> builder/store, and the Telemetry Bridge — those are Layer 2 /
+> commercial components (see specs 003/004/006/007). In an L1-only
+> deployment the collector fans out directly to the operator's
+> observability backend; no message bus is deployed. The diagrams
+> show the full commercial-inclusive topology for context.
+
 ## Summary
 
 Fabric is organized as an eight-layer stack deployed into a single
