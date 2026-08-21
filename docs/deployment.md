@@ -96,6 +96,40 @@ what makes the evidence collection automatic.
 
 ## Operational posture
 
+### Break-glass: disabling the admission webhook
+
+If the update-agent webhook is down or misbehaving and is blocking
+cluster operations (`failurePolicy: Fail` rejects admission when the
+webhook is unreachable), you can flip it to fail-open **directly on
+the ValidatingWebhookConfiguration**. Helm does not intercept this
+object at apply time in a way that conflicts with `kubectl patch` —
+patching it takes effect immediately:
+
+```bash
+# Find the VWC (named <release>-update-agent):
+kubectl get validatingwebhookconfiguration -l app.kubernetes.io/part-of=fabric
+
+# Flip to Ignore (admission proceeds when the webhook can't answer):
+kubectl patch validatingwebhookconfiguration <release>-update-agent \
+  --type=merge \
+  -p '{"webhooks":[{"name":"<release>-update-agent.fabric.singleaxis.dev","failurePolicy":"Ignore"}]}'
+```
+
+Rules of engagement:
+
+- **Time-box it.** Note the timestamp; the next `helm upgrade` of the
+  chart restores `failurePolicy: Fail` from values
+  (`update-agent.webhook.failurePolicy`). To restore sooner, patch
+  back to `"Fail"` manually.
+- **Audit it.** While `Ignore` is set, unsigned/tampered channel
+  manifests are admitted silently. Export the audit log for the
+  window (`kubectl get events --field-selector
+  involvedObject.kind=ValidatingWebhookConfiguration`) and note who
+  patched.
+- **Never edit the rendered manifest instead** — a `helm upgrade`
+  will reconcile over it without telling you the escape hatch was
+  open.
+
 | Concern | Current state (v0.6.x) | Pointer |
 |---------|------------------------|---------|
 | Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice. A DR runbook ships; the wider runbook set (upgrade, rollback, key rotation, collector backpressure) does not yet | [`operations/dr.md`](operations/dr.md) |

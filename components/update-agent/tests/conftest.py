@@ -81,3 +81,55 @@ def signed_configmap(sign):  # type: ignore[no-untyped-def]
     }
     manifest["metadata"]["annotations"][SIGNATURE_ANNOTATION] = sign(manifest)
     return manifest
+
+
+def _otel_collector_config(
+    guard_enabled: bool = True,
+    drop_unknown_classes: bool = True,
+    redact_enabled: bool = True,
+) -> str:
+    """Rendered otel-collector config.yaml with the profile-locked
+    controls in the given state (mirrors the otel-collector chart's
+    ConfigMap output shape)."""
+    processors = ["memory_limiter:", "  limit_mib: 512", "batch: {}"]
+    if guard_enabled:
+        processors += [
+            "fabricguard:",
+            f"  drop_unknown_classes: {str(drop_unknown_classes).lower()}",
+        ]
+    if redact_enabled:
+        processors += ["fabricredact:", "  unix_socket: /var/run/fabric/presidio.sock"]
+    body = "\n".join(["processors:", *[f"  {line}" for line in processors]])
+    return body + "\n"
+
+
+@pytest.fixture
+def locked_config_factory():  # type: ignore[no-untyped-def]
+    """Factory building an otel-collector config ConfigMap with the
+    locked controls in arbitrary states."""
+
+    def _factory(
+        name: str = "fabric-otel-collector-config",
+        labels: dict[str, str] | None = None,
+        data_key: str = "config.yaml",
+        **flags: bool,
+    ) -> dict[str, Any]:
+        if labels is None:
+            labels = {
+                "app.kubernetes.io/part-of": "fabric",
+                "app.kubernetes.io/name": "otel-collector",
+            }
+        return {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": name, "labels": labels},
+            "data": {data_key: _otel_collector_config(**flags)},
+        }
+
+    return _factory
+
+
+@pytest.fixture
+def locked_config(locked_config_factory: Any) -> dict[str, Any]:
+    """An otel-collector config with every locked control enabled."""
+    return locked_config_factory()

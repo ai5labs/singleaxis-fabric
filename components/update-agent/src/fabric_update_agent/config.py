@@ -68,11 +68,22 @@ class VerifierConfig(_Base):
     the signature or version annotation entirely. Production should
     leave it ``True``; leaving it ``False`` means unannotated
     resources are admitted (useful when rolling out to a cluster
-    that has pre-existing resources)."""
+    that has pre-existing resources).
+
+    ``enforce_locked_fields`` is the admission backstop for regulatory
+    profile locks (see docs/regulatory-profiles.md). When ``True``,
+    ConfigMaps carrying the otel-collector config naming are denied
+    unless the profile-locked controls (fabricguard with
+    drop_unknown_classes, fabricredact) remain enabled in the rendered
+    collector config — even if the manifest carries valid channel
+    annotations. The chart sets this from
+    ``update-agent.webhook.enforceProfileLocks`` (auto-resolved to on
+    under the eu-ai-act-high-risk profile)."""
 
     fabric_version: str
     trusted_keys: list[TrustedKey] = Field(default_factory=list)
     fail_closed: bool = True
+    enforce_locked_fields: bool = False
 
 
 def load_config(path: Path) -> VerifierConfig:

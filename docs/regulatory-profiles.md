@@ -4,8 +4,10 @@ Fabric ships two named umbrella-chart profiles. They are *opinionated*
 default-value bundles for the umbrella `charts/fabric` chart — same
 components, different posture.
 
-> Profiles set defaults; every value remains overridable. They exist so
-> you don't have to derive a regulated posture from scratch.
+> Profiles set defaults; every value remains overridable **except
+> the fields a profile locks** (see [Locked-field
+> enforcement](#locked-field-enforcement) below) — overriding one of
+> those fails the render.
 
 | | `permissive-dev` | `eu-ai-act-high-risk` |
 |---|---|---|
@@ -23,7 +25,7 @@ components, different posture.
 | **Update-agent signing key** | placeholder allowed | real key required (chart fails to install otherwise) |
 | **Exporter endpoint** | optional | required (chart fails to install otherwise) |
 | **Tenant HMAC key** | dev placeholder | real Secret required |
-| **Locked fields** | none | `presidio.mode`, `nemo.enabled`, policy enforcement points |
+| **Locked fields** | none | `otel-collector.fabric.guard.enabled`, `otel-collector.fabric.guard.dropUnknownClasses`, `otel-collector.fabric.redact.enabled` |
 
 ## Install
 
@@ -78,13 +80,65 @@ helm upgrade fabric oci://ghcr.io/singleaxis/charts/fabric \
 A few good practices:
 
 - **Lock fields you don't want operators to change** with the
-  `profile.lockedFields` list — the chart will refuse a `helm upgrade`
-  that overrides them.
+  `profile.lockedFields` list — see
+  [Locked-field enforcement](#locked-field-enforcement) for what the
+  chart actually does with it. Only boolean enable-flags are supported
+  as locks today: a locked field must stay `true`.
 - **Set `profile.regulations`** so the `fabricsampler` retains the
   right event classes (e.g. anything tagged `eu-ai-act` keeps 100%
   sampling).
 - **Always set the exporter endpoint**, even if your backend is in-cluster
   — `accept` flags are for `helm template` only.
+
+## Locked-field enforcement
+
+The `eu-ai-act-high-risk` profile locks three controls:
+
+```yaml
+lockedFields:
+  - otel-collector.fabric.guard.enabled
+  - otel-collector.fabric.guard.dropUnknownClasses
+  - otel-collector.fabric.redact.enabled
+```
+
+Helm merges profile values and user `--set` overrides **before**
+rendering, so a template cannot tell a profile default from a tenant
+override. Enforcement is therefore keyed on profile identity, in two
+layers:
+
+1. **Render-time invariant (primary).** The parent chart's
+   `fabric.validateProfileLocks` helper (invoked from
+   `templates/namespace.yaml`) fails the render whenever a profile
+   with a non-empty `lockedFields` list resolves any locked path to
+   false, or when the owning component is toggled off entirely
+   (`otelCollector.enabled=false`). The error names the disabled
+   control. This fires on `helm install`, `helm upgrade`, and
+   `helm template`.
+
+   ⚠️ `helm lint` executes the check but **always exits 0** — it logs
+   the failure as an INFO line and reports "0 chart(s) failed"
+   (verified on Helm 3.19; it swallows subchart fails the same way).
+   Never use lint as your enforcement gate; use `helm template`,
+   install, or upgrade.
+
+2. **Admission backstop (secondary).** After install, direct
+   `kubectl edit`/`apply` drift bypasses Helm entirely. When
+   `update-agent.webhook.enforceProfileLocks` is active, the
+   update-agent verifier denies any ConfigMap carrying the
+   otel-collector config naming whose rendered collector config drops
+   a locked control (`fabricguard` missing,
+   `drop_unknown_classes != true`, or `fabricredact` missing). The
+   value supports `auto | on | off`; `auto` (the default) switches on
+   when the release namespace carries the parent chart's
+   `singleaxis.com/profile=eu-ai-act-high-risk` label. Note the
+   first-install caveat: on a brand-new namespace the label isn't
+   visible at render time yet, so `auto` engages from the first
+   `helm upgrade` onward — set `on` to pin it from day one. Scope is
+   limited to the webhook's `watchedNamespaces` (VWC
+   namespaceSelector).
+
+A tenant who genuinely wants different behaviour should switch to a
+less strict profile rather than fight these checks.
 
 ## What the profile does *not* do
 

@@ -120,6 +120,31 @@ webhook:
       apiVersions: ["v1"]
       operations: ["CREATE", "UPDATE"]
       resources: ["configmaps", "secrets"]
+  # Profile-lock admission backstop (docs/regulatory-profiles.md).
+  #
+  # When active, the verifier DENIES any ConfigMap carrying the
+  # otel-collector config naming (name suffix `-otel-collector-config`
+  # or labels app.kubernetes.io/{part-of=fabric,name=otel-collector})
+  # whose rendered collector config drops a profile-locked control:
+  # fabricguard missing, guard.drop_unknown_classes != true, or
+  # fabricredact missing. This catches direct `kubectl edit` drift
+  # that bypasses Helm — the render-time invariant
+  # (fabric.validateProfileLocks in the parent chart) cannot.
+  #
+  # Scope: only traffic in webhook.watchedNamespaces reaches the
+  # webhook (VWC namespaceSelector), so enforcement is scoped there.
+  #
+  # Modes:
+  #   auto (default) — ON when the release namespace carries the
+  #       label singleaxis.com/profile=eu-ai-act-high-risk, i.e. when
+  #       the EU high-risk profile was rendered with
+  #       namespace.create=true. CAVEAT: on a FIRST install into a
+  #       brand-new namespace the Namespace object does not exist at
+  #       render time yet, so auto resolves OFF until the next
+  #       `helm upgrade`. Set `on` to pin it from day one.
+  #   on  — always enforce.
+  #   off — never enforce (dev clusters; permissive-dev posture).
+  enforceProfileLocks: auto
 
 # --- TLS ---
 #
@@ -170,6 +195,31 @@ argocd:
       automated:
         prune: true
         selfHeal: true
+  # PreSync verify hook.
+  #
+  # ArgoCD only honours hook resources that appear in the SYNCED
+  # SOURCE of an Application — an annotation on the Application object
+  # itself does nothing. Where the hook lands depends on topology:
+  #
+  #   * Chart managed by ArgoCD (Application-of-applications, helm
+  #     source): this chart renders the hook Job below; ArgoCD lifts
+  #     it out of the generated manifests and runs it before sync.
+  #   * Application points at the plain manifests repo (the
+  #     argocd-application.yaml template above): copy this Job's
+  #     rendered output into that repo so the hook ships with the
+  #     channel it guards.
+  #
+  # The Job clones the SAME repo/path/revision the Application syncs,
+  # then runs `fabric-update-agent verify` over every YAML document —
+  # a deny (exit 2) fails the hook and aborts the sync before any
+  # resource is applied. Needs no RBAC and no network beyond the git
+  # clone; private repos require credentials the chart does not
+  # manage (use an ArgoCD repo-server-side secret or a PAT-scoped
+  # https URL).
+  presyncHook:
+    enabled: true          # rendered only when argocd.enabled is true
+    gitImage: alpine/git:v2.47.2
+    cloneDepth: 1
 
 # PodDisruptionBudget. Default enabled because the webhook is on
 # the admission path with failurePolicy=Fail; losing both replicas
@@ -179,12 +229,22 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# NetworkPolicy. Default off — see otel-collector/values.yaml for
-# rationale. Webhook ingress can't reliably restrict the kube-apiserver
-# source IP across CNIs, so the policy leaves the source open by
-# default and relies on TLS + signature verification. Operators on
-# enforcing CNIs can narrow `ingressFrom`. Egress is DNS-only because
-# the verifier does no outbound calls.
+# NetworkPolicy. Default ON: an admission webhook is security
+# infrastructure, so it ships with least-privilege networking out of
+# the box rather than asking every operator to opt in.
+#
+# Ingress rationale — the kube-apiserver is the ONLY caller (admission
+# callbacks), and its source IP cannot be pinned: control-plane IPs
+# vary by cluster topology (managed control planes have no stable,
+# knowable pod/node identity a NetworkPolicy peer can match), and
+# several CNIs treat webhook traffic as cluster-scoped anyway. So the
+# default rule admits ingress on the webhook port from any namespace
+# (`namespaceSelector: {}`) and relies on TLS + signature verification
+# for authn — the port carries nothing else. Operators on enforcing
+# CNIs can narrow `ingressFrom` (e.g. to kube-system), accepting the
+# risk of apiserver-callback drops on their CNI.
+#
+# Egress is DNS-only because the verifier does no outbound calls.
 networkPolicy:
-  enabled: false
+  enabled: true
   ingressFrom: []

@@ -7,9 +7,14 @@ metadata:
   labels:
     {{- include "update-agent.labels" . | nindent 4 }}
   annotations:
-    # PreSync hook runs the CLI verifier before the sync — keeps the
-    # webhook as the authoritative gate but gives the operator a
-    # fast-fail signal at sync time instead of at admit time.
+    # NOTE: ArgoCD honours PreSync hooks only on resources in the
+    # SYNCED SOURCE — an annotation here would do nothing. The actual
+    # hook Job is rendered by templates/argocd-presync-hook.yaml (see
+    # argocd.presyncHook in values.yaml): when ArgoCD manages THIS
+    # chart it runs as a real PreSync hook; for repo-type Applications
+    # like this one, copy the rendered Job into the manifests repo.
+    # The sync-wave keeps the Application itself ordered after the
+    # webhook is up in Application-of-applications topologies.
     argocd.argoproj.io/sync-wave: "-10"
 spec:
   project: {{ .Values.argocd.project.name }}

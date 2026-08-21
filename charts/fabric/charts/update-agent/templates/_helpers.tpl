@@ -88,9 +88,25 @@ separate passes. We use the ``$``-hash memoization idiom:
      the Secret and the VWC see the same bytes.
   3. Return YAML so callers can ``fromYaml`` it back.
 
+Validity + rotation:
+
+  CA 1825d (5y), leaf 365d (1y). Sprig cannot parse X.509 NotAfter,
+  so expiry-aware regeneration works differently: at generation time
+  we stamp the leaf's intended expiry into the Secret annotation
+  ``fabric.singleaxis.dev/regenerate-after`` (RFC3339). On every later
+  render we compare that stamp against ``now`` via ``lookup``; when it
+  has passed (or the stamp is corrupt), the cert is regenerated IN THE
+  SAME RENDER as a fresh Secret + matching VWC caBundle — the memoized
+  helper guarantees both see identical bytes, so the API server never
+  holds a stale caBundle.
+
+  Manual rotation before expiry (e.g. after a key compromise):
+    kubectl -n <ns> delete secret <release>-update-agent-tls
+    helm upgrade <release> <chart> ...   # regenerates CA+leaf+caBundle
+
 Callers:
   {{- $tls := fromYaml (include "update-agent.tlsData" .) -}}
-  ... $tls.caCert / $tls.cert / $tls.key ...
+  ... $tls.caCert / $tls.cert / $tls.key / $tls.regenerateAfter ...
 */}}
 {{- define "update-agent.tlsData" -}}
 {{- $top := . -}}
@@ -103,24 +119,41 @@ Callers:
 {{- $caCert := "" -}}
 {{- $cert := "" -}}
 {{- $key := "" -}}
+{{- $regenAfter := "" -}}
 {{- if and $existing $existing.data -}}
 {{- $caCert = index $existing.data "ca.crt" | default "" -}}
 {{- $cert = index $existing.data "tls.crt" | default "" -}}
 {{- $key = index $existing.data "tls.key" | default "" -}}
+{{- $anns := dig "metadata" "annotations" (dict) $existing -}}
+{{- $regenAfter = get $anns "fabric.singleaxis.dev/regenerate-after" | toString -}}
 {{- end -}}
-{{- if or (eq $cert "") (eq $key "") (eq $caCert "") -}}
-{{- $ca := genCA (printf "%s-ca" $svcName) 3650 -}}
-{{- $signed := genSignedCert $cn nil $altNames 3650 $ca -}}
+{{/* Expiry-aware regeneration: re-issue once the stamped leaf
+      validity window has passed. A missing stamp (pre-existing
+      secret from an older chart) keeps the old reuse behaviour; a
+      corrupt stamp parses to the zero time, whose unix epoch is far
+      in the past and therefore triggers regeneration. */}}
+{{- $expired := false -}}
+{{- if ne $regenAfter "" -}}
+{{- if gt (unixEpoch now) (unixEpoch (toDate "2006-01-02T15:04:05Z07:00" $regenAfter)) -}}
+{{- $expired = true -}}
+{{- end -}}
+{{- end -}}
+{{- if or (eq $cert "") (eq $key "") (eq $caCert "") $expired -}}
+{{- $ca := genCA (printf "%s-ca" $svcName) 1825 -}}
+{{- $leafDays := 365 -}}
+{{- $signed := genSignedCert $cn nil $altNames $leafDays $ca -}}
 {{- $caCert = $ca.Cert | b64enc -}}
 {{- $cert = $signed.Cert | b64enc -}}
 {{- $key = $signed.Key | b64enc -}}
+{{- $regenAfter = date "2006-01-02T15:04:05Z07:00" (dateModify (printf "%dh" (mul $leafDays 24)) now) -}}
 {{- end -}}
-{{- $_ := set $top "_tls" (dict "caCert" $caCert "cert" $cert "key" $key) -}}
+{{- $_ := set $top "_tls" (dict "caCert" $caCert "cert" $cert "key" $key "regenerateAfter" $regenAfter) -}}
 {{- end -}}
 {{- $tls := index $top "_tls" -}}
 caCert: {{ $tls.caCert | quote }}
 cert: {{ $tls.cert | quote }}
 key: {{ $tls.key | quote }}
+regenerateAfter: {{ $tls.regenerateAfter | quote }}
 {{- end -}}
 
 {{/*

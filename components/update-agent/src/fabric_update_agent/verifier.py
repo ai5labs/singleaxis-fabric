@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import yaml
+
 from .config import VerifierConfig
 from .schema import SchemaError, SchemaRegistry
 from .signatures import (
@@ -43,6 +45,89 @@ from .version import check as check_version
 
 class VerifierError(Exception):
     """Unrecoverable configuration error — distinct from deny."""
+
+
+# --- Profile-lock admission backstop ---
+#
+# The render-time invariant (charts/fabric/templates/_helpers.tpl,
+# fabric.validateProfileLocks) pins the eu-ai-act-high-risk locked
+# controls at install/upgrade time. It cannot see direct
+# ``kubectl edit``/``apply`` drift afterwards. When the chart enables
+# ``enforce_locked_fields``, this verifier additionally denies any
+# ConfigMap carrying the otel-collector config naming whose rendered
+# collector config drops a locked control — regardless of annotations.
+#
+# Scope note: the ValidatingWebhookConfiguration's namespaceSelector
+# already restricts admission to webhook.watchedNamespaces, so "watched
+# namespaces" is enforced by the VWC, not re-checked here.
+
+_OTEL_CONFIG_NAME_SUFFIX = "-otel-collector-config"
+_OTEL_CONFIG_DATA_KEY = "config.yaml"
+_FABRIC_PART_OF_LABEL = "app.kubernetes.io/part-of"
+_OTEL_NAME_LABEL = "app.kubernetes.io/name"
+
+
+def _is_otel_collector_config(manifest: dict[str, Any]) -> bool:
+    """Match how charts/fabric/charts/otel-collector names its config:
+    ``<release>-otel-collector-config`` (or the labelled equivalent
+    when fullnameOverride is in play)."""
+    if manifest.get("kind") != "ConfigMap":
+        return False
+    meta = manifest.get("metadata")
+    if not isinstance(meta, dict):
+        return False
+    name = meta.get("name")
+    if isinstance(name, str) and name.endswith(_OTEL_CONFIG_NAME_SUFFIX):
+        return True
+    labels = meta.get("labels")
+    return isinstance(labels, dict) and (
+        labels.get(_FABRIC_PART_OF_LABEL) == "fabric"
+        and labels.get(_OTEL_NAME_LABEL) == "otel-collector"
+    )
+
+
+def _locked_field_violation(manifest: dict[str, Any]) -> str | None:
+    """Deny reason when the collector config drops a locked control,
+    else None. Fails closed on unparseable/malformed payloads."""
+    data = manifest.get("data")
+    raw = data.get(_OTEL_CONFIG_DATA_KEY) if isinstance(data, dict) else None
+    if not isinstance(raw, str):
+        return (
+            f"otel-collector ConfigMap has no {_OTEL_CONFIG_DATA_KEY!r} data; "
+            "profile-locked guard/redact state cannot be confirmed"
+        )
+    try:
+        parsed = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return (
+            f"otel-collector ConfigMap {_OTEL_CONFIG_DATA_KEY!r} does not parse; "
+            "denied under profile lock (fail closed)"
+        )
+    if not isinstance(parsed, dict):
+        return f"otel-collector ConfigMap {_OTEL_CONFIG_DATA_KEY!r} is not a mapping"
+    processors = parsed.get("processors")
+    if not isinstance(processors, dict):
+        return (
+            "otel-collector config has no processors mapping; "
+            "profile-locked state cannot be confirmed"
+        )
+    guard = processors.get("fabricguard")
+    if not isinstance(guard, dict):
+        return (
+            "profile-locked control otel-collector.fabric.guard.enabled is off: "
+            "the fabricguard processor is missing from the collector config"
+        )
+    if guard.get("drop_unknown_classes") is not True:
+        return (
+            "profile-locked control otel-collector.fabric.guard.dropUnknownClasses "
+            "is not true in the collector config"
+        )
+    if not isinstance(processors.get("fabricredact"), dict):
+        return (
+            "profile-locked control otel-collector.fabric.redact.enabled is off: "
+            "the fabricredact processor is missing from the collector config"
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -62,6 +147,15 @@ class Verifier:
         self._schemas = schema_registry or SchemaRegistry()
 
     def verify(self, manifest: dict[str, Any]) -> VerificationResult:
+        # Profile-lock backstop runs FIRST: it must also catch
+        # unannotated direct edits (the fail_closed branch below would
+        # deny those anyway when True, but not with a reason naming the
+        # locked control, and not at all when fail_closed=False).
+        if self._config.enforce_locked_fields and _is_otel_collector_config(manifest):
+            violation = _locked_field_violation(manifest)
+            if violation:
+                return VerificationResult(allowed=False, reason=violation)
+
         anns = _annotations(manifest)
         has_signature = SIGNATURE_ANNOTATION in anns
         has_version = VERSION_CONSTRAINT_ANNOTATION in anns

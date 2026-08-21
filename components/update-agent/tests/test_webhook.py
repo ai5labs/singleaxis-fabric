@@ -56,3 +56,18 @@ def test_admit_without_object_is_allowed(config: VerifierConfig) -> None:
     client = TestClient(app)
     r = client.post("/admit", json=_review(None))
     assert r.json()["response"]["allowed"] is True
+
+
+def test_admit_backstop_denies_unlocked_collector_config(
+    locked_config: dict[str, Any],
+) -> None:
+    # Direct `kubectl edit` drift: no channel annotations, locked
+    # control dropped. The backstop must deny with the control named.
+    locked_config["data"]["config.yaml"] = (
+        "processors:\n  fabricguard:\n    drop_unknown_classes: false\n"
+    )
+    cfg = VerifierConfig(fabric_version="0.7.0", enforce_locked_fields=True)
+    r = TestClient(create_app(Verifier(cfg))).post("/admit", json=_review(locked_config))
+    body = r.json()
+    assert body["response"]["allowed"] is False
+    assert "dropUnknownClasses" in body["response"]["status"]["message"]
