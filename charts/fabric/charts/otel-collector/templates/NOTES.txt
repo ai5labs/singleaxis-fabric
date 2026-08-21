@@ -58,6 +58,18 @@ WARNING: fabricpolicy is enabled but bundlePath is empty. The
 processor is wired but no Rego is loaded — all records will pass.
 Set .Values.fabric.policy.bundlePath before relying on the gate.
 {{- end }}
+{{- if and .Values.fabric.policy.enabled (ne .Values.fabric.policy.bundlePath "") (not .Values.fabric.policy.bundleConfigMap) }}
+
+WARNING: fabricpolicy bundlePath is set to {{ .Values.fabric.policy.bundlePath }}
+but no ConfigMap is mounted there (fabric.policy.bundleConfigMap is
+empty). The volume renders as an emptyDir and will stay EMPTY unless
+you provision Rego into it out of band. An empty bundle makes
+fabricpolicy FAIL CLOSED: every record AND span in the pipeline is
+dropped, silently destroying your telemetry.
+
+Fix:
+  --set otel-collector.fabric.policy.bundleConfigMap=<configmap-with-rego>
+{{- end }}
 {{- if and .Values.fabric.redact.enabled (not (hasKey .Values "presidioSidecar")) }}
 
 NOTE: fabricredact is enabled. Make sure a Presidio sidecar listens

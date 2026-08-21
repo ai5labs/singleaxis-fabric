@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -249,5 +250,120 @@ func TestAttrsToMapHandlesNestedTypes(t *testing.T) {
 	arrOut, ok := out["arr"].([]any)
 	if !ok || len(arrOut) != 2 || arrOut[0] != "a" || arrOut[1].(int64) != 7 {
 		t.Fatalf("slice wrong: %v", out["arr"])
+	}
+}
+
+// --- traces (H-1) ---
+
+func traces(spans ...map[string]any) ptrace.Traces {
+	td := ptrace.NewTraces()
+	ss := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	for _, attrs := range spans {
+		sp := ss.Spans().AppendEmpty()
+		for k, v := range attrs {
+			switch val := v.(type) {
+			case string:
+				sp.Attributes().PutStr(k, val)
+			case int:
+				sp.Attributes().PutInt(k, int64(val))
+			case float64:
+				sp.Attributes().PutDouble(k, val)
+			case bool:
+				sp.Attributes().PutBool(k, val)
+			}
+		}
+	}
+	return td
+}
+
+func spanCount(td ptrace.Traces) int {
+	n := 0
+	rss := td.ResourceSpans()
+	for i := 0; i < rss.Len(); i++ {
+		sss := rss.At(i).ScopeSpans()
+		for j := 0; j < sss.Len(); j++ {
+			n += sss.At(j).Spans().Len()
+		}
+	}
+	return n
+}
+
+func TestTracesAllowAndDenyDecisions(t *testing.T) {
+	path := writeBundle(t, `
+package fabric.egress
+
+import rego.v1
+
+default allow := false
+
+allow if {
+	input.event_class == "fabric.decision"
+	input.attributes.tenant_id == "t-1"
+}
+`)
+	cfg := createDefaultConfig()
+	cfg.BundlePath = path
+	p, err := newPolicy(context.Background(), cfg, zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newPolicy: %v", err)
+	}
+
+	td := traces(
+		map[string]any{"event_class": "fabric.decision", "tenant_id": "t-1"},   // allow
+		map[string]any{"event_class": "fabric.decision", "tenant_id": "t-2"},   // deny
+		map[string]any{"event_class": "fabric.escalation", "tenant_id": "t-1"}, // deny
+	)
+	out, err := p.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if got := spanCount(out); got != 1 {
+		t.Fatalf("expected 1 span kept, got %d", got)
+	}
+}
+
+func TestTracesFailClosedOnEvalError(t *testing.T) {
+	path := writeBundle(t, `
+package fabric.egress
+
+import rego.v1
+
+default allow := false
+
+allow if {
+	1 / input.attributes.zero > 0
+}
+`)
+	cfg := createDefaultConfig()
+	cfg.BundlePath = path
+	p, err := newPolicy(context.Background(), cfg, zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newPolicy: %v", err)
+	}
+	td := traces(map[string]any{"event_class": "fabric.decision", "zero": 0})
+	out, err := p.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(out) != 0 {
+		t.Fatalf("fail-closed must drop span, got %d kept", spanCount(out))
+	}
+}
+
+func TestTracesNoopWhenBundleEmpty(t *testing.T) {
+	p, err := newPolicy(context.Background(), createDefaultConfig(), zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newPolicy: %v", err)
+	}
+	td := traces(
+		map[string]any{"event_class": "fabric.decision"},
+		map[string]any{"event_class": "anything"},
+	)
+	out, err := p.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(out) != 2 {
+		t.Fatalf("no-op must keep all spans, got %d", spanCount(out))
 	}
 }

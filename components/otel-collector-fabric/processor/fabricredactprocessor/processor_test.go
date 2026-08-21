@@ -17,6 +17,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -341,5 +342,264 @@ func TestFactoryDefaultConfigIsInvalid(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected default config to fail validation (no unix_socket)")
+	}
+}
+
+// --- traces helpers ---
+
+func makeTracesOneSpan(attrs map[string]any) ptrace.Traces {
+	td := ptrace.NewTraces()
+	rs := td.ResourceSpans().AppendEmpty()
+	ss := rs.ScopeSpans().AppendEmpty()
+	sp := ss.Spans().AppendEmpty()
+	sp.SetName("decision")
+	for k, v := range attrs {
+		putAttr(sp.Attributes(), k, v)
+	}
+	return td
+}
+
+func putAttr(m pcommon.Map, k string, v any) {
+	switch val := v.(type) {
+	case string:
+		m.PutStr(k, val)
+	case int:
+		m.PutInt(k, int64(val))
+	case float64:
+		m.PutDouble(k, val)
+	case bool:
+		m.PutBool(k, val)
+	default:
+		panic("unsupported attr type in test helper")
+	}
+}
+
+func spanCount(td ptrace.Traces) int {
+	n := 0
+	for ri := 0; ri < td.ResourceSpans().Len(); ri++ {
+		sss := td.ResourceSpans().At(ri).ScopeSpans()
+		for si := 0; si < sss.Len(); si++ {
+			n += sss.At(si).Spans().Len()
+		}
+	}
+	return n
+}
+
+// --- traces processor tests (H-1: spans must not bypass redaction) ---
+
+func TestTracesHashesSpanAttributes(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		if value == "ada@example.com" {
+			return RedactionResult{Value: "HASH_EMAIL", Hashed: true}, nil
+		}
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := makeTracesOneSpan(map[string]any{
+		"event_class": "fabric.decision",
+		"email":       "ada@example.com",
+	})
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(td) != 1 {
+		t.Fatalf("span count = %d", spanCount(td))
+	}
+	sp := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	email, _ := sp.Attributes().Get("email")
+	if email.Str() != "HASH_EMAIL" {
+		t.Fatalf("span email not hashed, got %q", email.Str())
+	}
+}
+
+func TestTracesFailClosedDropsSpanOnSidecarError(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, _ string) (RedactionResult, error) {
+		return RedactionResult{}, errors.New("sidecar down")
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := makeTracesOneSpan(map[string]any{"event_class": "fabric.decision", "note": "hi"})
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(td) != 0 {
+		t.Fatalf("expected span dropped, got %d", spanCount(td))
+	}
+}
+
+func TestTracesRedactsSpanEventAttributes(t *testing.T) {
+	var gotPath string
+	client := fakeClient{fn: func(_ context.Context, path, value string) (RedactionResult, error) {
+		if value == "ada@example.com" {
+			gotPath = path
+			return RedactionResult{Value: "HASH_EMAIL", Hashed: true}, nil
+		}
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := makeTracesOneSpan(map[string]any{"event_class": "fabric.decision"})
+	ev := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().AppendEmpty()
+	ev.SetName("guardrail.check")
+	ev.Attributes().PutStr("raw_input", "ada@example.com")
+
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	sp := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	raw, _ := sp.Events().At(0).Attributes().Get("raw_input")
+	if raw.Str() != "HASH_EMAIL" {
+		t.Fatalf("event attr not hashed, got %q", raw.Str())
+	}
+	if gotPath != "fabric.decision.guardrail.check.raw_input" {
+		t.Fatalf("event path = %q, want namespaced event path", gotPath)
+	}
+}
+
+func TestTracesSkipsListedAttributes(t *testing.T) {
+	calls := 0
+	client := fakeClient{fn: func(_ context.Context, path, _ string) (RedactionResult, error) {
+		calls++
+		if path == "fabric.decision.skipme" {
+			t.Errorf("skip attribute sent to sidecar at path=%q", path)
+		}
+		return RedactionResult{Value: "x"}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	cfg.SkipAttributes = []string{"skipme"}
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := makeTracesOneSpan(map[string]any{
+		"event_class": "fabric.decision",
+		"skipme":      "secret-id",
+		"note":        "free-form",
+	})
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if calls != 2 { // event_class + note; skipme skipped
+		t.Fatalf("expected 2 sidecar calls, got %d", calls)
+	}
+}
+
+// --- M-1 coverage: bodies, resource/scope attrs, nested values ---
+
+func TestLogsRedactsStringBody(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, path, value string) (RedactionResult, error) {
+		if value == "ada@example.com" {
+			if path != "decision_summary.body" {
+				t.Errorf("body path = %q", path)
+			}
+			return RedactionResult{Value: "HASH_BODY", Hashed: true}, nil
+		}
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	ld := plog.NewLogs()
+	lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	lr.Attributes().PutStr("event_class", "decision_summary")
+	lr.Body().SetStr("ada@example.com")
+
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	rec, _ := firstRecord(ld)
+	if rec.Body().Str() != "HASH_BODY" {
+		t.Fatalf("log body not redacted, got %q", rec.Body().Str())
+	}
+}
+
+func TestLogsRedactsResourceAndScopeAttributes(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		if value == "ada@example.com" {
+			return RedactionResult{Value: "HASH", Hashed: true}, nil
+		}
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	ld := plog.NewLogs()
+	rl := ld.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.user", "ada@example.com")
+	sl := rl.ScopeLogs().AppendEmpty()
+	sl.Scope().Attributes().PutStr("scope.contact", "ada@example.com")
+	lr := sl.LogRecords().AppendEmpty()
+	lr.Attributes().PutStr("event_class", "decision_summary")
+
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	res, _ := ld.ResourceLogs().At(0).Resource().Attributes().Get("service.user")
+	scope, _ := ld.ResourceLogs().At(0).ScopeLogs().At(0).Scope().Attributes().Get("scope.contact")
+	if res.Str() != "HASH" || scope.Str() != "HASH" {
+		t.Fatalf("resource/scope attrs not redacted: %q / %q", res.Str(), scope.Str())
+	}
+}
+
+func TestRedactsNestedMapAndSliceValues(t *testing.T) {
+	type call struct{ path, value string }
+	var calls []call
+	client := fakeClient{fn: func(_ context.Context, path, value string) (RedactionResult, error) {
+		calls = append(calls, call{path, value})
+		return RedactionResult{Value: "H:" + value, Hashed: true}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	ld := plog.NewLogs()
+	lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	lr.Attributes().PutStr("event_class", "decision_summary")
+	nested := lr.Attributes().PutEmptyMap("payload")
+	nested.PutStr("inner_email", "ada@example.com")
+	arr := lr.Attributes().PutEmptySlice("tags")
+	arr.AppendEmpty().SetStr("bob@example.com")
+
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	rec, _ := firstRecord(ld)
+	nestedOut, _ := rec.Attributes().Get("payload")
+	innerEmail, _ := nestedOut.Map().Get("inner_email")
+	if innerEmail.Str() != "H:ada@example.com" {
+		t.Fatalf("nested map value not redacted: %v", nestedOut.AsRaw())
+	}
+	arrOut, _ := rec.Attributes().Get("tags")
+	if arrOut.Slice().At(0).Str() != "H:bob@example.com" {
+		t.Fatalf("slice value not redacted: %v", arrOut.AsRaw())
+	}
+	joined := make([]string, 0, len(calls))
+	for _, c := range calls {
+		joined = append(joined, c.path)
+	}
+	want := []string{
+		"decision_summary.event_class",
+		"decision_summary.payload.inner_email",
+		"decision_summary.tags.0",
+	}
+	for _, w := range want {
+		found := false
+		for _, g := range joined {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing sidecar path %q; got %v", w, joined)
+		}
 	}
 }

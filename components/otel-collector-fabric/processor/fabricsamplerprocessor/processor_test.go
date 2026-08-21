@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -104,9 +105,9 @@ func TestDeterministicSameInputSameDecision(t *testing.T) {
 		"tenant_id":   "t-xyz",
 		"agent_id":    "a-abc",
 	}
-	first := s.keep(makeRecord(rec))
+	first := s.keepAttrs(makeRecord(rec).Attributes())
 	for i := 0; i < 50; i++ {
-		if got := s.keep(makeRecord(rec)); got != first {
+		if got := s.keepAttrs(makeRecord(rec).Attributes()); got != first {
 			t.Fatalf("determinism violated at iter %d: first=%v got=%v", i, first, got)
 		}
 	}
@@ -122,11 +123,11 @@ func TestSamplingRateApproximatelyMatches(t *testing.T) {
 	const n = 5000
 	kept := 0
 	for i := 0; i < n; i++ {
-		if s.keep(makeRecord(map[string]string{
+		if s.keepAttrs(makeRecord(map[string]string{
 			"event_class": "decision_summary",
 			"tenant_id":   "t-1",
 			"agent_id":    fmt.Sprintf("a-%d", i),
-		})) {
+		}).Attributes()) {
 			kept++
 		}
 	}
@@ -253,5 +254,80 @@ func TestFactoryTypeAndDefaults(t *testing.T) {
 	}
 	if cfg.DefaultRate != 1.0 || cfg.EventClassAttribute != "event_class" {
 		t.Errorf("unexpected defaults: %+v", cfg)
+	}
+}
+
+// --- traces (H-1) ---
+
+func makeTracesOneSpan(attrs map[string]string) ptrace.Traces {
+	td := ptrace.NewTraces()
+	sp := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	for k, v := range attrs {
+		sp.Attributes().PutStr(k, v)
+	}
+	return td
+}
+
+func spanCount(td ptrace.Traces) int {
+	n := 0
+	rss := td.ResourceSpans()
+	for i := 0; i < rss.Len(); i++ {
+		sss := rss.At(i).ScopeSpans()
+		for j := 0; j < sss.Len(); j++ {
+			n += sss.At(j).Spans().Len()
+		}
+	}
+	return n
+}
+
+func TestTracesSameBucketDecisionAsLogs(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Rates = map[string]float64{"decision_summary": 0.5}
+	s, err := newSampler(cfg, zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newSampler: %v", err)
+	}
+	attrs := map[string]string{
+		"event_class": "decision_summary",
+		"tenant_id":   "t-xyz",
+		"agent_id":    "a-abc",
+	}
+	want := s.keepAttrs(makeRecord(attrs).Attributes())
+	got := s.keepAttrs(makeTracesOneSpan(attrs).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes())
+	if want != got {
+		t.Fatalf("span and record with identical identity must land in the same bucket: log=%v span=%v", want, got)
+	}
+}
+
+func TestTracesRateZeroDropsAllSpans(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Rates = map[string]float64{"decision_summary": 0.0}
+	s, err := newSampler(cfg, zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newSampler: %v", err)
+	}
+	td := makeTracesOneSpan(map[string]string{"event_class": "decision_summary", "tenant_id": "t", "agent_id": "a"})
+	out, err := s.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(out) != 0 {
+		t.Fatalf("rate=0 must drop all spans, got %d", spanCount(out))
+	}
+}
+
+func TestTracesDefaultRateKeepsUnknownClasses(t *testing.T) {
+	cfg := testConfig(t) // DefaultRate = 1.0
+	s, err := newSampler(cfg, zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("newSampler: %v", err)
+	}
+	td := makeTracesOneSpan(map[string]string{"event_class": "unheard_of"})
+	out, err := s.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(out) != 1 {
+		t.Fatalf("default rate must keep unknown classes, got %d", spanCount(out))
 	}
 }

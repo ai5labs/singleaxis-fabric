@@ -44,9 +44,13 @@ if ! grep -qE '^[[:space:]]+traces:[[:space:]]*$' <<<"${default_render}"; then
 fi
 pass "default render contains traces: pipeline"
 
-# Case 2: traces pipeline uses exactly the processors + exporters spec 016 §4.1 mandates.
-if ! grep -qE 'processors:[[:space:]]*\[memory_limiter, fabricguard, batch\]' <<<"${default_render}"; then
-  fail "traces pipeline processors don't match spec 016 §4.1 ([memory_limiter, fabricguard, batch])"
+# Case 2: traces pipeline chains the same processors as logs — guard,
+# then any enabled Fabric processors, then batch. With the common_args
+# above (sampler on; redact/policy off by default) that is exactly:
+#   memory_limiter, fabricguard, fabricsampler, batch.
+expected_processors=$'processors:\n            - memory_limiter\n            - fabricguard\n            - fabricsampler\n            - batch'
+if ! grep -q -F -- "${expected_processors}" <<<"${default_render}"; then
+  fail "traces pipeline processors don't match the expected chain (memory_limiter, fabricguard, fabricsampler, batch)"
 fi
 if ! grep -qE 'exporters:[[:space:]]*\[otlphttp/fabric\]' <<<"${default_render}"; then
   fail "traces pipeline exporters don't match spec 016 §4.1 ([otlphttp/fabric])"
@@ -70,5 +74,32 @@ if ! grep -qE '^[[:space:]]+logs:[[:space:]]*$' <<<"${disabled_render}"; then
   fail "regression: logs: pipeline missing when traces are disabled"
 fi
 pass "logs: pipeline present in both renders"
+
+# Case 5 (H-1): enabling redact/policy must chain them into the TRACES
+# pipeline too, not just logs. acceptMissingProvider bypasses the
+# render-time sidecar-provider gate (CI-only; runtime would error).
+redact_render=$(helm template ci "${chart_dir}" \
+  "${common_args[@]}" \
+  --set fabric.redact.enabled=true \
+  --set fabric.redact.acceptMissingProvider=true)
+traces_block=$(awk '/^        traces:/{f=1} f&&/^        [a-z]+:$/&&$0!~/^        traces:/{f=0} f' <<<"${redact_render}")
+if ! grep -q -- "- fabricredact" <<<"${traces_block}"; then
+  fail "fabricredact not chained into the traces pipeline (H-1 regression)"
+fi
+pass "fabricredact chained into traces pipeline"
+
+policy_render=$(helm template ci "${chart_dir}" \
+  "${common_args[@]}" \
+  --set fabric.policy.enabled=true \
+  --set fabric.policy.bundlePath=/etc/fabric/policy \
+  --set fabric.policy.bundleConfigMap=fabric-policy-bundle)
+traces_block=$(awk '/^        traces:/{f=1} f&&/^        [a-z]+:$/&&$0!~/^        traces:/{f=0} f' <<<"${policy_render}")
+if ! grep -q -- "- fabricpolicy" <<<"${traces_block}"; then
+  fail "fabricpolicy not chained into the traces pipeline (H-1 regression)"
+fi
+if ! grep -q "name: fabric-policy-bundle" <<<"${policy_render}"; then
+  fail "bundleConfigMap did not render a configMap volume source"
+fi
+pass "fabricpolicy + bundleConfigMap rendered in traces pipeline"
 
 echo "all checks passed"

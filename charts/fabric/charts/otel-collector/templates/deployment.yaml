@@ -85,7 +85,16 @@ spec:
         {{- end }}
         {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.bundlePath }}
         - name: policy-bundle
+          {{- if .Values.fabric.policy.bundleConfigMap }}
+          configMap:
+            name: {{ .Values.fabric.policy.bundleConfigMap }}
+          {{- else }}
+          # No in-chart provisioning mechanism configured: this volume
+          # stays EMPTY unless the operator mounts something out of
+          # band. An empty bundle makes fabricpolicy fail closed and
+          # drop every record/span — see NOTES.txt.
           emptyDir: {}
+          {{- end }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

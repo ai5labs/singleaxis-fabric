@@ -10,6 +10,7 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
@@ -49,22 +50,45 @@ func (p *policy) processLogs(ctx context.Context, ld plog.Logs) (plog.Logs, erro
 		for si := 0; si < sls.Len(); si++ {
 			records := sls.At(si).LogRecords()
 			records.RemoveIf(func(lr plog.LogRecord) bool {
-				return !p.allow(ctx, lr, resAttrs)
+				return !p.allowAttrs(ctx, lr.Attributes(), resAttrs)
 			})
 		}
 	}
 	return ld, nil
 }
 
-// allow returns true when the prepared query permits the record.
-// Any error, non-bool result, or missing result is treated as deny
-// (fail-closed).
-func (p *policy) allow(ctx context.Context, lr plog.LogRecord, resource map[string]any) bool {
-	attrs := attrsToMap(lr.Attributes())
-	class, _ := attrs[p.cfg.EventClassAttribute].(string)
+// processTraces evaluates the same Rego policy over spans. A span is
+// admitted on its own attributes plus the resource attributes of the
+// batch it arrived in — mirroring the logs pipeline so a policy
+// author writes one rule set for both signal types.
+func (p *policy) processTraces(ctx context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	if p.prepared == nil {
+		return td, nil
+	}
+	rss := td.ResourceSpans()
+	for ri := 0; ri < rss.Len(); ri++ {
+		rs := rss.At(ri)
+		resAttrs := attrsToMap(rs.Resource().Attributes())
+		sss := rs.ScopeSpans()
+		for si := 0; si < sss.Len(); si++ {
+			spans := sss.At(si).Spans()
+			spans.RemoveIf(func(sp ptrace.Span) bool {
+				return !p.allowAttrs(ctx, sp.Attributes(), resAttrs)
+			})
+		}
+	}
+	return td, nil
+}
+
+// allowAttrs returns true when the prepared query permits a record
+// or span carrying `attrs`. Any error, non-bool result, or missing
+// result is treated as deny (fail-closed).
+func (p *policy) allowAttrs(ctx context.Context, attrs pcommon.Map, resource map[string]any) bool {
+	m := attrsToMap(attrs)
+	class, _ := m[p.cfg.EventClassAttribute].(string)
 	input := map[string]any{
 		"event_class": class,
-		"attributes":  attrs,
+		"attributes":  m,
 		"resource":    resource,
 	}
 	results, err := p.prepared.Eval(ctx, rego.EvalInput(input))

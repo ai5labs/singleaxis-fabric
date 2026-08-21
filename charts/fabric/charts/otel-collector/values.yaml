@@ -104,6 +104,12 @@ fabric:
   policy:
     enabled: true
     bundlePath: ""       # e.g. /etc/fabric/policy
+    # Name of a ConfigMap whose .rego file(s) are mounted at
+    # bundlePath. Without it (or an out-of-band provisioning
+    # mechanism) the bundlePath volume renders as an emptyDir, and an
+    # empty bundle makes fabricpolicy FAIL CLOSED — every record and
+    # span is dropped. Set this whenever bundlePath is set.
+    bundleConfigMap: ""
     query: data.fabric.egress.allow
     eventClassAttribute: event_class
 

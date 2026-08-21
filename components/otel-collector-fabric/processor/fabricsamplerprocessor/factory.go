@@ -20,6 +20,7 @@ func NewFactory() processor.Factory {
 		component.MustNewType(typeStr),
 		func() component.Config { return createDefaultConfig() },
 		processor.WithLogs(createLogsProcessor, component.StabilityLevelAlpha),
+		processor.WithTraces(createTracesProcessor, component.StabilityLevelAlpha),
 	)
 }
 
@@ -46,6 +47,35 @@ func createLogsProcessor(
 		pcfg,
 		next,
 		s.processLogs,
+		processorhelper.WithCapabilities(consumer.Capabilities{MutatesData: true}),
+	)
+}
+
+// createTracesProcessor wires the same HMAC sampler to the traces
+// pipeline so span traffic is sampled under identical policy.
+func createTracesProcessor(
+	ctx context.Context,
+	set processor.Settings,
+	cfg component.Config,
+	next consumer.Traces,
+) (processor.Traces, error) {
+	pcfg, ok := cfg.(*Config)
+	if !ok {
+		return nil, fmt.Errorf("fabricsampler: expected *Config, got %T", cfg)
+	}
+	if err := pcfg.Validate(); err != nil {
+		return nil, err
+	}
+	s, err := newSampler(pcfg, set.Logger)
+	if err != nil {
+		return nil, err
+	}
+	return processorhelper.NewTraces(
+		ctx,
+		set,
+		pcfg,
+		next,
+		s.processTraces,
 		processorhelper.WithCapabilities(consumer.Capabilities{MutatesData: true}),
 	)
 }

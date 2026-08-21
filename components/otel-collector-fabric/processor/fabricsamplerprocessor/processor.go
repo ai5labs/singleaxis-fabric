@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
@@ -35,15 +36,32 @@ func (s *sampler) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error
 		for si := 0; si < sls.Len(); si++ {
 			records := sls.At(si).LogRecords()
 			records.RemoveIf(func(lr plog.LogRecord) bool {
-				return !s.keep(lr)
+				return !s.keepAttrs(lr.Attributes())
 			})
 		}
 	}
 	return ld, nil
 }
 
-func (s *sampler) keep(lr plog.LogRecord) bool {
-	attrs := lr.Attributes()
+// processTraces applies the same deterministic HMAC decisioning to
+// spans. Because the bucket input is (tenant, agent, event_class),
+// a span and a log record for the same decision land in the same
+// bucket on both pipelines.
+func (s *sampler) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	rss := td.ResourceSpans()
+	for ri := 0; ri < rss.Len(); ri++ {
+		sss := rss.At(ri).ScopeSpans()
+		for si := 0; si < sss.Len(); si++ {
+			spans := sss.At(si).Spans()
+			spans.RemoveIf(func(sp ptrace.Span) bool {
+				return !s.keepAttrs(sp.Attributes())
+			})
+		}
+	}
+	return td, nil
+}
+
+func (s *sampler) keepAttrs(attrs pcommon.Map) bool {
 	class := strAttr(attrs, s.cfg.EventClassAttribute)
 	rate := s.cfg.DefaultRate
 	if r, ok := s.cfg.Rates[class]; ok {

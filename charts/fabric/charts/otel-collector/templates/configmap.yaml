@@ -113,6 +113,20 @@ data:
         {{- if .Values.fabric.guard.traceProcessingEnabled }}
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, fabricguard, batch]
+          processors:
+            - memory_limiter
+            {{- if .Values.fabric.guard.enabled }}
+            - fabricguard
+            {{- end }}
+            {{- if .Values.fabric.redact.enabled }}
+            - fabricredact
+            {{- end }}
+            {{- if .Values.fabric.policy.enabled }}
+            - fabricpolicy
+            {{- end }}
+            {{- if .Values.fabric.sampler.enabled }}
+            - fabricsampler
+            {{- end }}
+            - batch
           exporters: [{{ $exporters }}]
         {{- end }}
