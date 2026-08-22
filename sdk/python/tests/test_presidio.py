@@ -34,7 +34,7 @@ def test_validation_rejects_non_positive_timeout() -> None:
 
 
 def test_default_timeout_accommodates_first_call_load() -> None:
-    """SPEC 016 §4.4: default must be >=3s to cover Presidio cold start."""
+    """Default must be >=3s to cover Presidio cold start."""
     assert DEFAULT_TIMEOUT_SECONDS >= 3.0
     client = UDSPresidioClient("/tmp/does-not-matter")
     assert client._timeout == DEFAULT_TIMEOUT_SECONDS

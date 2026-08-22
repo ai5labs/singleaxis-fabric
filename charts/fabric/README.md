@@ -131,7 +131,7 @@ neither is affected by the umbrella defaults above.
   to export to, so spans go to pod stdout by design. Not for
   production.
 - **`eu-ai-act-high-risk`** — deny-default NetworkPolicy, guard with
-  `dropUnknownClasses`, redaction pinned on, sampler keyed from a
+  `dropUnknownClasses`, trace processing and redaction pinned on, sampler keyed from a
   Secret, update-agent admission fail-closed. It renders **only** when
   you supply the real secrets it refuses to fake:
   1. `update-agent.config.trustedKeys[0].publicKey` — a real base64

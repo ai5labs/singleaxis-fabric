@@ -37,6 +37,7 @@ This is what makes the eu-ai-act-high-risk lock-list real:
 
     otel-collector.fabric.guard.enabled
     otel-collector.fabric.guard.dropUnknownClasses
+    otel-collector.fabric.guard.traceProcessingEnabled
     otel-collector.fabric.redact.enabled
 
 A tenant who passes e.g.

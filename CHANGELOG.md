@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Collector redaction now applies tag-mode replacements to logs and traces
+  instead of treating `hashed=false` as passthrough.
+- EU profile locks now require trace processing and active guard/redaction
+  chains in both telemetry pipelines; the admission backstop is enabled on
+  first install rather than waiting for a namespace lookup on upgrade.
+- Update-agent TLS rotation now rolls self-signed deployments and watches
+  projected certificate files so cert-manager rotations restart uvicorn onto
+  the new leaf before the webhook CA bundle diverges.
+- Sidecar shared-token auth is explicitly TCP-only; UDS requests continue to
+  rely on owner-only socket permissions, matching the shipped SDK clients.
+- Red-team configuration now rejects empty and malformed `${env:...}` values
+  so authenticated probes cannot silently degrade to blank credentials.
 - Docs reconciled to v0.7.x across root README, docs README, and SDK README
   (a 0.7.0-era note incorrectly claimed these already said v0.6.x).
 - Quickstart and walkthrough now teach `llm_call(provider=...)` instead of the

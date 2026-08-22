@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import yaml
+
 from fabric_update_agent.config import VerifierConfig
 from fabric_update_agent.signatures import SIGNATURE_ANNOTATION
 from fabric_update_agent.verifier import Verifier
@@ -122,6 +124,26 @@ def test_backstop_denies_missing_redact(locked_config: dict[str, Any]) -> None:
     r = Verifier(_locked_config()).verify(locked_config)
     assert not r.allowed
     assert "fabric.redact.enabled" in (r.reason or "")
+
+
+def test_backstop_denies_declared_but_inactive_processors(
+    locked_config: dict[str, Any],
+) -> None:
+    rendered = yaml.safe_load(locked_config["data"]["config.yaml"])
+    rendered["service"]["pipelines"]["logs"]["processors"] = ["memory_limiter", "batch"]
+    locked_config["data"]["config.yaml"] = yaml.safe_dump(rendered)
+    r = Verifier(_locked_config()).verify(locked_config)
+    assert not r.allowed
+    assert "fabricguard is not chained into the logs pipeline" in (r.reason or "")
+
+
+def test_backstop_denies_missing_traces_pipeline(locked_config: dict[str, Any]) -> None:
+    rendered = yaml.safe_load(locked_config["data"]["config.yaml"])
+    del rendered["service"]["pipelines"]["traces"]
+    locked_config["data"]["config.yaml"] = yaml.safe_dump(rendered)
+    r = Verifier(_locked_config()).verify(locked_config)
+    assert not r.allowed
+    assert "no active traces pipeline" in (r.reason or "")
 
 
 def test_backstop_fails_closed_on_unparseable(locked_config: dict[str, Any]) -> None:

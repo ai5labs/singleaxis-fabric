@@ -127,8 +127,9 @@ webhook:
   # or labels app.kubernetes.io/{part-of=fabric,name=otel-collector})
   # whose rendered collector config drops a profile-locked control:
   # fabricguard missing, guard.drop_unknown_classes != true, or
-  # fabricredact missing. This catches direct `kubectl edit` drift
-  # that bypasses Helm — the render-time invariant
+  # fabricredact missing, or either processor is declared but absent
+  # from the active logs/traces pipelines. This catches direct
+  # `kubectl edit` drift that bypasses Helm — the render-time invariant
   # (fabric.validateProfileLocks in the parent chart) cannot.
   #
   # Scope: only traffic in webhook.watchedNamespaces reaches the
@@ -141,7 +142,8 @@ webhook:
   #       namespace.create=true. CAVEAT: on a FIRST install into a
   #       brand-new namespace the Namespace object does not exist at
   #       render time yet, so auto resolves OFF until the next
-  #       `helm upgrade`. Set `on` to pin it from day one.
+  #       `helm upgrade`. Set `on` to pin it from day one; the shipped
+  #       EU profile does this explicitly.
   #   on  — always enforce.
   #   off — never enforce (dev clusters; permissive-dev posture).
   enforceProfileLocks: auto
@@ -161,7 +163,9 @@ webhook:
 #                           at ``tls.certManager.issuerRef``. The
 #                           webhook's caBundle is populated via the
 #                           cert-manager.io/inject-ca-from
-#                           annotation.
+#                           annotation. The server watches the projected
+#                           Secret and restarts when cert-manager rotates
+#                           it so uvicorn reloads the leaf certificate.
 tls:
   mode: selfSigned                 # one of: selfSigned | certManager
   certManager:

@@ -47,12 +47,12 @@ service:
 
 # Shared-token auth on the TCP /v1/* routes. When `tokenSecret.name`
 # is set, the sidecar receives FABRIC_SIDECAR_TOKEN from that Secret
-# and every /v1/* request must carry a matching X-Fabric-Token header
+# and every TCP /v1/* request must carry a matching X-Fabric-Token header
 # (constant-time compare); /healthz stays open for probes. Empty name
 # (default) → auth off, behaviour unchanged. Recommended whenever the
 # TCP Service is reachable beyond one namespace. Same-pod UDS callers
-# are unaffected (they send no token and auth stays off unless you
-# opt in).
+# are authenticated by socket filesystem permissions and bypass the
+# shared-token check.
 auth:
   tokenSecret:
     # Name of an existing Secret holding the shared token. Create with:

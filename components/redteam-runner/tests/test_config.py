@@ -96,7 +96,7 @@ def test_top_level_must_be_mapping(tmp_path: Path) -> None:
         load_run_config(out)
 
 
-def test_unterminated_env_ref_is_left_as_literal(tmp_path: Path) -> None:
+def test_unterminated_env_ref_raises(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
         {
@@ -106,5 +106,26 @@ def test_unterminated_env_ref_is_left_as_literal(tmp_path: Path) -> None:
             "suites": [],
         },
     )
-    cfg = load_run_config(path)
-    assert cfg.target.headers["X"] == "prefix-${env:UNTERMINATED"
+    with pytest.raises(ValueError, match="unterminated environment reference"):
+        load_run_config(path)
+
+
+def test_empty_env_ref_value_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENT_BEARER", "")
+    path = _write(
+        tmp_path,
+        {
+            "tenant_id": "acme",
+            "agent_id": "bot",
+            "target": {
+                "url": "https://t",
+                "headers": {"Authorization": "Bearer ${env:AGENT_BEARER}"},
+            },
+            "suites": [],
+        },
+    )
+    with pytest.raises(ValueError, match=r"empty environment variable \$\{env:AGENT_BEARER\}"):
+        load_run_config(path)

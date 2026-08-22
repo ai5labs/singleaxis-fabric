@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
 import yaml
 from typer.testing import CliRunner
 
-from fabric_update_agent.__main__ import app
+from fabric_update_agent.__main__ import _tls_fingerprint, _watch_tls_files, app
 from fabric_update_agent.config import VerifierConfig
 from fabric_update_agent.signatures import SIGNATURE_ANNOTATION
 from fabric_update_agent.version import VERSION_CONSTRAINT_ANNOTATION
@@ -101,3 +102,24 @@ def test_verify_handles_multiple_documents(
     assert result.exit_code == 2, result.output
     assert "allow" in result.output
     assert "deny" in result.output
+
+
+def test_tls_watcher_detects_projected_secret_rotation(tmp_path: Path) -> None:
+    cert = tmp_path / "tls.crt"
+    key = tmp_path / "tls.key"
+    cert.write_bytes(b"old-cert")
+    key.write_bytes(b"old-key")
+    initial = _tls_fingerprint(cert, key)
+    stop = threading.Event()
+    changed = threading.Event()
+    watcher = threading.Thread(
+        target=_watch_tls_files,
+        args=(cert, key, initial, stop, changed.set),
+        kwargs={"interval": 0.01},
+        daemon=True,
+    )
+    watcher.start()
+    cert.write_bytes(b"new-cert")
+    assert changed.wait(timeout=1.0)
+    stop.set()
+    watcher.join(timeout=1.0)

@@ -3,7 +3,7 @@
 #
 # The sampler requires a 64-char lowercase hex string (32 bytes). The
 # Helm chart validates the format at render time so a bad key never
-# becomes a running pod. See SPEC 016 §4.3.
+# becomes a running pod.
 #
 # Run from the repo root:
 #   ./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh

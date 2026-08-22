@@ -25,6 +25,12 @@ spec:
         # Force a rollout when the verifier config changes so the new
         # trust bundle is picked up without manual restart.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if eq .Values.tls.mode "selfSigned" }}
+        # Self-signed rotation is performed during Helm rendering. Tie
+        # the pod template to the generated material so the server does
+        # not keep serving the old leaf after caBundle changes.
+        checksum/tls: {{ include "update-agent.tlsData" . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

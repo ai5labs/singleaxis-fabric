@@ -99,7 +99,24 @@ def _otel_collector_config(
         ]
     if redact_enabled:
         processors += ["fabricredact:", "  unix_socket: /var/run/fabric/presidio.sock"]
-    body = "\n".join(["processors:", *[f"  {line}" for line in processors]])
+    active = ["memory_limiter"]
+    if guard_enabled:
+        active.append("fabricguard")
+    if redact_enabled:
+        active.append("fabricredact")
+    active.append("batch")
+    body = "\n".join(
+        [
+            "processors:",
+            *[f"  {line}" for line in processors],
+            "service:",
+            "  pipelines:",
+            "    logs:",
+            f"      processors: [{', '.join(active)}]",
+            "    traces:",
+            f"      processors: [{', '.join(active)}]",
+        ]
+    )
     return body + "\n"
 
 

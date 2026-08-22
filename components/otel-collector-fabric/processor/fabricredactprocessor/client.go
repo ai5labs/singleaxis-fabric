@@ -17,6 +17,8 @@ import (
 
 // RedactionResult mirrors the Bridge's presidio.RedactionResult — the
 // two processors share the same wire contract with the sidecar.
+// Value is always authoritative: Hashed distinguishes HMAC replacement
+// from tag-mode replacement, not replacement from passthrough.
 type RedactionResult struct {
 	Value       string
 	Hashed      bool
@@ -69,9 +71,9 @@ type redactRequest struct {
 }
 
 type redactResponse struct {
-	Value       string `json:"value"`
-	Hashed      bool   `json:"hashed"`
-	PIICategory string `json:"pii_category"`
+	Value       *string `json:"value"`
+	Hashed      bool    `json:"hashed"`
+	PIICategory string  `json:"pii_category"`
 }
 
 func (c *udsClient) Redact(ctx context.Context, path, value string) (RedactionResult, error) {
@@ -100,8 +102,11 @@ func (c *udsClient) Redact(ctx context.Context, path, value string) (RedactionRe
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&decoded); err != nil {
 		return RedactionResult{}, fmt.Errorf("fabricredact: decode: %w", err)
 	}
+	if decoded.Value == nil {
+		return RedactionResult{}, errors.New("fabricredact: response missing value")
+	}
 	return RedactionResult{
-		Value:       decoded.Value,
+		Value:       *decoded.Value,
 		Hashed:      decoded.Hashed,
 		PIICategory: decoded.PIICategory,
 	}, nil

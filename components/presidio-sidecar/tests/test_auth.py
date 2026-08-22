@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
+import fabric_presidio_sidecar.app as app_module
 from fabric_presidio_sidecar import build_app
 
 _REDACT = {"path": "p", "value": "alice@example.com"}
+
+
+def test_transport_detection_distinguishes_uds_from_tcp() -> None:
+    uds = Request({"type": "http", "server": ("/var/run/fabric/presidio.sock", None)})
+    tcp = Request({"type": "http", "server": ("127.0.0.1", 8080)})
+    assert app_module._is_uds_request(uds)
+    assert not app_module._is_uds_request(tcp)
 
 
 def test_v1_open_when_token_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,6 +72,16 @@ def test_healthz_stays_open_with_token_set(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_empty_token_value_disables_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FABRIC_SIDECAR_TOKEN", "")
+    app = build_app(tenant_key=b"t")
+    with TestClient(app) as c:
+        assert c.post("/v1/redact", json=_REDACT).status_code == 200
+
+
+def test_uds_request_uses_filesystem_auth_not_shared_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FABRIC_SIDECAR_TOKEN", "s3cret")
+    monkeypatch.setattr(app_module, "_is_uds_request", lambda _request: True)
     app = build_app(tenant_key=b"t")
     with TestClient(app) as c:
         assert c.post("/v1/redact", json=_REDACT).status_code == 200

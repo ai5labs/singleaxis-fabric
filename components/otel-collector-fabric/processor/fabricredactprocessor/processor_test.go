@@ -185,6 +185,31 @@ func TestProcessorHashesStringAttributes(t *testing.T) {
 	}
 }
 
+func TestProcessorAppliesTagModeReplacementWhenNotHashed(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		if value == "email ada@example.com" {
+			return RedactionResult{Value: "email <EMAIL_ADDRESS_1>", Hashed: false}, nil
+		}
+		return RedactionResult{Value: value, Hashed: false}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := makeTracesOneSpan(map[string]any{
+		"event_class": "fabric.decision",
+		"prompt":      "email ada@example.com",
+	})
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	sp := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	prompt, _ := sp.Attributes().Get("prompt")
+	if prompt.Str() != "email <EMAIL_ADDRESS_1>" {
+		t.Fatalf("tag-mode replacement discarded, got %q", prompt.Str())
+	}
+}
+
 func TestProcessorFailClosedOnSidecarError(t *testing.T) {
 	client := fakeClient{fn: func(_ context.Context, _, _ string) (RedactionResult, error) {
 		return RedactionResult{}, errors.New("sidecar down")
@@ -273,7 +298,9 @@ func TestClientRoundTripOverUDS(t *testing.T) {
 		}
 		gotPath = req.Path
 		gotValue = req.Value
-		_ = json.NewEncoder(w).Encode(redactResponse{Value: "HASH", Hashed: true, PIICategory: "EMAIL"})
+		_ = json.NewEncoder(w).Encode(
+			map[string]any{"value": "HASH", "hashed": true, "pii_category": "EMAIL"},
+		)
 	}))
 
 	c, err := NewUDSClient(sock, 2*time.Second)
@@ -306,6 +333,22 @@ func TestClientNon200IsError(t *testing.T) {
 
 	if _, err := c.Redact(context.Background(), "a", "b"); err == nil || !strings.Contains(err.Error(), "502") {
 		t.Fatalf("expected 502 error, got %v", err)
+	}
+}
+
+func TestClientMissingValueFailsClosed(t *testing.T) {
+	sock := startUDSSidecar(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"hashed": false, "pii_category": ""})
+	}))
+	c, err := NewUDSClient(sock, time.Second)
+	if err != nil {
+		t.Fatalf("NewUDSClient: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if _, err := c.Redact(context.Background(), "a", "b"); err == nil ||
+		!strings.Contains(err.Error(), "missing value") {
+		t.Fatalf("expected missing-value error, got %v", err)
 	}
 }
 

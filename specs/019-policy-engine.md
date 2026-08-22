@@ -467,5 +467,5 @@ with fabric.decision(session_id="s", request_id="r") as decision:
 - Spec 007 — Escalation workflow (HITL primitive used by `escalate`)
 - Spec 012 — OSS commercialization strategy (commercial vs OSS
   scope split)
-- Spec 016 — Foundational fixes (the `GuardrailAction` /
-  `PolicyDecision` 5-value vocabulary lives here)
+- SDK policy types — the `GuardrailAction` / `PolicyDecision`
+  5-value vocabulary is implemented in `sdk/python/src/fabric/`.

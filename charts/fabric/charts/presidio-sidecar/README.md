@@ -54,8 +54,9 @@ auth:
     key: token
 ```
 
-Unset (default) → behaviour unchanged. Same-pod UDS callers are
-unaffected either way.
+Unset (default) → behaviour unchanged. The token check applies only
+to TCP requests; UDS callers remain governed by socket filesystem
+permissions and are unaffected when the token is enabled.
 
 ## Network isolation
 

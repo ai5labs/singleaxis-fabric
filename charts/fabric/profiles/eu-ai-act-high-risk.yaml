@@ -20,6 +20,7 @@ profile:
   lockedFields:
     - otel-collector.fabric.guard.enabled
     - otel-collector.fabric.guard.dropUnknownClasses
+    - otel-collector.fabric.guard.traceProcessingEnabled
     - otel-collector.fabric.redact.enabled
 
 namespace:
@@ -160,3 +161,7 @@ update-agent:
   webhook:
     failurePolicy: Fail
     timeoutSeconds: 5
+    # Do not rely on `auto` here: on a first install the Namespace does
+    # not exist yet for Helm's lookup, which would leave the admission
+    # backstop off until a later upgrade.
+    enforceProfileLocks: "on"

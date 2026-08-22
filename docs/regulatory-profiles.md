@@ -25,7 +25,7 @@ components, different posture.
 | **Update-agent signing key** | placeholder allowed | real key required (chart fails to install otherwise) |
 | **Exporter endpoint** | optional | required (chart fails to install otherwise) |
 | **Tenant HMAC key** | dev placeholder | real Secret required |
-| **Locked fields** | none | `otel-collector.fabric.guard.enabled`, `otel-collector.fabric.guard.dropUnknownClasses`, `otel-collector.fabric.redact.enabled` |
+| **Locked fields** | none | `otel-collector.fabric.guard.enabled`, `otel-collector.fabric.guard.dropUnknownClasses`, `otel-collector.fabric.guard.traceProcessingEnabled`, `otel-collector.fabric.redact.enabled` |
 
 ## Install
 
@@ -92,12 +92,13 @@ A few good practices:
 
 ## Locked-field enforcement
 
-The `eu-ai-act-high-risk` profile locks three controls:
+The `eu-ai-act-high-risk` profile locks four controls:
 
 ```yaml
 lockedFields:
   - otel-collector.fabric.guard.enabled
   - otel-collector.fabric.guard.dropUnknownClasses
+  - otel-collector.fabric.guard.traceProcessingEnabled
   - otel-collector.fabric.redact.enabled
 ```
 
@@ -127,13 +128,16 @@ layers:
    update-agent verifier denies any ConfigMap carrying the
    otel-collector config naming whose rendered collector config drops
    a locked control (`fabricguard` missing,
-   `drop_unknown_classes != true`, or `fabricredact` missing). The
+   `drop_unknown_classes != true`, `fabricredact` missing, or either
+   processor absent from the active logs/traces pipelines). The
    value supports `auto | on | off`; `auto` (the default) switches on
    when the release namespace carries the parent chart's
    `singleaxis.com/profile=eu-ai-act-high-risk` label. Note the
    first-install caveat: on a brand-new namespace the label isn't
    visible at render time yet, so `auto` engages from the first
-   `helm upgrade` onward — set `on` to pin it from day one. Scope is
+   `helm upgrade` onward. The shipped EU profile therefore pins this
+   value to `on` from day one; custom high-risk profiles should do the
+   same. Scope is
    limited to the webhook's `watchedNamespaces` (VWC
    namespaceSelector).
 

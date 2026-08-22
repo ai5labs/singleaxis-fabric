@@ -183,7 +183,7 @@ class Fabric:
         # observability mode unchanged.
         self._content_store = content_store
 
-        # Spec 016 §4.2: unify constructor with from_env() — when an
+        # Keep the constructor consistent with from_env(): when an
         # explicit client is not passed but the corresponding socket
         # env var is set, auto-wire the client. Explicit kwargs always
         # win over env. A one-shot warning fires when the env vars

@@ -14,9 +14,13 @@ Two commands:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import signal
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -28,6 +32,53 @@ from .verifier import Verifier
 from .webhook import create_app
 
 app = typer.Typer(add_completion=False, help=__doc__)
+
+_TLS_RELOAD_INTERVAL_ENV = "FABRIC_TLS_RELOAD_INTERVAL_SECONDS"
+_TLS_RELOAD_INTERVAL_SECONDS = 30.0
+_LOG = logging.getLogger(__name__)
+
+
+def _tls_fingerprint(cert: Path, key: Path) -> bytes:
+    """Hash the projected TLS pair so Secret rotations are detectable."""
+
+    digest = hashlib.sha256()
+    for path in (cert, key):
+        payload = path.read_bytes()
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.digest()
+
+
+def _watch_tls_files(
+    cert: Path,
+    key: Path,
+    initial: bytes,
+    stop: threading.Event,
+    on_change: Callable[[], None],
+    *,
+    interval: float = _TLS_RELOAD_INTERVAL_SECONDS,
+) -> None:
+    """Call ``on_change`` once Kubernetes projects new TLS material.
+
+    Uvicorn reads its SSL context only at startup. The production
+    callback terminates the process gracefully; the Deployment's
+    restart policy then starts it with the rotated certificate. This
+    also covers cert-manager rotations that happen outside Helm.
+    """
+
+    while not stop.wait(interval):
+        try:
+            current = _tls_fingerprint(cert, key)
+        except OSError as exc:
+            # Secret projection is atomic but a filesystem watcher can
+            # still observe a short transition. Retry instead of taking
+            # down the admission path on a transient read failure.
+            _LOG.warning("could not inspect projected TLS files: %s", exc)
+            continue
+        if current != initial:
+            _LOG.info("projected webhook TLS material changed; restarting to reload it")
+            on_change()
+            return
 
 
 @app.command()
@@ -116,13 +167,53 @@ def serve(
             "and --tls-key, or set FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT=1 "
             "for local smoke tests only."
         )
-    uvicorn.run(
-        app_,
-        host=host,
-        port=port,
-        ssl_certfile=str(tls_cert) if cert_present else None,
-        ssl_keyfile=str(tls_key) if key_present else None,
-    )
+
+    watcher_stop = threading.Event()
+    watcher: threading.Thread | None = None
+    if cert_present:
+        interval_raw = os.environ.get(
+            _TLS_RELOAD_INTERVAL_ENV,
+            str(_TLS_RELOAD_INTERVAL_SECONDS),
+        )
+        try:
+            interval = float(interval_raw)
+        except ValueError as err:
+            raise SystemExit(
+                f"update-agent: {_TLS_RELOAD_INTERVAL_ENV} must be a positive number, "
+                f"got {interval_raw!r}"
+            ) from err
+        if interval <= 0:
+            raise SystemExit(
+                f"update-agent: {_TLS_RELOAD_INTERVAL_ENV} must be > 0, got {interval_raw!r}"
+            )
+        initial_tls = _tls_fingerprint(tls_cert, tls_key)
+        watcher = threading.Thread(
+            target=_watch_tls_files,
+            args=(
+                tls_cert,
+                tls_key,
+                initial_tls,
+                watcher_stop,
+                lambda: os.kill(os.getpid(), signal.SIGTERM),
+            ),
+            kwargs={"interval": interval},
+            name="fabric-tls-reloader",
+            daemon=True,
+        )
+        watcher.start()
+
+    try:
+        uvicorn.run(
+            app_,
+            host=host,
+            port=port,
+            ssl_certfile=str(tls_cert) if cert_present else None,
+            ssl_keyfile=str(tls_key) if key_present else None,
+        )
+    finally:
+        watcher_stop.set()
+        if watcher is not None:
+            watcher.join(timeout=1.0)
 
 
 def _configure_logging(verbose: bool) -> None:

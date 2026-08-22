@@ -73,7 +73,10 @@ the same Secret name.
 In `selfSigned` mode the chart stamps the leaf's intended expiry into
 the Secret (`fabric.singleaxis.dev/regenerate-after`) and regenerates
 CA + leaf + caBundle together on the first `helm upgrade` after that
-date. To rotate early (e.g. key compromise):
+date. The Deployment checksum rolls the webhook pods onto the matching
+leaf in the same upgrade. The server also watches projected TLS files
+and exits for a Kubernetes restart when cert-manager rotates them
+outside Helm. To rotate early (e.g. key compromise):
 
 ```bash
 kubectl -n <ns> delete secret <release>-update-agent-tls
@@ -86,10 +89,13 @@ Under a regulatory profile with locked fields (see
 [docs/regulatory-profiles.md](../../../docs/regulatory-profiles.md)),
 the verifier can additionally deny ConfigMaps carrying the
 otel-collector config naming whose collector config drops a locked
-control — catching direct `kubectl edit` drift that bypasses Helm.
+control or leaves it declared but absent from the active logs/traces
+pipelines — catching direct `kubectl edit` drift that bypasses Helm.
 Gated by `webhook.enforceProfileLocks: auto | on | off`; `auto`
 engages when the release namespace carries the parent chart's
 `singleaxis.com/profile=eu-ai-act-high-risk` label.
+The shipped EU profile sets this to `on` explicitly so a first install
+into a new namespace is protected before Helm can observe that label.
 
 ## Fail-closed vs fail-open
 

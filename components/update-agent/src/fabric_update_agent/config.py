@@ -74,8 +74,9 @@ class VerifierConfig(_Base):
     profile locks (see docs/regulatory-profiles.md). When ``True``,
     ConfigMaps carrying the otel-collector config naming are denied
     unless the profile-locked controls (fabricguard with
-    drop_unknown_classes, fabricredact) remain enabled in the rendered
-    collector config — even if the manifest carries valid channel
+    drop_unknown_classes, fabricredact) remain enabled and chained into
+    the active logs/traces pipelines in the rendered collector config —
+    even if the manifest carries valid channel
     annotations. The chart sets this from
     ``update-agent.webhook.enforceProfileLocks`` (auto-resolved to on
     under the eu-ai-act-high-risk profile)."""

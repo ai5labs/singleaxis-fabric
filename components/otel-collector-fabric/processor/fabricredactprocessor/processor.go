@@ -160,9 +160,12 @@ func (r *redactor) redactValue(ctx context.Context, path string, v pcommon.Value
 				zap.String("path", path), zap.Error(err))
 			return false
 		}
-		if res.Hashed {
-			v.SetStr(res.Value)
-		}
+		// The sidecar owns the returned value. HMAC mode reports
+		// Hashed=true, while tag mode deliberately reports Hashed=false
+		// and returns text with only the detected spans replaced. Always
+		// copying Value preserves both modes; a no-PII response returns
+		// the input byte-for-byte.
+		v.SetStr(res.Value)
 		return true
 	case pcommon.ValueTypeMap:
 		m := v.Map()

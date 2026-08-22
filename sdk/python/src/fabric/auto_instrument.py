@@ -15,8 +15,8 @@ This is opt-in. Install one or more extras::
     pip install "singleaxis-fabric[openai]"
     pip install "singleaxis-fabric[openai,anthropic,otel-langchain]"
 
-and call :meth:`Fabric.enable_auto_instrumentation` at startup (or pass
-``enable_auto_instrumentation=True`` to :func:`Fabric.from_env`).
+and call :meth:`Fabric.enable_auto_instrumentation` at startup after
+constructing the client.
 
 Content capture posture
 -----------------------

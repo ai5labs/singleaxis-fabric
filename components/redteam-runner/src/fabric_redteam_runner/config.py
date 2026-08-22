@@ -107,16 +107,25 @@ def _expand_env_refs(raw: str) -> str:
             break
         end = raw.find("}", start)
         if end == -1:
-            out.append(raw[i:])
-            break
+            raise ValueError(
+                f"config contains unterminated environment reference starting at {raw[start:]!r}"
+            )
         out.append(raw[i:start])
         name = raw[start + len("${env:") : end]
+        if not name:
+            raise ValueError("config contains an empty ${env:} environment reference")
         if name not in os.environ:
             raise ValueError(
                 f"config references unset environment variable ${{env:{name}}} — "
                 "set it before running; unresolved refs previously expanded to an "
                 "empty string, which silently sent unauthenticated requests"
             )
-        out.append(os.environ[name])
+        resolved = os.environ[name]
+        if not resolved.strip():
+            raise ValueError(
+                f"config references empty environment variable ${{env:{name}}} — "
+                "provide a non-empty secret before running"
+            )
+        out.append(resolved)
         i = end + 1
     return "".join(out)

@@ -21,7 +21,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from ._uds import UDSHTTPConnection
 
-# SPEC 016 §4.4: 3.0s default accommodates Presidio's first-call
+# The 3.0s default accommodates Presidio's first-call
 # recognizer load (~6s cold; ~1.5s warm). Production sidecars warm
 # their analyzers at startup (SPEC 012 §4.5) so steady-state remains
 # <5ms p99. If your sidecar regularly exceeds 3s, configure a longer

@@ -86,6 +86,36 @@ def _is_otel_collector_config(manifest: dict[str, Any]) -> bool:
     )
 
 
+def _pipeline_lock_violation(parsed: dict[str, Any]) -> str | None:
+    """Return a deny reason when locked processors are not active."""
+
+    service = parsed.get("service")
+    pipelines = service.get("pipelines") if isinstance(service, dict) else None
+    if not isinstance(pipelines, dict):
+        return (
+            "otel-collector config has no service.pipelines mapping; "
+            "profile-locked processors may be declared but inactive"
+        )
+
+    for signal in ("logs", "traces"):
+        pipeline = pipelines.get(signal)
+        if not isinstance(pipeline, dict):
+            return f"otel-collector config has no active {signal} pipeline under profile lock"
+        active = pipeline.get("processors")
+        if not isinstance(active, list):
+            return f"otel-collector {signal} pipeline has no processors list under profile lock"
+        for required, control in (
+            ("fabricguard", "otel-collector.fabric.guard.enabled"),
+            ("fabricredact", "otel-collector.fabric.redact.enabled"),
+        ):
+            if required not in active:
+                return (
+                    f"profile-locked control {control} is inactive: "
+                    f"{required} is not chained into the {signal} pipeline"
+                )
+    return None
+
+
 def _locked_field_violation(manifest: dict[str, Any]) -> str | None:
     """Deny reason when the collector config drops a locked control,
     else None. Fails closed on unparseable/malformed payloads."""
@@ -127,7 +157,12 @@ def _locked_field_violation(manifest: dict[str, Any]) -> str | None:
             "profile-locked control otel-collector.fabric.redact.enabled is off: "
             "the fabricredact processor is missing from the collector config"
         )
-    return None
+
+    # A processor declaration is inert until a service pipeline names
+    # it. Validate the exact logs/traces pipelines emitted by the chart
+    # so a signed update cannot retain decoy definitions while bypassing
+    # guard/redaction on exported telemetry.
+    return _pipeline_lock_violation(parsed)
 
 
 @dataclass(frozen=True)

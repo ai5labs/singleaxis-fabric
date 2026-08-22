@@ -85,7 +85,7 @@ def test_tracer_property_is_reused() -> None:
     assert client.tracer is client.tracer
 
 
-# -- Spec 016 §4.2: constructor env-var detection ---------------------
+# -- Constructor environment-variable detection ----------------------
 
 
 class _StubPresidio:
