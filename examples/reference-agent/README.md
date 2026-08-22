@@ -10,7 +10,8 @@ up a cluster.
 For one agent turn:
 
 1. Construct a `Fabric` client and open a `Decision` context.
-2. Call `guard_input` (no-op fallback if no rails are wired).
+2. Call `guard_input` (raises `GuardrailNotConfiguredError` unless a
+   guardrail rail is wired — fail-loud by design; the example catches it).
 3. Record a `fabric.retrieval` event (simulating a RAG lookup).
 4. Call a stand-in LLM (swap for your provider).
 5. Call `guard_output_final`.

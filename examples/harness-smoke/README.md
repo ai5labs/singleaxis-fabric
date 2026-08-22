@@ -25,7 +25,7 @@ Expected output:
 
 ```
 happy-path final output: Your balance is $0.00. Email: [REDACTED_EMAIL].
-jailbreak blocked: rail=jailbreak_defence action=refuse
+jailbreak blocked: policies=jailbreak_defence block_response='...'
 done — check http://localhost:3000 for the two traces
 ```
 
