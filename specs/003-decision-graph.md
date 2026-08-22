@@ -8,14 +8,18 @@ owner: project-lead
 
 # 003 — Decision Graph
 
-> **Scope note (2026-04-27).** This spec is the **design of record**
-> for the Decision Graph, which is part of the SingleAxis commercial
-> control plane (Layer 2). The implementation lives in a separate
-> private repository, not in this OSS distribution. The spec is kept
-> here for partner/auditor transparency: it defines the wire contract
-> and provenance semantics that the L1 SDK targets when emitting
-> spans, retrieval records, and memory writes. L1 OSS deployments
-> emit the inputs; the Layer 2 control plane materializes the graph.
+> **Scope note (2026-04-27; NATS clarified 2026-08-22).** This spec is
+> the **design of record** for the Decision Graph, which is part of
+> the SingleAxis commercial control plane (Layer 2). The
+> implementation lives in a separate private repository, not in this
+> OSS distribution. The spec is kept here for partner/auditor
+> transparency: it defines the wire contract and provenance semantics
+> that the L1 SDK targets when emitting spans, retrieval records, and
+> memory writes. L1 OSS deployments emit the inputs; the Layer 2
+> control plane materializes the graph. The **NATS JetStream bus in
+> the diagrams below is likewise a Layer 2 component**: `charts/fabric`
+> ships no bus — an L1-only deployment has the collector fan out
+> directly to the operator's backend.
 
 ## Summary
 

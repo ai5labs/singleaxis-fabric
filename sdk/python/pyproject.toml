@@ -48,6 +48,12 @@ crewai = [
   # crewai>=0.80 permits litellm>=1.83.7 on resolve; pin explicitly so
   # Trivy doesn't keep flagging the lockfile.
   "litellm>=1.83.7",
+  # KNOWN ISSUE: crewai hard-depends on chromadb, and every published
+  # chromadb release is affected by CVE-2026-45829 (critical,
+  # pre-auth code execution; no fixed version upstream yet). Newer
+  # crewai resolutions pull older, still-affected chromadb versions.
+  # Only installs using this extra are exposed; the core SDK does not
+  # depend on chromadb. Revisit when chromadb ships a fix.
 ]
 # Auto-instrumentation extras for popular LLM SDK families. Each
 # pulls the upstream `opentelemetry-instrumentation-<lib>` package

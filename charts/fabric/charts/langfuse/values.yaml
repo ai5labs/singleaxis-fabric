@@ -45,7 +45,11 @@ podSecurityContext:
 
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false  # Langfuse writes prisma migrations on boot
+  # Only subchart with a writable root filesystem: the Langfuse v2
+  # image runs Prisma migrations at boot and writes temp engine files.
+  # Flipping this on requires verified emptyDir mounts for Prisma's
+  # write paths — see NOTES.txt before changing.
+  readOnlyRootFilesystem: false
   runAsNonRoot: true
   runAsUser: 1000
   capabilities:
