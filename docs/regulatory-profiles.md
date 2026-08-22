@@ -67,7 +67,7 @@ stdout is neither durable nor an audit trail.
 
 ## Deriving a custom profile
 
-Profiles are just YAML files under `charts/fabric/profiles/`. Copy one
+Profiles are plain YAML files under `charts/fabric/profiles/`. Copy one
 and edit:
 
 ```bash

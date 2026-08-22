@@ -211,10 +211,10 @@ helm install fabric . \
     --set tenant.id=<uuid>
 ```
 
-**What a bare install actually does.** The collector installs and
+**What a bare install does.** The collector installs and
 starts receiving. With no `otel-collector.exporter.endpoint` set, it
 writes spans to its own pod stdout (`kubectl logs`) via the OTel debug
-exporter, and `NOTES.txt` prints a loud warning saying so. Nothing is
+exporter, and `NOTES.txt` prints a prominent warning saying so. Nothing is
 silently dropped — but **stdout is not durable and is not an audit
 trail**. Point it at a real backend before you rely on retention:
 
@@ -263,7 +263,7 @@ Full deployment guide including HA, DR, and upgrade posture:
                                       Honeycomb / Datadog / your sink
 ```
 
-Three layers you actually touch: **SDK** (in-process), **sidecars**
+Three layers you touch: **SDK** (in-process), **sidecars**
 (same pod, UDS), **collector** (cluster-level). Everything else —
 judge workers, escalation service, provenance graph, evidence
 bundles — runs asynchronously off the OTel stream.

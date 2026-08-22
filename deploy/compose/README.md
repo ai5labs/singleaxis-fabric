@@ -7,7 +7,7 @@ be pointed at it and every decision it makes is redacted, schema-
 gated, and landed as a Langfuse trace.
 
 This is the harness we recommend for today's integration test: an
-existing product imports the Fabric SDK (or just speaks OTLP), points
+existing product imports the Fabric SDK (or speaks OTLP directly), points
 at the endpoints below, and you watch decisions light up in Langfuse.
 
 ## What you get
@@ -77,7 +77,7 @@ Adjust paths if you aren't running the agent from `deploy/compose/`.
 
 ### Option 2 — vanilla OTLP
 
-If your product already emits OpenTelemetry traces, just set the
+If your product already emits OpenTelemetry traces, set the
 exporter:
 
 ```bash
