@@ -2,6 +2,10 @@
 set -euo pipefail
 
 chart_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+schema_free_chart="$(mktemp -d)"
+trap 'rm -rf -- "${schema_free_chart}"' EXIT
+cp -R "${chart_dir}/." "${schema_free_chart}/"
+rm "${schema_free_chart}/values.schema.json"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -15,7 +19,7 @@ expect_failure() {
   if output="$(helm template relay "${chart_dir}" "$@" 2>&1)"; then
     fail "render unexpectedly succeeded: $*"
   fi
-  grep -q "${expected}" <<<"${output}" || {
+  grep -Fqi "${expected}" <<<"${output}" || {
     echo "${output}" >&2
     fail "failure did not contain: ${expected}"
   }
@@ -29,10 +33,23 @@ expect_failure_either() {
   if output="$(helm template relay "${chart_dir}" "$@" 2>&1)"; then
     fail "render unexpectedly succeeded: $*"
   fi
-  if ! grep -Fq "${expected_a}" <<<"${output}" && ! grep -Fq "${expected_b}" <<<"${output}"; then
+  if ! grep -Fqi "${expected_a}" <<<"${output}" && ! grep -Fqi "${expected_b}" <<<"${output}"; then
     echo "${output}" >&2
     fail "failure contained neither supported Helm error: ${expected_a} | ${expected_b}"
   fi
+}
+
+expect_failure_without_schema() {
+  local expected="$1"
+  shift
+  local output
+  if output="$(helm template relay "${schema_free_chart}" "$@" 2>&1)"; then
+    fail "schema-free render unexpectedly succeeded: $*"
+  fi
+  grep -Fqi "${expected}" <<<"${output}" || {
+    echo "${output}" >&2
+    fail "schema-free failure did not contain: ${expected}"
+  }
 }
 
 default_render="$(helm template relay "${chart_dir}")"
@@ -91,7 +108,7 @@ expect_failure 'does not match pattern' \
   --set 'destination.endpoint=https://offline.example.invalid#secret' \
   --set 'destination.allowedEndpoints[0]=https://offline.example.invalid#secret'
 
-expect_failure 'value must be false' \
+expect_failure_either 'value must be false' 'does not match: false' \
   "${production_args[@]}" --set destination.tls.insecureSkipVerify=true
 
 expect_failure 'production destination.endpoint must exactly match' \
@@ -106,34 +123,34 @@ expect_failure 'production destination.endpoint must exactly match' \
   --set networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.access=fabric-relay \
   --set networkPolicy.egressTo[0].ipBlock.cidr=203.0.113.0/24
 
-expect_failure 'value must be true' \
+expect_failure_either 'value must be true' 'does not match: true' \
   "${production_args[@]}" --set networkPolicy.enabled=false
 
-expect_failure 'minProperties: got 0, want 1' \
+expect_failure_either 'minProperties: got 0, want 1' 'must have at least 1 properties' \
   "${production_args[@]}" --set-json 'networkPolicy.ingressFrom=[{}]'
 
-expect_failure 'minProperties: got 0, want 1' \
+expect_failure_either 'minProperties: got 0, want 1' 'must have at least 1 properties' \
   "${production_args[@]}" --set-json 'networkPolicy.ingressFrom=[{"namespaceSelector":{}}]'
 
-expect_failure 'minProperties: got 0, want 1' \
+expect_failure_either 'minProperties: got 0, want 1' 'must have at least 1 properties' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{}]'
 
-expect_failure 'minProperties: got 0, want 1' \
+expect_failure_either 'minProperties: got 0, want 1' 'must have at least 1 properties' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"namespaceSelector":{}}]'
 
-expect_failure "'oneOf' failed" \
+expect_failure_either "'oneOf' failed" 'must validate one and only one schema (oneOf)' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"0.0.0.0/0"}}]'
 
-expect_failure "'oneOf' failed" \
+expect_failure_either "'oneOf' failed" 'must validate one and only one schema (oneOf)' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"1.2.3.4/0"}}]'
 
-expect_failure "'oneOf' failed" \
+expect_failure_either "'oneOf' failed" 'must validate one and only one schema (oneOf)' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"2001:db8::1/0"}}]'
 
-expect_failure "'oneOf' failed" \
+expect_failure_either "'oneOf' failed" 'must validate one and only one schema (oneOf)' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"999.1.1.1/24"}}]'
 
-expect_failure 'minItems: got 0, want 1' \
+expect_failure_either 'minItems: got 0, want 1' 'array must have at least 1 items' \
   "${production_args[@]}" --set-json 'networkPolicy.egressTo=[]'
 
 expect_failure 'does not match pattern' --set queue.directory=/dev/shm/fabric-relay
@@ -141,34 +158,34 @@ expect_failure 'does not match pattern' --set queue.directory=/dev/shm/fabric-re
 expect_failure 'does not match pattern' --set queue.directory=/var/lib/fabric-relay/queue/../escape
 
 # Exercise the Helm validation as defense in depth, independently of schema.
-expect_failure 'must not be an unrestricted empty peer' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.ingressFrom=[{}]'
+expect_failure_without_schema 'must not be an unrestricted empty peer' \
+  "${production_args[@]}" --set-json 'networkPolicy.ingressFrom=[{}]'
 
-expect_failure 'IPv4 CIDR prefix length must be between 1 and 32' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"0.0.0.0/0"}}]'
+expect_failure_without_schema 'IPv4 CIDR prefix length must be between 1 and 32' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"0.0.0.0/0"}}]'
 
-expect_failure 'IPv4 CIDR prefix length must be between 1 and 32' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"1.2.3.4/0"}}]'
+expect_failure_without_schema 'IPv4 CIDR prefix length must be between 1 and 32' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"1.2.3.4/0"}}]'
 
-expect_failure 'IPv6 CIDR prefix length must be between 1 and 128' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"2001:db8::1/0"}}]'
+expect_failure_without_schema 'IPv6 CIDR prefix length must be between 1 and 128' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"2001:db8::1/0"}}]'
 
-expect_failure 'contains an out-of-range octet' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"999.1.1.1/24"}}]'
+expect_failure_without_schema 'contains an out-of-range octet' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"999.1.1.1/24"}}]'
 
-expect_failure 'has invalid compression' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"2001:::1/64"}}]'
+expect_failure_without_schema 'has invalid compression' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"2001:::1/64"}}]'
 
-expect_failure 'is not a canonical network address' \
-  --skip-schema-validation "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"203.0.113.5/24"}}]'
+expect_failure_without_schema 'is not a canonical network address' \
+  "${production_args[@]}" --set-json 'networkPolicy.egressTo=[{"ipBlock":{"cidr":"203.0.113.5/24"}}]'
 
-expect_failure 'must resolve beneath the PVC mount' \
-  --skip-schema-validation --set queue.directory=/dev/shm/fabric-relay
+expect_failure_without_schema 'must resolve beneath the PVC mount' \
+  --set queue.directory=/dev/shm/fabric-relay
 
-expect_failure 'must resolve beneath the PVC mount' \
-  --skip-schema-validation --set queue.directory=/var/lib/fabric-relay/queue/../escape
+expect_failure_without_schema 'must resolve beneath the PVC mount' \
+  --set queue.directory=/var/lib/fabric-relay/queue/../escape
 
-expect_failure '/receiver/tls/clientCASecret/name' \
+expect_failure_either '/receiver/tls/clientCASecret/name' 'receiver.tls.clientCASecret.name' \
   --set mode=production \
   --set destination.endpoint=https://offline.example.invalid \
   --set 'destination.allowedEndpoints[0]=https://offline.example.invalid' \
@@ -178,7 +195,7 @@ expect_failure '/receiver/tls/clientCASecret/name' \
   --set networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.access=fabric-relay \
   --set networkPolicy.egressTo[0].ipBlock.cidr=203.0.113.0/24
 
-expect_failure 'minItems: got 0, want 1' \
+expect_failure_either 'minItems: got 0, want 1' 'array must have at least 1 items' \
   --set mode=production \
   --set destination.endpoint=https://offline.example.invalid \
   --set 'destination.allowedEndpoints[0]=https://offline.example.invalid' \

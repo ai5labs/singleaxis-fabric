@@ -34,13 +34,21 @@ reject_values() {
   local fixture="$3"
   local expected="$4"
   local output
+  local fragment
+  local matched=false
 
   if output="$(helm template fabric-schema-invalid "${chart}" --values "${fixture}" 2>&1)"; then
     printf 'not ok - %s: Helm unexpectedly accepted %s\n' "${description}" "${fixture}" >&2
     exit 1
   fi
-  if ! grep -Fq -- "${expected}" <<<"${output}"; then
-    printf 'not ok - %s: failure did not contain %q\n%s\n' \
+  while IFS= read -r fragment; do
+    if grep -Fqi -- "${fragment}" <<<"${output}"; then
+      matched=true
+      break
+    fi
+  done < <(tr '|' '\n' <<<"${expected}")
+  if [[ "${matched}" != true ]]; then
+    printf 'not ok - %s: failure did not contain any of %q\n%s\n' \
       "${description}" "${expected}" "${output}" >&2
     exit 1
   fi
@@ -110,25 +118,34 @@ render_ok "NeMo explicit development passthrough renders" \
 
 # Closed contracts and cross-field safety invariants.
 reject_values "umbrella rejects misspelled component" \
-  "${UMBRELLA}" "${INVALID}/umbrella-unknown-key.yaml" "additional properties 'otelColletor' not allowed"
+  "${UMBRELLA}" "${INVALID}/umbrella-unknown-key.yaml" \
+  "additional properties 'otelColletor' not allowed|additional property otelColletor is not allowed"
 reject_values "umbrella rejects string component toggle" \
-  "${UMBRELLA}" "${INVALID}/umbrella-toggle-type.yaml" "got string, want boolean"
+  "${UMBRELLA}" "${INVALID}/umbrella-toggle-type.yaml" \
+  "got string, want boolean|invalid type. expected: boolean, given: string"
 reject_values "Collector rejects misspelled guard field" \
-  "${COLLECTOR}" "${INVALID}/collector-unknown-key.yaml" "additional properties 'dropUnkownClasses' not allowed"
+  "${COLLECTOR}" "${INVALID}/collector-unknown-key.yaml" \
+  "additional properties 'dropUnkownClasses' not allowed|additional property dropUnkownClasses is not allowed"
 reject_values "Collector sampler requires exactly one credential source" \
   "${COLLECTOR}" "${INVALID}/collector-sampler-credential-missing.yaml" "requires fabric.sampler.hmacKey"
 reject_values "Collector rejects unsafe exporter verbosity" \
-  "${COLLECTOR}" "${INVALID}/collector-unsafe-enum.yaml" "value must be one of 'basic', 'normal', 'detailed'"
+  "${COLLECTOR}" "${INVALID}/collector-unsafe-enum.yaml" \
+  "value must be one of 'basic', 'normal', 'detailed'|must be one of the following: \"basic\", \"normal\", \"detailed\""
 reject_values "NeMo rejects misspelled values" \
-  "${NEMO}" "${INVALID}/nemo-unknown-key.yaml" "additional properties 'starterRail' not allowed"
+  "${NEMO}" "${INVALID}/nemo-unknown-key.yaml" \
+  "additional properties 'starterRail' not allowed|additional property starterRail is not allowed"
 reject_values "NeMo starter and passthrough modes are exclusive" \
-  "${NEMO}" "${INVALID}/nemo-starter-passthrough.yaml" "value must be false"
+  "${NEMO}" "${INVALID}/nemo-starter-passthrough.yaml" \
+  "value must be false|does not match: false"
 reject_values "NeMo starter cannot disable its deterministic filter" \
-  "${NEMO}" "${INVALID}/nemo-starter-filter-disabled.yaml" "value must be true"
+  "${NEMO}" "${INVALID}/nemo-starter-filter-disabled.yaml" \
+  "value must be true|does not match: true"
 reject_values "NeMo requires rails or explicit passthrough" \
-  "${NEMO}" "${INVALID}/nemo-no-mode.yaml" "value must be true"
+  "${NEMO}" "${INVALID}/nemo-no-mode.yaml" \
+  "value must be true|does not match: true"
 reject_values "NeMo rejects unsupported image pull policy" \
-  "${NEMO}" "${INVALID}/nemo-unsafe-enum.yaml" "value must be one of 'Always', 'IfNotPresent', 'Never'"
+  "${NEMO}" "${INVALID}/nemo-unsafe-enum.yaml" \
+  "value must be one of 'Always', 'IfNotPresent', 'Never'|must be one of the following: \"Always\", \"IfNotPresent\", \"Never\""
 
 # The high-risk contract is keyed on profile identity. These attacks clear the
 # user-mutable documentation list before weakening a control; every render must

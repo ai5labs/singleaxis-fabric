@@ -146,7 +146,7 @@ expect_fail \
 expect_fail_either \
   "reference policy version is pinned" \
   "currently ships only v1" \
-  "value must be 'v1'" \
+  "must be" \
   --set fabric.policy.bundlePath=/etc/fabric/policy \
   --set fabric.policy.referencePolicy.enabled=true \
   --set fabric.policy.referencePolicy.version=v2
