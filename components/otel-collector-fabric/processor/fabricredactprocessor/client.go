@@ -95,8 +95,10 @@ func (c *udsClient) Redact(ctx context.Context, path, value string) (RedactionRe
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return RedactionResult{}, fmt.Errorf("fabricredact: status %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+		// A sidecar error body is untrusted and may echo the submitted content.
+		// Do not copy it into collector logs or error telemetry.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+		return RedactionResult{}, fmt.Errorf("fabricredact: status %d", resp.StatusCode)
 	}
 	var decoded redactResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&decoded); err != nil {

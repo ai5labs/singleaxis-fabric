@@ -23,6 +23,43 @@ for evaluation on a single-user laptop.
 {{- end -}}
 
 {{/*
+The high-risk profile relies on the update-agent admission webhook as its
+post-install drift backstop. Keep the full admission and certificate posture
+as an invariant after Helm has merged operator overrides. In particular,
+chart-generated private keys are unsuitable here because Helm stores rendered
+Secrets in release state; regulated deployments must delegate issuance and
+rotation to the operator's cert-manager issuer.
+
+This check intentionally lives in the parent chart for the same render-order
+reason as validateProfileLocks: parent failures are consistently surfaced by
+helm template, install, upgrade, and lint.
+*/}}
+{{- define "fabric.validateHighRiskAdmission" -}}
+{{- if eq .Values.profile.name "eu-ai-act-high-risk" -}}
+  {{- if not .Values.updateAgent.enabled -}}
+    {{- fail "profile \"eu-ai-act-high-risk\" requires updateAgent.enabled=true so admission remains a drift backstop." -}}
+  {{- end -}}
+  {{- if not (dig "config" "failClosed" false (index .Values "update-agent")) -}}
+    {{- fail "profile \"eu-ai-act-high-risk\" requires update-agent.config.failClosed=true." -}}
+  {{- end -}}
+  {{- if ne (dig "webhook" "failurePolicy" "" (index .Values "update-agent") | toString) "Fail" -}}
+    {{- fail "profile \"eu-ai-act-high-risk\" requires update-agent.webhook.failurePolicy=Fail." -}}
+  {{- end -}}
+  {{- if ne (dig "webhook" "enforceProfileLocks" "" (index .Values "update-agent") | toString) "on" -}}
+    {{- fail "profile \"eu-ai-act-high-risk\" requires update-agent.webhook.enforceProfileLocks=on from the first install." -}}
+  {{- end -}}
+  {{- if ne (dig "tls" "mode" "" (index .Values "update-agent") | toString) "certManager" -}}
+    {{- fail "profile \"eu-ai-act-high-risk\" requires update-agent.tls.mode=certManager; Helm-generated webhook private keys are not permitted." -}}
+  {{- end -}}
+  {{- range $field := list "name" "kind" "group" -}}
+    {{- if not (dig "tls" "certManager" "issuerRef" $field "" (index $.Values "update-agent") | toString | trim) -}}
+      {{- fail (printf "profile \"eu-ai-act-high-risk\" requires a non-empty update-agent.tls.certManager.issuerRef.%s." $field) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Enforce profile.lockedFields as render-time invariants.
 
 Helm merges profile values and user ``--set`` overrides BEFORE

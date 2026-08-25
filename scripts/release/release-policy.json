@@ -1,0 +1,66 @@
+{
+  "schema_version": "fabric.release-policy/v1",
+  "required_workflows": [
+    "ci.yml",
+    "security.yml",
+    "codeql.yml",
+    "license.yml",
+    "e2e.yml"
+  ],
+  "python_distribution": {
+    "name": "singleaxis-fabric",
+    "required_wheel_paths": [
+      "fabric/__init__.py",
+      "fabric/_version.py",
+      "fabric/py.typed"
+    ],
+    "allowed_wheel_package_roots": [
+      "fabric"
+    ],
+    "required_console_scripts": {
+      "fabricctl": "fabric.cli:main"
+    },
+    "required_sdist_paths": [
+      "pyproject.toml",
+      "README.md",
+      "LICENSE",
+      "src/fabric/__init__.py",
+      "src/fabric/_version.py",
+      "src/fabric/py.typed"
+    ],
+    "allowed_sdist_top_level": [
+      "src",
+      "pyproject.toml",
+      "README.md",
+      "LICENSE",
+      ".gitignore",
+      "PKG-INFO"
+    ]
+  },
+  "contracts": {
+    "archive_prefix": "singleaxis-fabric-contracts",
+    "manifest_name": "manifest.json",
+    "require_sha256_for_json": true
+  },
+  "helm": {
+    "first_party_app_charts": [
+      "otel-collector",
+      "presidio-sidecar",
+      "nemo-sidecar",
+      "redteam-runner",
+      "update-agent"
+    ],
+    "third_party_app_charts": [
+      "langfuse"
+    ]
+  },
+  "images": [
+    "fabric-otelcol",
+    "fabric-presidio-sidecar",
+    "fabric-nemo-sidecar",
+    "fabric-prompt-guard-sidecar",
+    "fabric-redteam-runner",
+    "fabric-update-agent",
+    "fabric-langfuse-bootstrap"
+  ]
+}

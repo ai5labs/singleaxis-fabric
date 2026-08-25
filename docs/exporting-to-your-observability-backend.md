@@ -23,15 +23,15 @@ Override at install via `helm install` or a profile YAML:
 
 ```bash
 helm install fabric ./charts/fabric \
-  --set otel-collector.exporter.endpoint=<URL>
+  --set otel-collector.exporter.endpoint=https://otlp.example.com
 ```
 
 The rule the chart enforces is that **a rendered pipeline never points
 at an endpoint that is not set**:
 
-- `endpoint` **set** — the `otlphttp/fabric` exporter is rendered and
+- `endpoint` **set** — the `otlp_http/fabric` exporter is rendered and
   used. `debug` is added alongside it when `debugExporter.enabled=true`.
-- `endpoint` **empty** — `otlphttp/fabric` is not rendered at all. The
+- `endpoint` **empty** — `otlp_http/fabric` is not rendered at all. The
   pipelines fall back to `debug`, so spans land in the collector pod's
   stdout (`kubectl logs`) instead of vanishing, and `NOTES.txt` prints
   a loud post-install warning. This is a **dev posture**: visible, but
@@ -89,11 +89,17 @@ upgrade to v0.2.x for full LLM dashboard coverage.
 
 ## Datadog (OTLP intake)
 
+Create an operator-owned Secret whose `authorization` key contains only the
+Datadog API key, then map that value to the required outbound header:
+
 ```bash
+kubectl -n fabric-system create secret generic fabric-datadog-otlp-auth \
+  --from-file=authorization=/secure/path/datadog-api-key
 helm install fabric ./charts/fabric \
   --set otel-collector.exporter.endpoint=https://otlp.datadoghq.com:443 \
   --set otel-collector.exporter.insecure=false \
-  --set-string otel-collector.exporter.headers.dd-api-key=$DD_API_KEY
+  --set otel-collector.exporter.auth.headerName=dd-api-key \
+  --set otel-collector.exporter.auth.secret.name=fabric-datadog-otlp-auth
 ```
 
 (Replace `datadoghq.com` with your region domain.)
@@ -101,21 +107,27 @@ helm install fabric ./charts/fabric \
 ## Honeycomb
 
 ```bash
+kubectl -n fabric-system create secret generic fabric-honeycomb-otlp-auth \
+  --from-file=authorization=/secure/path/honeycomb-api-key
 helm install fabric ./charts/fabric \
   --set otel-collector.exporter.endpoint=https://api.honeycomb.io:443 \
   --set otel-collector.exporter.insecure=false \
-  --set-string otel-collector.exporter.headers.x-honeycomb-team=$HONEYCOMB_API_KEY
+  --set otel-collector.exporter.auth.headerName=x-honeycomb-team \
+  --set otel-collector.exporter.auth.secret.name=fabric-honeycomb-otlp-auth
 ```
 
 ## Grafana Tempo / Cloud (via OTLP gateway)
 
 ```bash
 helm install fabric ./charts/fabric \
-  --set otel-collector.exporter.endpoint=https://otlp-gateway-prod-<region>.grafana.net:443 \
+  --set otel-collector.exporter.endpoint=https://otlp-gateway-prod-REGION.grafana.net:443 \
   --set otel-collector.exporter.insecure=false
 ```
 
 Add Basic auth headers per Grafana Cloud's OTLP configuration page.
+Store the complete `Authorization` header value in an operator-created Secret
+and set `otel-collector.exporter.auth.secret.name`; do not put it in Helm
+values.
 
 ## Your own collector chain
 
@@ -133,39 +145,39 @@ exporters).
 
 ## Multiple destinations (fan-out)
 
-The chart ships a single OTLP/HTTP exporter by default. To fan out
-to multiple backends, edit the collector's pipeline config — the
-`fabricredact`, `fabricguard`, `fabricsampler` chain is independent
-of the exporter list, so adding additional exporters does not change
-the privacy/policy enforcement applied to spans.
-
-For most operators, the simpler pattern is: send to one OTLP
-endpoint (your own collector), and let that collector fan out.
+The chart deliberately exposes one qualified OTLP/HTTP destination. Do not
+hand-edit its generated ConfigMap: Helm will reconcile over the change and the
+result is outside the tested delivery contract. To fan out, send Fabric to a
+customer-owned Collector or gateway and configure multiple exporters there.
+That also centralizes vendor credentials, retry policy, and delivery alerts.
 
 ## NetworkPolicy considerations
 
-The `eu-ai-act-high-risk` profile enables `denyDefault: true` plus
-per-subchart NetworkPolicies. The collector's `egressTo` defaults to
-the `fabric-system` namespace only, so external destinations
-(Datadog, Honeycomb, anywhere outside the cluster) require operator
-overrides:
+The `eu-ai-act-high-risk` profile enables `denyDefault: true` and refuses to
+render until the operator supplies an explicit exporter peer and port. There
+is no invented in-namespace route:
 
 ```yaml
 otel-collector:
   networkPolicy:
-    egressTo:
-      - namespaceSelector:
+    exporterEgress:
+      requireExplicit: true
+      to:
+        - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: fabric-system
-      - ipBlock:
-          cidr: 0.0.0.0/0   # external — tighten as needed
-        ports:
-          - protocol: TCP
-            port: 443
+            kubernetes.io/metadata.name: approved-egress
+        - ipBlock:
+            cidr: 203.0.113.10/32
+      ports:
+        - protocol: TCP
+          port: 443
 ```
 
-For tighter setups, replace `0.0.0.0/0` with the egress
-NAT/proxy CIDR your cluster uses.
+`203.0.113.10/32` is documentation-only. Kubernetes NetworkPolicy does not
+support DNS names and cannot prove that a CIDR belongs to the configured URL.
+For dynamic SaaS endpoints, route through a controlled egress gateway with a
+stable, approved peer. NetworkPolicy enforcement also depends on the cluster
+CNI.
 
 ## What's in the span
 
@@ -183,7 +195,8 @@ without manual wrapping.
 
 ## Verifying the wire
 
-After install, the simplest verification:
+For a development profile with plaintext receiver ingress, the simplest
+transport smoke is:
 
 ```bash
 kubectl -n fabric-system port-forward svc/fabric-otel-collector 4318:4318 &
@@ -193,6 +206,12 @@ curl -s -o /dev/null -w "%{http_code}\n" \
   -d '{"resourceSpans": []}'
 # expect 200
 ```
+
+The high-risk profile rejects that plaintext request. Verify it with an OTLP
+client presenting a certificate signed by `fabric-otel-client-ca` and validate
+the server name against `fabric-otel-receiver-tls`. A successful receiver call
+only proves ingress; confirm exporter queue/send metrics and the destination
+record before declaring end-to-end delivery healthy.
 
 Then run the reference agent (or your own instrumented agent) and
 check the backend's UI for the `fabric.decision` span.

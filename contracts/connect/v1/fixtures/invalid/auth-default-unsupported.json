@@ -1,0 +1,29 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "invalid.auth.default-unsupported",
+  "display_name": "Invalid Unsupported Authentication Default",
+  "release": {"version": "0.1.0", "maturity": "illustrative", "distribution": "container"},
+  "implementation": {"kind": "gateway_proxy", "deployment_modes": ["gateway"]},
+  "compatibility": {"activity_contract": "1.0.0", "fabric_versions": "illustrative", "runtimes": ["OCI"], "protocols": ["HTTPS"]},
+  "observation": {
+    "semantic_surfaces": [{"surface": "llm_operation", "source": "traffic_inferred"}],
+    "decision_semantics": "inferred",
+    "coverage_basis": "A deliberately inconsistent authentication declaration for negative testing."
+  },
+  "control": {"interposition": "inline_proxy", "agent_runtime_actions": ["block"], "telemetry_pipeline_actions": ["route"]},
+  "content": {"raw_content_behavior": "configurable_raw", "default_raw_capture": false, "pre_egress_redaction": "built_in", "sensitive_field_allowlist": true},
+  "identity": {"source": "gateway_credential_mapping", "strength": "authenticated_mapping", "tenant_partitioning": "enforced"},
+  "authentication": {
+    "ingress_supported": ["bearer_token"], "ingress_default": "mtls",
+    "egress_supported": ["mtls"], "egress_default": "mtls",
+    "credential_handling": "The declared ingress default is deliberately absent from the supported list."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": true, "preserve": true},
+    "baggage": "allowlisted",
+    "correlation_limitations": ["This fixture is expected to fail semantic validation."]
+  },
+  "data_egress": {"network_egress": true, "protocols": ["HTTPS"], "transport_security": "required", "destinations": "operator_configured", "default_destination": null},
+  "verification_evidence": [{"type": "none", "path": null, "claim": "Deliberately invalid authentication-default fixture."}],
+  "known_blind_spots": ["The authentication default is not in the supported authentication methods."]
+}

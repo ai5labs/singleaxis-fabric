@@ -1,0 +1,77 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "singleaxis.fabric.collector-otlp-receiver",
+  "display_name": "SingleAxis Fabric Collector OTLP Receiver",
+  "release": {"version": "0.7.0", "maturity": "beta", "distribution": "container"},
+  "implementation": {"kind": "otlp_receiver", "deployment_modes": ["sidecar", "gateway", "collector"]},
+  "compatibility": {
+    "activity_contract": "1.0.0",
+    "fabric_versions": ">=0.7.0,<1.0.0",
+    "runtimes": ["Kubernetes >=1.29", "OCI container runtime"],
+    "protocols": ["OTLP/gRPC", "OTLP/HTTP", "OTLP/HTTP exporter"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "otlp_span", "source": "protocol_preserved"},
+      {"surface": "otlp_log", "source": "protocol_preserved"},
+      {"surface": "decision_boundary", "source": "protocol_preserved"},
+      {"surface": "llm_operation", "source": "protocol_preserved"},
+      {"surface": "tool_operation", "source": "protocol_preserved"},
+      {"surface": "policy_verdict", "source": "protocol_preserved"},
+      {"surface": "guardrail_verdict", "source": "protocol_preserved"},
+      {"surface": "authorization_verdict", "source": "protocol_preserved"}
+    ],
+    "decision_semantics": "protocol_preserved",
+    "coverage_basis": "Receives already-instrumented OTLP logs and spans; Fabric processors validate, redact, filter, sample, and route telemetry but do not reconstruct missing agent semantics."
+  },
+  "control": {
+    "interposition": "telemetry_pipeline",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": ["accept", "reject", "redact", "sample", "route"]
+  },
+  "content": {
+    "raw_content_behavior": "transport_passthrough",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "operator_configurable",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "telemetry_attributes",
+    "strength": "asserted",
+    "tenant_partitioning": "accepted_unverified"
+  },
+  "authentication": {
+    "ingress_supported": ["none", "network_policy_only"],
+    "ingress_default": "none",
+    "egress_supported": ["none", "bearer_token", "mtls"],
+    "egress_default": "none",
+    "credential_handling": "Outbound header and TLS credentials can be mounted from operator-created Kubernetes Secrets; OTLP ingress has no application-layer authenticator."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
+    "baggage": "pass_through",
+    "correlation_limitations": [
+      "The receiver preserves correlation present in OTLP but cannot repair absent or incorrectly parented spans.",
+      "Trace identity attributes are asserted by the sender and are not bound to ingress workload identity."
+    ]
+  },
+  "data_egress": {
+    "network_egress": true,
+    "protocols": ["OTLP/HTTP", "local debug output"],
+    "transport_security": "operator_configurable",
+    "destinations": "operator_configured",
+    "default_destination": "debug://stdout"
+  },
+  "verification_evidence": [
+    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-traces-pipeline.sh", "claim": "Verifies trace receiver and exporter pipeline rendering."},
+    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-privacy-policy-wiring.sh", "claim": "Verifies telemetry redaction and policy wiring invariants."},
+    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh", "claim": "Verifies persistent queue, retry, TLS, and authentication configuration gates."}
+  ],
+  "known_blind_spots": [
+    "OTLP ingress has no mTLS, bearer-token, or workload-identity authentication in the current chart.",
+    "The receiver cannot observe agent activity that was never emitted by upstream instrumentation.",
+    "The default debug exporter is local stdout, not durable evidence storage or a compliance posture.",
+    "Persistent queues provide bounded at-least-once transport and cannot prove backend retention or exactly-once delivery.",
+    "Telemetry redaction occurs after the agent and model interaction and cannot prevent raw PII from reaching an LLM."
+  ]
+}

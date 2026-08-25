@@ -1,9 +1,10 @@
 # fabric umbrella chart
 
-The deployable unit for SingleAxis Fabric. Installs the Layer 5/6
-evaluation stack into a tenant's Kubernetes cluster under one
-`helm install`. Regulatory Profiles in [`profiles/`](./profiles)
-preset each subchart for the target regulation.
+The deployable unit for the SingleAxis Fabric OSS data plane. It installs the
+Collector/Relay and selected Control or Assurance components into a customer's
+Kubernetes cluster under one `helm install`. Deployment profiles in
+[`profiles/`](./profiles) set coherent posture defaults; they are not legal
+certifications or substitutes for the customer's risk assessment.
 
 Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deployment-model.md).
 
@@ -20,12 +21,12 @@ Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deploymen
   - [`langfuse/`](./charts/langfuse) — local observability UI
   - [`redteam-runner/`](./charts/redteam-runner) — scheduled adversarial probes
   - [`update-agent/`](./charts/update-agent) — GitOps signed-manifest pull
-- [ ] Layer 2 subcharts (`judge-workers/`, `escalation-service/`) live
-      in a separate SingleAxis-internal repo during Phase 1; not part
-      of the public OSS distribution.
+- [ ] Managed judge workers, reviewer workflows, and enterprise escalation
+      services are SingleAxis Platform capabilities, not hidden dependencies
+      of the OSS data plane.
 - [ ] Decision Graph subchart (Phase 2 — awaiting Postgres migration story)
 - [ ] Telemetry Bridge subchart (Phase 2)
-- [ ] `values.schema.json` (Phase 2 — after subchart shape stabilizes)
+- [x] JSON Schema validation for umbrella and Collector values
 - [ ] Production profiles beyond EU AI Act: NIST RMF, ISO-42001,
       SR-11-7, HIPAA (profile-by-profile as rubrics land)
 
@@ -42,18 +43,26 @@ helm install fabric . \
     --values profiles/permissive-dev.yaml
 
 # production (EU AI Act high-risk):
-helm install fabric . \
+helm upgrade --install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=<uuid> \
-    --set update-agent.config.trustedKeys[0].publicKey=<base64-ed25519-key> \
-    --set otel-collector.fabric.redact.existingSocketProvider=<sidecar-name> \
-    --set otel-collector.exporter.endpoint=<your-otlp-http-backend>
+    --set tenant.id=TENANT_UUID \
+    --set 'update-agent.config.trustedKeys[0].publicKey=BASE64_ED25519_PUBLIC_KEY' \
+    --set otel-collector.exporter.endpoint=https://otlp.example.com \
+    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
-The `eu-ai-act-high-risk` profile fails closed: it will not render
-without a real Ed25519 manifest-signing key, a Presidio socket
-provider, and a real OTLP backend. That is deliberate — see
+The documentation CIDR is not a working destination; replace it with an
+approved backend or egress-gateway CIDR. The `eu-ai-act-high-risk` profile
+fails closed: it will not render
+without a tenant id, real Ed25519 manifest-signing key, real OTLP
+backend, and an explicit exporter NetworkPolicy peer/port. Before rollout,
+provision the profile's referenced receiver identity, client CA, export-auth,
+sampler-key, and Presidio tenant-key Secrets, plus cert-manager and the
+configured webhook issuer. The high-risk profile never renders a webhook
+private key into Helm release state. That is deliberate — see
 [Profiles and defaults](#profiles-and-defaults).
 
 ### Contributor note on `Chart.lock`
@@ -89,7 +98,7 @@ key, a Postgres DSN, a live red-team target).
 **No exporter endpoint is set.** There is no OTLP endpoint that works
 in an L1-only OSS deploy, so `otel-collector.exporter.endpoint` has no
 default. When it is empty the chart does **not** render an
-`otlphttp/fabric` exporter pointed at `""` — it renders the OTel
+`otlp_http/fabric` exporter pointed at `""` — it renders the OTel
 `debug` exporter instead, and `NOTES.txt` prints a loud post-install
 warning. Spans land in the collector pod's stdout:
 
@@ -133,23 +142,48 @@ neither is affected by the umbrella defaults above.
 - **`eu-ai-act-high-risk`** — deny-default NetworkPolicy, guard with
   `dropUnknownClasses`, trace processing and redaction pinned on, sampler keyed from a
   Secret, update-agent admission fail-closed. It renders **only** when
-  you supply the real secrets it refuses to fake:
-  1. `update-agent.config.trustedKeys[0].publicKey` — a real base64
+  you supply the deployment-specific values it refuses to fake:
+  1. `tenant.id` — the registered tenant UUID.
+  2. `update-agent.config.trustedKeys[0].publicKey` — a real base64
      Ed25519 key.
-  2. `otel-collector.fabric.redact.existingSocketProvider` — the
-     component mounting the Presidio socket (or enable the bundled
-     `presidioSidecar` and point at it).
-
   3. `otel-collector.exporter.endpoint` — this profile sets
      `exporter.requireEndpoint: true`, which disables the stdout
      fallback. A profile that makes a retention claim must name a real
      backend rather than inherit a dev posture.
+  4. `otel-collector.networkPolicy.exporterEgress.to` and `.ports` — an
+     explicit peer and port matching the named exporter. The chart cannot
+     safely infer a NetworkPolicy peer from a URL.
 
-  For a dry render only, all three gates have escape hatches:
-  `--set update-agent.config.allowPlaceholderKey=true`,
-  `--set otel-collector.fabric.redact.acceptMissingProvider=true`, and
-  `--set otel-collector.exporter.requireEndpoint=false`. Never set any
-  of them in a real install.
+  Before the pods can become Ready, provision Secrets named
+  `fabric-otel-receiver-tls`, `fabric-otel-client-ca`,
+  `fabric-otel-export-auth`, `fabric-otel-sampler-key`, and
+  `fabric-presidio-tenant-key` with the keys documented in the profile.
+  For a dry render only, the signing-key gate has the escape hatch
+  `--set update-agent.config.allowPlaceholderKey=true`. Never set it in a
+  real install. The endpoint and explicit egress rule remain mandatory even
+  for a dry render so the regulated delivery topology is always exercised.
+
+## Values schema and upgrade discipline
+
+The umbrella and Collector charts ship versioned JSON Schemas. Stable
+Fabric-authored objects reject unknown keys, invalid enums, unsafe ranges, and
+wrong types before Kubernetes resources are rendered. This makes a typo such
+as `exporter.requireTlS` a hard installation error instead of an ignored
+security control.
+
+Some subtrees remain deliberately extensible:
+
+- values passed to subcharts that do not yet publish their own schema;
+- the third-party Langfuse value surface;
+- Kubernetes-native scheduling, resource, security-context, probe, and
+  NetworkPolicy peer objects; and
+- Helm `global` values received by the Collector from other dependencies.
+
+The Collector's Fabric processors, exporter TLS/authentication, durable queue,
+sampling, ports, and resource limits are strict. See
+[`docs/upgrading-v0.6-to-v0.7.md`](./docs/upgrading-v0.6-to-v0.7.md) before an
+upgrade; it records removed keys, behavior changes, preflight checks, and the
+rollback boundary.
 
 ### Langfuse is opt-in and does not bundle Postgres
 
@@ -240,17 +274,23 @@ helm lint charts/fabric
 helm template test charts/fabric > /dev/null
 helm template test charts/fabric --values charts/fabric/profiles/permissive-dev.yaml > /dev/null
 
-# eu-ai-act-high-risk fails closed on two secrets it refuses to fake.
-# These two flags affect rendering only — never use them to install.
+# Supply non-secret test values plus the signing-key dry-render escape hatch.
 helm template test charts/fabric \
+    --namespace fabric-system \
     --values charts/fabric/profiles/eu-ai-act-high-risk.yaml \
+    --set tenant.id=11111111-1111-4111-8111-111111111111 \
+    --set otel-collector.exporter.endpoint=https://otlp.example.com \
+    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
     --set update-agent.config.allowPlaceholderKey=true \
-    --set otel-collector.fabric.redact.acceptMissingProvider=true \
-    --set otel-collector.exporter.requireEndpoint=false > /dev/null
+    > /dev/null
 
 # Subchart render assertions:
 ./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh
+./charts/fabric/charts/otel-collector/tests/test-ingress-egress-security.sh
 ./charts/fabric/charts/otel-collector/tests/test-traces-pipeline.sh
+./charts/fabric/tests/test-values-schema.sh
 ```
 
 Note that `helm lint` does **not** propagate a subchart's `fail` into

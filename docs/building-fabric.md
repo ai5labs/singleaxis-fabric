@@ -4,6 +4,12 @@ This document is the engineering compass for rebuilding Fabric around
 the new positioning: **operational infrastructure for autonomous
 systems**.
 
+The authoritative product planes, artifact forms, lifecycle placement,
+deployment models, and OSS/private boundary are defined in
+[`specs/025-product-planes-and-packaging.md`](../specs/025-product-planes-and-packaging.md).
+New work should start from the public **Implementation slice** issue
+template so each change remains bounded and releasable.
+
 ## Product spine
 
 Every feature should strengthen at least one of these pillars:
@@ -79,8 +85,8 @@ Build in this order:
    - local observability backend
    - conformance check command
 
-7. **Commercial Decision Graph**
-   - materializer in private repo
+7. **External Decision Graph**
+   - materializer in a customer-owned backend or the SingleAxis Platform
    - replay indexes
    - side-effect queries
    - retention and erasure workflows
@@ -89,6 +95,7 @@ Build in this order:
 
 Every production feature needs:
 
+- a named product plane, lifecycle phase, artifact, and owner
 - schema contract
 - SDK emission path
 - collector handling
@@ -98,6 +105,10 @@ Every production feature needs:
 - privacy posture
 - failure mode
 - migration story
+- released-artifact qualification and operator diagnostics
+
+Not every slice changes every artifact. When a row is not applicable, the
+feature proposal must say why; it must not silently omit the concern.
 
 ## Replay standards
 

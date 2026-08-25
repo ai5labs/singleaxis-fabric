@@ -1,10 +1,11 @@
-# OSS / Commercial Boundary
+# Public distribution boundary
 
-Fabric uses an open-core strategy with a hard boundary:
+Fabric keeps the reconstruction path open and backend-neutral:
 
-- **OSS:** capture, schemas, local controls, adapters, conformance.
-- **Commercial:** intelligence, retention, replay orchestration,
-  governance workflows, evaluations, evidence, and enterprise operations.
+- **Public OSS:** Connect, Observe, Relay, local Control building blocks,
+  Assurance contracts/runners, conformance, and deployment packaging.
+- **External implementations:** customer-owned or SingleAxis-provided
+  Management, Governance, retained evidence, and managed Assurance services.
 
 ## Public repo
 
@@ -18,14 +19,15 @@ The public `singleaxis-fabric` repo should contain:
 | Collector processors | allowlist, redaction, routing, sampling, policy hooks |
 | Guardrail sidecars | Presidio, NeMo clients and packaging |
 | Local red-team wrapper | Garak, PyRIT, Promptfoo runner normalization |
-| Helm Layer 1 chart | collector, sidecars, local observability, profiles |
+| Helm chart | collector/relay, sidecars, local observability, profiles |
 | Reference agents | smoke agents and examples |
 | Conformance tests | fixtures that validate emitted telemetry |
 | Public specs | architecture, schemas, deployment posture |
 
-## Commercial repo
+## Capabilities outside the OSS runtime
 
-The private `singleaxis-fabric-internal` repo should contain:
+The following may be implemented by a customer backend or by the SingleAxis
+Platform. None is a hidden dependency of public capture or export:
 
 | Area | Examples |
 |---|---|
@@ -50,21 +52,10 @@ The private `singleaxis-fabric-internal` repo should contain:
 7. Compliance claims must say "technical evidence" unless certification
    is actually provided.
 
-## Build decisions
+## Repository rule
 
-Open source the parts that create trust and ecosystem adoption. Sell the
-parts that create operational outcomes.
-
-Do not monetize SDK installation. Monetize governed agents, Decision
-Graph intelligence, replay, retention, evaluations, workflows, evidence,
-enterprise integrations, and support.
-
-## Current split
-
-Commercial staging code has been moved out of this repo to:
-
-```text
-../singleaxis-fabric-internal/
-```
-
-The public repo now carries the design contracts and OSS substrate only.
+This repository carries only public contracts, OSS implementations, examples,
+and release qualification. Private implementation topology, credentials,
+customer overlays, commercial planning, and unpublished roadmap detail must
+not be committed here. Public docs may describe compatible platform behavior
+only to explain an integration boundary or an explicitly labeled capability.

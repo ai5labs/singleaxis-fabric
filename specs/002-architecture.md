@@ -8,9 +8,11 @@ owner: project-lead
 
 # 002 — Eight-Layer Architecture & Fabric Control Plane
 
-> **Scope note (2026-08-22).** The eight-layer model, latency tiers,
-> and event flows below are the design of record for the full
-> topology. What actually ships in this OSS distribution: the Python
+> **Scope note (updated 2026-08-25).** The eight-layer model below is a
+> technology taxonomy for the full topology. The canonical product planes,
+> package boundaries, lifecycle placement, and deployment choices are now
+> defined in [spec 025](025-product-planes-and-packaging.md). What actually
+> ships in this OSS distribution: the Python
 > SDK + framework adapters (L1/L2 emit surface), the Fabric OTel
 > Collector distribution with its four processors, the Presidio / NeMo
 > / Prompt-Guard sidecars (L5), the red-team runner (L4), the

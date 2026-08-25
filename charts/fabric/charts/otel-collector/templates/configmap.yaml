@@ -1,6 +1,10 @@
 {{- include "otel-collector.validateSampler" . -}}
 {{- include "otel-collector.validateRedact" . -}}
+{{- include "otel-collector.validatePolicy" . -}}
+{{- include "otel-collector.validateReceiver" . -}}
 {{- include "otel-collector.validateExporter" . -}}
+{{- include "otel-collector.validateDelivery" . -}}
+{{- include "otel-collector.validateNetworkPolicy" . -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
 apiVersion: v1
 kind: ConfigMap
@@ -15,12 +19,35 @@ data:
         protocols:
           grpc:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpGrpc }}
+            {{- if .Values.receiver.tls.serverCertificateSecret.name }}
+            tls:
+              cert_file: /etc/fabric/receiver-tls/tls.crt
+              key_file: /etc/fabric/receiver-tls/tls.key
+              {{- if .Values.receiver.tls.clientCASecret.name }}
+              client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+              {{- end }}
+            {{- end }}
           http:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpHttp }}
+            {{- if .Values.receiver.tls.serverCertificateSecret.name }}
+            tls:
+              cert_file: /etc/fabric/receiver-tls/tls.crt
+              key_file: /etc/fabric/receiver-tls/tls.key
+              {{- if .Values.receiver.tls.clientCASecret.name }}
+              client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+              {{- end }}
+            {{- end }}
 
     extensions:
       health_check:
         endpoint: 0.0.0.0:{{ .Values.service.ports.health }}
+      {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+      file_storage/fabric:
+        directory: {{ .Values.exporter.sendingQueue.persistence.directory | quote }}
+        timeout: 1s
+        create_directory: true
+        fsync: {{ .Values.exporter.sendingQueue.persistence.fsync }}
+      {{- end }}
 
     processors:
       memory_limiter:
@@ -50,6 +77,7 @@ data:
         unix_socket: {{ .Values.fabric.redact.unixSocket | quote }}
         timeout: {{ .Values.fabric.redact.timeoutMs }}ms
         event_class_attribute: {{ .Values.fabric.redact.eventClassAttribute | quote }}
+        byte_handling: {{ .Values.fabric.redact.byteHandling | quote }}
         {{- with .Values.fabric.redact.skipAttributes }}
         skip_attributes:
           {{- toYaml . | nindent 10 }}
@@ -76,10 +104,40 @@ data:
 
     exporters:
       {{- if .Values.exporter.endpoint }}
-      otlphttp/fabric:
+      otlp_http/fabric:
         endpoint: {{ .Values.exporter.endpoint | quote }}
+        timeout: {{ .Values.exporter.timeout | quote }}
+        {{- if .Values.exporter.auth.secret.name }}
+        headers:
+          {{ .Values.exporter.auth.headerName | quote }}: "${env:FABRIC_EXPORT_AUTH}"
+        {{- end }}
         tls:
           insecure: {{ .Values.exporter.insecure }}
+          insecure_skip_verify: {{ .Values.exporter.insecureSkipVerify }}
+          {{- if .Values.exporter.tls.caSecret.name }}
+          ca_file: /etc/fabric/exporter-tls/ca.crt
+          {{- end }}
+          {{- if .Values.exporter.tls.clientCertificateSecret.name }}
+          cert_file: /etc/fabric/exporter-tls/tls.crt
+          key_file: /etc/fabric/exporter-tls/tls.key
+          {{- end }}
+        sending_queue:
+          enabled: {{ .Values.exporter.sendingQueue.enabled }}
+          {{- if .Values.exporter.sendingQueue.enabled }}
+          num_consumers: {{ .Values.exporter.sendingQueue.numConsumers }}
+          queue_size: {{ .Values.exporter.sendingQueue.queueSize }}
+          block_on_overflow: {{ .Values.exporter.sendingQueue.blockOnOverflow }}
+          {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+          storage: file_storage/fabric
+          {{- end }}
+          {{- end }}
+        retry_on_failure:
+          enabled: {{ .Values.exporter.retry.enabled }}
+          {{- if .Values.exporter.retry.enabled }}
+          initial_interval: {{ .Values.exporter.retry.initialInterval | quote }}
+          max_interval: {{ .Values.exporter.retry.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.exporter.retry.maxElapsedTime | quote }}
+          {{- end }}
       {{- end }}
       {{- if or .Values.debugExporter.enabled (not .Values.exporter.endpoint) }}
       debug:
@@ -87,7 +145,11 @@ data:
       {{- end }}
 
     service:
-      extensions: [health_check]
+      extensions:
+        - health_check
+        {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+        - file_storage/fabric
+        {{- end }}
       telemetry:
         logs:
           level: info

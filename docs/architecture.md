@@ -1,5 +1,9 @@
 # Architecture
 
+> This page explains the current runtime topology. For the canonical product
+> boundaries—Connect, Control, Observe, Assurance, Governance, and
+> Management—see [spec 025](../specs/025-product-planes-and-packaging.md).
+
 A short mental model. The authoritative spec is
 [`specs/002-architecture.md`](../specs/002-architecture.md); this page
 exists so you can orient yourself in two pages instead of

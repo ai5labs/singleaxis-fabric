@@ -1,4 +1,4 @@
-# EU AI Act high-risk profile (Layer 1 only).
+# EU AI Act high-risk OSS deployment profile.
 #
 # Locked fields (see profile.lockedFields) MUST NOT be overridden by
 # tenant values — a tenant wanting different behaviour should switch
@@ -7,21 +7,33 @@
 # update-agent admission backstop keeps the flags set on collector
 # ConfigMaps in watched namespaces. See docs/regulatory-profiles.md.
 #
-# NOTE: Production EU AI Act deployments also require judge-workers and
-# escalation-service from the SingleAxis-internal distribution (Layer 2).
-# This Layer 1 profile configures only the public substrate: OTel
-# Collector hardening and inline guardrails. Services engagements layer
-# the internal chart on top.
+# This profile configures the public Connect/Control/Observe/Relay substrate.
+# It does not claim that one profile completes a legal conformity assessment.
+# Assurance plans, human oversight, evidence retention, and incident workflows
+# are selected from the customer's risk assessment and run in a customer-owned
+# backend or the SingleAxis Platform.
 
 profile:
   name: eu-ai-act-high-risk
   regulations:
     - eu_ai_act_high_risk
   lockedFields:
+    - networkPolicy.denyDefault
     - otel-collector.fabric.guard.enabled
     - otel-collector.fabric.guard.dropUnknownClasses
     - otel-collector.fabric.guard.traceProcessingEnabled
     - otel-collector.fabric.redact.enabled
+    - otel-collector.receiver.requireTLS
+    - otel-collector.receiver.requireClientCertificate
+    - otel-collector.exporter.requireEndpoint
+    - otel-collector.exporter.requireTLS
+    - otel-collector.exporter.requireAuth
+    - otel-collector.exporter.requireDurableQueue
+    - otel-collector.exporter.sendingQueue.persistence.enabled
+    - otel-collector.networkPolicy.enabled
+    - otel-collector.networkPolicy.exporterEgress.requireExplicit
+    - update-agent.config.failClosed
+    - update-agent.networkPolicy.enabled
 
 namespace:
   create: true
@@ -30,9 +42,9 @@ namespace:
 # NetworkPolicy: deny-default at the namespace, paired with explicit
 # allow rules rendered by each subchart (otel-collector, nemo-sidecar,
 # update-agent). DNS to kube-system is permitted in every subchart's
-# rule. Operators who run a CNI without NetworkPolicy enforcement can
-# flip denyDefault back to false; the per-subchart allows then become
-# inert.
+# rule. This profile locks denyDefault on. Operators whose CNI does not
+# enforce NetworkPolicy must select a less strict profile rather than claim
+# this posture without an enforcement mechanism.
 networkPolicy:
   denyDefault: true
 
@@ -40,14 +52,52 @@ otelCollector:
   enabled: true
 otel-collector:
   replicaCount: 2
+  # Both OTLP protocols use the same operator-provisioned server identity and
+  # verify client certificates against the tenant ingress CA. Secret contents
+  # are mounted into the pod and never copied into the Collector ConfigMap.
+  receiver:
+    requireTLS: true
+    requireClientCertificate: true
+    tls:
+      serverCertificateSecret:
+        name: fabric-otel-receiver-tls
+        certKey: tls.crt
+        keyKey: tls.key
+      clientCASecret:
+        name: fabric-otel-client-ca
+        key: ca.crt
   # A high-risk deployment must name a real OTLP/HTTP backend. With no
   # endpoint the chart's default posture is a debug exporter writing to
   # pod stdout — visible, but not durable and not an audit trail. This
   # profile makes a retention claim, so it fails the render instead of
-  # inheriting a dev posture. The operator supplies the endpoint (and
-  # an egressTo rule below that reaches it) at install time.
+  # inheriting a dev posture. The operator supplies the endpoint and the
+  # exporterEgress peer/port below at install time.
   exporter:
     requireEndpoint: true
+    requireTLS: true
+    requireAuth: true
+    requireDurableQueue: true
+    insecure: false
+    insecureSkipVerify: false
+    auth:
+      headerName: Authorization
+      secret:
+        name: fabric-otel-export-auth
+        key: authorization
+    sendingQueue:
+      enabled: true
+      blockOnOverflow: true
+      queueSize: 10000
+      persistence:
+        enabled: true
+        fsync: true
+        size: 20Gi
+    retry:
+      enabled: true
+      # A value of zero keeps transient failures queued indefinitely.
+      # Permanent failures, disk exhaustion, invalid requests and
+      # upstream clients that do not retry can still cause loss.
+      maxElapsedTime: 0s
   networkPolicy:
     enabled: true
     # Tighten ingress: only pods within fabric-system may post OTLP.
@@ -58,16 +108,14 @@ otel-collector:
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: fabric-system
-    # Default egress: allow the collector to reach the bundled Langfuse
-    # and any other in-namespace destinations. External destinations
-    # (Datadog, Honeycomb, your own collector chain) require an
-    # operator override extending this list. Without an entry covering
-    # the collector's configured `exporter.endpoint`, denyDefault=true
-    # will silently drop telemetry — see the chart README.
-    egressTo:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: fabric-system
+    # No destination can be inferred safely from an arbitrary exporter URL.
+    # The profile therefore does not ship a misleading in-namespace default:
+    # rendering fails until the operator supplies the exact peer and port
+    # matching exporter.endpoint.
+    exporterEgress:
+      requireExplicit: true
+      to: []
+      ports: []
   fabric:
     guard:
       enabled: true
@@ -75,22 +123,31 @@ otel-collector:
     policy:
       enabled: true
       bundlePath: /etc/fabric/policy
+      # The chart renders and mounts this immutable v1 ConfigMap. It is
+      # only a safe bootstrap admission policy: known Fabric event
+      # classes + non-empty event-level tenant_id. It is not tenant
+      # authorization. Regulated operators should replace it with an
+      # approved bundleConfigMap once their egress policy is available.
+      referencePolicy:
+        enabled: true
+        version: v1
     # PII redaction is pinned on for this profile.
     #
-    # The Presidio sidecar chart is not yet part of the umbrella
-    # release (see components/presidio-sidecar). Until it lands, the
-    # operator MUST deploy the sidecar separately and set:
-    #
-    #   otel-collector.fabric.redact.existingSocketProvider: <name>
-    #
-    # Without that, the otel-collector chart fail-closes at render.
-    # We leave ``existingSocketProvider`` empty here so an installer
-    # who forgets to deploy the sidecar gets a loud error rather than
-    # a silent no-op redaction pipeline.
+    # The provider is rendered into the Collector pod and shares an
+    # emptyDir-backed UDS with the fabricredact processor. This protects
+    # exported telemetry; it does not redact input before an LLM call.
+    # The named Secret must be provisioned by the operator before the
+    # pod can become Ready.
     redact:
       enabled: true
       unixSocket: /var/run/fabric/presidio.sock
-      existingSocketProvider: ""
+      byteHandling: redact_utf8
+      embedded:
+        enabled: true
+        tenantKeySecret:
+          name: fabric-presidio-tenant-key
+          key: tenant.key
+        redactionMode: hmac
     sampler:
       enabled: true
       hmacKeySecret:
@@ -100,6 +157,11 @@ otel-collector:
         decision_summary: 1.0
         escalation: 1.0
         red_team_result: 1.0
+
+# Do not deploy the umbrella's standalone TCP Presidio Deployment.
+# The Collector profile uses the verified pod-local UDS topology above.
+presidioSidecar:
+  enabled: false
 
 nemoSidecar:
   enabled: true
@@ -156,6 +218,16 @@ updateAgent:
 update-agent:
   networkPolicy:
     enabled: true
+  # The regulated posture never renders a webhook private key into Helm
+  # release state. The operator provisions this issuer before installation;
+  # cert-manager owns issuance, storage, and rotation of the serving key.
+  tls:
+    mode: certManager
+    certManager:
+      issuerRef:
+        name: fabric-ca-issuer
+        kind: ClusterIssuer
+        group: cert-manager.io
   config:
     failClosed: true
   webhook:

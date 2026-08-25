@@ -20,7 +20,7 @@ chart_dir="$(cd "${here}/.." && pwd)"
 # Common values. The sampler is off by default (no key to invent for a
 # bare install), so turn it on with a key to render the production-shape
 # pipeline. The exporter endpoint has no OSS default; set one so the
-# `otlphttp/fabric` exporter is rendered — with it empty the chart falls
+# `otlp_http/fabric` exporter is rendered — with it empty the chart falls
 # back to the `debug` exporter instead, which is a different assertion.
 common_args=(
   --set fabric.sampler.enabled=true
@@ -52,8 +52,8 @@ expected_processors=$'processors:\n            - memory_limiter\n            - f
 if ! grep -q -F -- "${expected_processors}" <<<"${default_render}"; then
   fail "traces pipeline processors don't match the expected chain (memory_limiter, fabricguard, fabricsampler, batch)"
 fi
-if ! grep -qE 'exporters:[[:space:]]*\[otlphttp/fabric\]' <<<"${default_render}"; then
-  fail "traces pipeline exporters don't match the expected [otlphttp/fabric]"
+if ! grep -qE 'exporters:[[:space:]]*\[otlp_http/fabric\]' <<<"${default_render}"; then
+  fail "traces pipeline exporters don't match the expected [otlp_http/fabric]"
 fi
 pass "traces pipeline has correct processors + exporters"
 
@@ -76,15 +76,19 @@ fi
 pass "logs: pipeline present in both renders"
 
 # Case 5 (H-1): enabling redact/policy must chain them into the TRACES
-# pipeline too, not just logs. acceptMissingProvider bypasses the
-# render-time sidecar-provider gate (CI-only; runtime would error).
+# pipeline too, not just logs. Redaction now renders a real pod-local
+# UDS provider; there is no missing-provider render escape hatch.
 redact_render=$(helm template ci "${chart_dir}" \
   "${common_args[@]}" \
   --set fabric.redact.enabled=true \
-  --set fabric.redact.acceptMissingProvider=true)
+  --set fabric.redact.embedded.enabled=true \
+  --set fabric.redact.embedded.tenantKeySecret.name=fabric-presidio-key)
 traces_block=$(awk '/^        traces:/{f=1} f&&/^        [a-z]+:$/&&$0!~/^        traces:/{f=0} f' <<<"${redact_render}")
 if ! grep -q -- "- fabricredact" <<<"${traces_block}"; then
   fail "fabricredact not chained into the traces pipeline (H-1 regression)"
+fi
+if ! grep -q -- "name: presidio-redactor" <<<"${redact_render}"; then
+  fail "redact render did not include the pod-local Presidio provider"
 fi
 pass "fabricredact chained into traces pipeline"
 

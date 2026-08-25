@@ -1,10 +1,22 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: {{ ternary "StatefulSet" "Deployment" .Values.exporter.sendingQueue.persistence.enabled }}
 metadata:
   name: {{ include "otel-collector.fullname" . }}
   labels:
     {{- include "otel-collector.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+  serviceName: {{ include "otel-collector.fullname" . }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- else }}
+  strategy:
+    type: RollingUpdate
+  {{- end }}
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
@@ -19,6 +31,9 @@ spec:
       annotations:
         # Force a pod roll when the config changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.referencePolicy.enabled }}
+        checksum/reference-policy: {{ include (print $.Template.BasePath "/policy-configmap.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -50,6 +65,8 @@ spec:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -58,6 +75,11 @@ spec:
             - name: config
               mountPath: /etc/otelcol-fabric
               readOnly: true
+            {{- if .Values.receiver.tls.serverCertificateSecret.name }}
+            - name: receiver-tls
+              mountPath: /etc/fabric/receiver-tls
+              readOnly: true
+            {{- end }}
             {{- if and .Values.fabric.sampler.enabled .Values.fabric.sampler.hmacKeySecret.name }}
             - name: sampler-key
               mountPath: /etc/fabric/sampler
@@ -68,6 +90,72 @@ spec:
               mountPath: {{ .Values.fabric.policy.bundlePath }}
               readOnly: true
             {{- end }}
+            {{- if .Values.fabric.redact.enabled }}
+            - name: redaction-socket
+              mountPath: {{ dir .Values.fabric.redact.unixSocket }}
+            {{- end }}
+            {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+            - name: queue-storage
+              mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
+            {{- end }}
+            {{- if or .Values.exporter.tls.caSecret.name .Values.exporter.tls.clientCertificateSecret.name }}
+            - name: exporter-tls
+              mountPath: /etc/fabric/exporter-tls
+              readOnly: true
+            {{- end }}
+          {{- if .Values.exporter.auth.secret.name }}
+          env:
+            - name: FABRIC_EXPORT_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.exporter.auth.secret.name }}
+                  key: {{ .Values.exporter.auth.secret.key }}
+          {{- end }}
+        {{- if and .Values.fabric.redact.enabled .Values.fabric.redact.embedded.enabled }}
+        - name: presidio-redactor
+          image: "{{ .Values.fabric.redact.embedded.image.repository }}:{{ .Values.fabric.redact.embedded.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.fabric.redact.embedded.image.pullPolicy }}
+          args:
+            - --uds
+            - {{ .Values.fabric.redact.unixSocket | quote }}
+            - --tenant-key-file
+            - /etc/fabric/presidio-key/tenant.key
+            - --redaction-mode
+            - {{ .Values.fabric.redact.embedded.redactionMode | quote }}
+            {{- if .Values.fabric.redact.embedded.allowPassthrough }}
+            - --allow-passthrough
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.fabric.redact.embedded.securityContext | nindent 12 }}
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n'); assert b' 200 ' in s.recv(128)" .Values.fabric.redact.unixSocket | quote }}
+            periodSeconds: {{ .Values.fabric.redact.embedded.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.fabric.redact.embedded.startupProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.fabric.redact.embedded.startupProbe.timeoutSeconds }}
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n'); assert b' 200 ' in s.recv(128)" .Values.fabric.redact.unixSocket | quote }}
+            periodSeconds: {{ .Values.fabric.redact.embedded.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.fabric.redact.embedded.readinessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.fabric.redact.embedded.readinessProbe.timeoutSeconds }}
+          resources:
+            {{- toYaml .Values.fabric.redact.embedded.resources | nindent 12 }}
+          volumeMounts:
+            - name: redaction-socket
+              mountPath: {{ dir .Values.fabric.redact.unixSocket }}
+            - name: presidio-tmp
+              mountPath: /tmp
+            - name: presidio-tenant-key
+              mountPath: /etc/fabric/presidio-key
+              readOnly: true
+        {{- end }}
       volumes:
         - name: config
           configMap:
@@ -75,6 +163,26 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
+        {{- if .Values.receiver.tls.serverCertificateSecret.name }}
+        - name: receiver-tls
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.receiver.tls.serverCertificateSecret.name }}
+                  items:
+                    - key: {{ .Values.receiver.tls.serverCertificateSecret.certKey }}
+                      path: tls.crt
+                    - key: {{ .Values.receiver.tls.serverCertificateSecret.keyKey }}
+                      path: tls.key
+              {{- if .Values.receiver.tls.clientCASecret.name }}
+              - secret:
+                  name: {{ .Values.receiver.tls.clientCASecret.name }}
+                  items:
+                    - key: {{ .Values.receiver.tls.clientCASecret.key }}
+                      path: client-ca.crt
+              {{- end }}
+        {{- end }}
         {{- if and .Values.fabric.sampler.enabled .Values.fabric.sampler.hmacKeySecret.name }}
         - name: sampler-key
           secret:
@@ -85,16 +193,50 @@ spec:
         {{- end }}
         {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.bundlePath }}
         - name: policy-bundle
-          {{- if .Values.fabric.policy.bundleConfigMap }}
           configMap:
+          {{- if .Values.fabric.policy.bundleConfigMap }}
             name: {{ .Values.fabric.policy.bundleConfigMap }}
           {{- else }}
-          # No in-chart provisioning mechanism configured: this volume
-          # stays EMPTY unless the operator mounts something out of
-          # band. An empty bundle makes fabricpolicy fail closed and
-          # drop every record/span — see NOTES.txt.
-          emptyDir: {}
+            name: {{ include "otel-collector.referencePolicyConfigMapName" . }}
           {{- end }}
+        {{- end }}
+        {{- if .Values.fabric.redact.enabled }}
+        - name: redaction-socket
+          emptyDir: {}
+        - name: presidio-tmp
+          emptyDir: {}
+        - name: presidio-tenant-key
+          secret:
+            secretName: {{ .Values.fabric.redact.embedded.tenantKeySecret.name }}
+            items:
+              - key: {{ .Values.fabric.redact.embedded.tenantKeySecret.key }}
+                path: tenant.key
+        {{- end }}
+        {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
+        - name: queue-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.exporter.sendingQueue.persistence.existingClaim }}
+        {{- end }}
+        {{- if or .Values.exporter.tls.caSecret.name .Values.exporter.tls.clientCertificateSecret.name }}
+        - name: exporter-tls
+          projected:
+            sources:
+              {{- if .Values.exporter.tls.caSecret.name }}
+              - secret:
+                  name: {{ .Values.exporter.tls.caSecret.name }}
+                  items:
+                    - key: {{ .Values.exporter.tls.caSecret.key }}
+                      path: ca.crt
+              {{- end }}
+              {{- if .Values.exporter.tls.clientCertificateSecret.name }}
+              - secret:
+                  name: {{ .Values.exporter.tls.clientCertificateSecret.name }}
+                  items:
+                    - key: {{ .Values.exporter.tls.clientCertificateSecret.certKey }}
+                      path: tls.crt
+                    - key: {{ .Values.exporter.tls.clientCertificateSecret.keyKey }}
+                      path: tls.key
+              {{- end }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -112,3 +254,23 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+  {{- if and .Values.exporter.sendingQueue.persistence.enabled (not .Values.exporter.sendingQueue.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: queue-storage
+        labels:
+          {{- include "otel-collector.labels" . | nindent 10 }}
+        {{- with .Values.exporter.sendingQueue.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.exporter.sendingQueue.persistence.accessModes | nindent 10 }}
+        {{- if .Values.exporter.sendingQueue.persistence.storageClass }}
+        storageClassName: {{ .Values.exporter.sendingQueue.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.exporter.sendingQueue.persistence.size }}
+  {{- end }}

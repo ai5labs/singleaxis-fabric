@@ -1,4 +1,4 @@
-# Default values for the SingleAxis Fabric umbrella chart (Layer 1).
+# Default values for the SingleAxis Fabric OSS umbrella chart.
 #
 # Regulatory Profiles in charts/fabric/profiles/ select the safe
 # defaults per regulation — most tenants should install with

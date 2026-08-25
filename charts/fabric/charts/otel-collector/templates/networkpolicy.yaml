@@ -43,8 +43,16 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Egress to the configured exporter endpoint and any extra
-    # destinations the operator declares.
+    # Explicit exporter egress. Regulated profiles fail closed unless the
+    # operator names both the destination peer(s) and allowed port(s).
+    {{- with .Values.networkPolicy.exporterEgress.to }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        {{- toYaml $.Values.networkPolicy.exporterEgress.ports | nindent 8 }}
+    {{- end }}
+    # Additional destinations declared by the operator. This compatibility
+    # surface is not accepted as proof of the regulated exporter route.
     {{- with .Values.networkPolicy.egressTo }}
     - to:
         {{- toYaml . | nindent 8 }}

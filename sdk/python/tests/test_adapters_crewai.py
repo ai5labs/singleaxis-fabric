@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -25,7 +26,7 @@ def _event_attrs(
     return [dict(ev.attributes or {}) for ev in span.events if ev.name == event_name]
 
 
-def test_step_callback_records_step_event_with_tool_and_log(
+def test_step_callback_records_content_safe_step_metadata(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     client = _client()
@@ -39,7 +40,13 @@ def test_step_callback_records_step_event_with_tool_and_log(
     ev = events[0]
     assert ev["fabric.crewai.event_type"] == "SimpleNamespace"
     assert ev["fabric.crewai.tool"] == "search_web"
-    assert "search_web" in str(ev["fabric.crewai.log_preview"])
+    assert ev["fabric.crewai.content_field"] == "log"
+    assert ev["fabric.crewai.content_chars"] == len("calling search_web(query=...)")
+    assert (
+        ev["fabric.crewai.content_sha256"]
+        == hashlib.sha256(b"calling search_web(query=...)").hexdigest()
+    )
+    assert "fabric.crewai.log_preview" not in ev
 
 
 def test_step_callback_captures_modern_crewai_reasoning_fields(
@@ -65,9 +72,12 @@ def test_step_callback_captures_modern_crewai_reasoning_fields(
 
     ev = _event_attrs(span_exporter, "fabric.crewai.step")[0]
     assert ev["fabric.crewai.tool"] == "search_web"
-    # ``thought`` is preferred over ``text`` and is captured even though
-    # there is no ``.log`` field at all.
-    assert ev["fabric.crewai.log_preview"] == "I should search the web for the answer"
+    # ``thought`` is preferred over ``text`` but only its digest and length
+    # are captured; reasoning content must never leak onto the span.
+    thought = "I should search the web for the answer"
+    assert ev["fabric.crewai.content_field"] == "thought"
+    assert ev["fabric.crewai.content_chars"] == len(thought)
+    assert ev["fabric.crewai.content_sha256"] == hashlib.sha256(thought.encode()).hexdigest()
 
 
 def test_step_callback_captures_agentfinish_output_field(
@@ -84,7 +94,8 @@ def test_step_callback_captures_agentfinish_output_field(
         hooks.step(finish)
 
     ev = _event_attrs(span_exporter, "fabric.crewai.step")[0]
-    assert ev["fabric.crewai.log_preview"] == "the final answer"
+    assert ev["fabric.crewai.content_field"] == "output"
+    assert ev["fabric.crewai.content_chars"] == len("the final answer")
 
 
 def test_step_callback_handles_missing_attributes(
@@ -100,10 +111,12 @@ def test_step_callback_handles_missing_attributes(
     events = _event_attrs(span_exporter, "fabric.crewai.step")
     assert len(events) == 1
     assert "fabric.crewai.tool" not in events[0]
-    assert "fabric.crewai.log_preview" not in events[0]
+    assert "fabric.crewai.content_field" not in events[0]
+    assert "fabric.crewai.content_sha256" not in events[0]
+    assert "fabric.crewai.content_chars" not in events[0]
 
 
-def test_step_callback_truncates_long_log(
+def test_step_callback_hashes_entire_long_log_without_recording_it(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     client = _client()
@@ -113,7 +126,9 @@ def test_step_callback_truncates_long_log(
         hooks.step(SimpleNamespace(log=long_log))
 
     ev = _event_attrs(span_exporter, "fabric.crewai.step")[0]
-    assert len(str(ev["fabric.crewai.log_preview"])) == 200
+    assert ev["fabric.crewai.content_chars"] == len(long_log)
+    assert ev["fabric.crewai.content_sha256"] == hashlib.sha256(long_log.encode()).hexdigest()
+    assert long_log not in str(ev)
 
 
 def test_task_callback_records_task_event_with_description_and_agent(
@@ -132,13 +147,19 @@ def test_task_callback_records_task_event_with_description_and_agent(
     events = _event_attrs(span_exporter, "fabric.crewai.task")
     assert len(events) == 1
     ev = events[0]
-    assert ev["fabric.crewai.task_description"] == "analyse the report"
+    description = "analyse the report"
+    assert ev["fabric.crewai.task_description_chars"] == len(description)
+    assert (
+        ev["fabric.crewai.task_description_sha256"]
+        == hashlib.sha256(description.encode()).hexdigest()
+    )
+    assert "fabric.crewai.task_description" not in ev
     assert ev["fabric.crewai.agent"] == "research_agent"
     assert isinstance(ev["fabric.crewai.output_chars"], int)
     assert ev["fabric.crewai.output_chars"] == len("a very long analysis " * 20)
 
 
-def test_task_callback_truncates_long_description(
+def test_task_callback_hashes_entire_long_description_without_recording_it(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     client = _client()
@@ -147,7 +168,12 @@ def test_task_callback_truncates_long_description(
         hooks.task(SimpleNamespace(description="d" * 1000))
 
     ev = _event_attrs(span_exporter, "fabric.crewai.task")[0]
-    assert len(str(ev["fabric.crewai.task_description"])) == 200
+    assert ev["fabric.crewai.task_description_chars"] == 1000
+    assert (
+        ev["fabric.crewai.task_description_sha256"]
+        == hashlib.sha256(("d" * 1000).encode()).hexdigest()
+    )
+    assert "d" * 200 not in str(ev)
 
 
 def test_task_callback_handles_missing_fields(
@@ -160,8 +186,43 @@ def test_task_callback_handles_missing_fields(
 
     ev = _event_attrs(span_exporter, "fabric.crewai.task")[0]
     assert "fabric.crewai.task_description" not in ev
+    assert "fabric.crewai.task_description_sha256" not in ev
+    assert "fabric.crewai.task_description_chars" not in ev
     assert "fabric.crewai.agent" not in ev
     assert "fabric.crewai.output_chars" not in ev
+
+
+def test_callbacks_never_emit_raw_sensitive_content(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Prompts, reasoning, outputs, and task descriptions stay off spans."""
+    sensitive_content = "patient jane@example.com diagnosis code Z99.89 token sk-live-secret"
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        hooks = attach_callbacks(dec)
+        hooks.step(
+            SimpleNamespace(
+                thought=sensitive_content,
+                log=sensitive_content,
+                output=sensitive_content,
+                text=sensitive_content,
+            )
+        )
+        hooks.task(SimpleNamespace(description=sensitive_content, raw=sensitive_content))
+
+    step = _event_attrs(span_exporter, "fabric.crewai.step")[0]
+    task = _event_attrs(span_exporter, "fabric.crewai.task")[0]
+    assert sensitive_content not in str(step)
+    assert sensitive_content not in str(task)
+    assert (
+        step["fabric.crewai.content_sha256"]
+        == hashlib.sha256(sensitive_content.encode()).hexdigest()
+    )
+    assert (
+        task["fabric.crewai.task_description_sha256"]
+        == hashlib.sha256(sensitive_content.encode()).hexdigest()
+    )
+    assert task["fabric.crewai.output_chars"] == len(sensitive_content)
 
 
 class _HostileEvent:

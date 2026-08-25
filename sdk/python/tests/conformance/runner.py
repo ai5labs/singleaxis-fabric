@@ -9,6 +9,7 @@ normalization is used to produce and to assert the goldens.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,8 +22,10 @@ if TYPE_CHECKING:
         InMemorySpanExporter,
     )
 
-GOLDENS_DIR = Path(__file__).parent / "goldens"
-SCHEMA_DIR = Path(__file__).parent / "schema"
+CONTRACT_DIR = Path(__file__).resolve().parents[4] / "contracts" / "activity" / "v1"
+MANIFEST_PATH = CONTRACT_DIR / "manifest.json"
+GOLDENS_DIR = CONTRACT_DIR / "goldens"
+SCHEMA_DIR = CONTRACT_DIR / "schema"
 
 # Stable JSON serialization options for reproducible files.
 _JSON_KWARGS: dict[str, Any] = {"indent": 2, "sort_keys": True, "ensure_ascii": False}
@@ -30,7 +33,28 @@ _JSON_KWARGS: dict[str, Any] = {"indent": 2, "sort_keys": True, "ensure_ascii": 
 
 def golden_path(name: str) -> Path:
     """Return the on-disk path of the golden for scenario ``name``."""
-    return GOLDENS_DIR / f"{name}.json"
+    entry = scenario_manifest(name)
+    return CONTRACT_DIR / str(entry["fixture"])
+
+
+def load_manifest() -> dict[str, Any]:
+    """Load the public activity-contract manifest."""
+    manifest: dict[str, Any] = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    return manifest
+
+
+def scenario_manifest(name: str) -> dict[str, Any]:
+    """Return the unique manifest entry for ``name``."""
+    matches = [item for item in load_manifest()["scenarios"] if item["name"] == name]
+    if len(matches) != 1:
+        raise KeyError(f"contract manifest must declare scenario {name!r} exactly once")
+    entry: dict[str, Any] = matches[0]
+    return entry
+
+
+def sha256_file(path: Path) -> str:
+    """Return the lowercase SHA-256 digest for a contract artifact."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def run_scenario(name: str, exporter: InMemorySpanExporter) -> list[dict[str, Any]]:

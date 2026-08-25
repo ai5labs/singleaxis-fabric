@@ -172,6 +172,42 @@ describe("local hashing (raw content never emitted)", () => {
       }),
     ).toThrow(/not both/);
   });
+
+  it("redacts file paths and generic interaction targets by default", () => {
+    const path = "/patients/jane/record.pdf";
+    const target = "https://internal.example/patient/jane";
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.recordFileAccess(path, "read");
+      d.recordInteraction("http.request", target);
+    });
+    const span = decisionSpan();
+    const file = eventsNamed(span, "fabric.file")[0]!;
+    const interaction = eventsNamed(span, "fabric.interaction")[0]!;
+    expect(file["fabric.file.path_hash"]).toBe(sha256Hex(path));
+    expect(file["fabric.file.path"]).toBeUndefined();
+    expect(interaction["fabric.interaction.target_hash"]).toBe(sha256Hex(target));
+    expect(interaction["fabric.interaction.target"]).toBeUndefined();
+  });
+
+  it("does not emit LLM output messages unless content capture is explicitly enabled", () => {
+    const outputMessages = [{ role: "assistant", content: "patient diagnosis" }];
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.llmCall({ system: "test", model: "model" }, (call) => {
+        call.setResponse({ outputMessages });
+      });
+    });
+    const llm = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
+    expect(llm.attributes["gen_ai.output.messages"]).toBeUndefined();
+
+    exporter.reset();
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.llmCall({ system: "test", model: "model", captureContent: true }, (call) => {
+        call.setResponse({ outputMessages });
+      });
+    });
+    const optedIn = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
+    expect(optedIn.attributes["gen_ai.output.messages"]).toBe(JSON.stringify(outputMessages));
+  });
 });
 
 describe("validation guards", () => {
@@ -252,9 +288,9 @@ describe("execution retry metadata", () => {
     expect(() => new Fabric({ tenantId: "t", agentId: "a", executionAttempt: 0 })).toThrow(
       /executionAttempt/,
     );
-    expect(
-      () => new Fabric({ tenantId: "t", agentId: "a", executionAttemptId: " " }),
-    ).toThrow(/executionAttemptId/);
+    expect(() => new Fabric({ tenantId: "t", agentId: "a", executionAttemptId: " " })).toThrow(
+      /executionAttemptId/,
+    );
   });
 });
 

@@ -3,7 +3,7 @@
 
 # SingleAxis Fabric — enterprise agent examples
 
-Eight runnable, self-contained examples that show how to instrument a real
+Nine runnable, self-contained examples that show how to instrument a real
 enterprise AI agent with the [SingleAxis Fabric Python SDK](../sdk/python).
 Each one models a workflow teams actually build — customer support, RAG,
 a coding agent, finance/compliance, data analysis, multi-agent
@@ -38,6 +38,7 @@ they double as deterministic tests.
 
 | Example | Scenario | Headline primitives |
 | --- | --- | --- |
+| [`llm_guardrail_judge_demo.py`](llm_guardrail_judge_demo.py) | Minimal privacy → guardrail → LLM → asynchronous judge flow | Presidio contract, custom guardrail, GenAI LLM span, judge queue |
 | [`customer_support_agent.py`](customer_support_agent.py) | Refund agent: PII-guarded intake → KB retrieval → policy-gated refund → human escalation | guardrails, retrieval, policy, side-effect, escalation, judge |
 | [`rag_knowledge_assistant.py`](rag_knowledge_assistant.py) | Grounded Q&A over multiple sources with semantic memory | retrieval (multi-source), memory read/write, inline eval, replay |
 | [`coding_swe_agent.py`](coding_swe_agent.py) | SWE agent plan→act→observe loop with a flaky test run | step taxonomy, step-level retry, tool error categories |
@@ -68,6 +69,7 @@ as a map to the primitive you want to learn:
 | `fabric.side_effect` + `side_effect_id` + `parent_tool_call_id` | `treasury_compliance_agent`, `multi_agent_supervisor` |
 | `fabric.checkpoint` | `data_analysis_agent` |
 | `fabric.eval` + `fabric.judge.queued` | `customer_support_agent`, `rag_knowledge_assistant` |
+| Minimal end-to-end LLM wrapping | `llm_guardrail_judge_demo` |
 | escalation — sync / async / deferred | `content_governance_agent` / `multi_agent_supervisor` / `human_in_the_loop_approval` |
 | `fabric.replay` metadata envelope | `human_in_the_loop_approval`, `rag_knowledge_assistant` |
 | `content_ref` (off-trace payload pointers) | `content_governance_agent` |

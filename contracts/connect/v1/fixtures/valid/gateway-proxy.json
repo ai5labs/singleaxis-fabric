@@ -1,0 +1,61 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "example.gateway.proxy",
+  "display_name": "Example Authenticated Agent Gateway",
+  "release": {"version": "0.1.0", "maturity": "illustrative", "distribution": "container"},
+  "implementation": {"kind": "gateway_proxy", "deployment_modes": ["sidecar", "gateway"]},
+  "compatibility": {
+    "activity_contract": "1.0.0",
+    "fabric_versions": ">=0.7.0,<1.0.0",
+    "runtimes": ["OCI container runtime"],
+    "protocols": ["HTTPS", "W3C Trace Context", "OTLP/HTTP"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "llm_operation", "source": "traffic_inferred"},
+      {"surface": "tool_operation", "source": "traffic_inferred"},
+      {"surface": "generic_interaction", "source": "traffic_inferred"}
+    ],
+    "decision_semantics": "inferred",
+    "coverage_basis": "Inline protocol-aware routing observes calls crossing the gateway but does not see local operations or hidden application state."
+  },
+  "control": {
+    "interposition": "inline_proxy",
+    "agent_runtime_actions": ["block", "redact", "authorize", "modify"],
+    "telemetry_pipeline_actions": ["accept", "reject", "redact", "route"]
+  },
+  "content": {
+    "raw_content_behavior": "configurable_raw",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "built_in",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "gateway_credential_mapping",
+    "strength": "authenticated_mapping",
+    "tenant_partitioning": "enforced"
+  },
+  "authentication": {
+    "ingress_supported": ["bearer_token", "mtls", "workload_identity"],
+    "ingress_default": "mtls",
+    "egress_supported": ["bearer_token", "mtls", "workload_identity"],
+    "egress_default": "mtls",
+    "credential_handling": "Credentials are resolved to tenant and workload identity at ingress and are not emitted into telemetry."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": true, "preserve": true},
+    "baggage": "allowlisted",
+    "correlation_limitations": ["Calls that do not traverse the gateway cannot be correlated or controlled by it."]
+  },
+  "data_egress": {
+    "network_egress": true,
+    "protocols": ["HTTPS", "OTLP/HTTP over TLS"],
+    "transport_security": "required",
+    "destinations": "operator_configured",
+    "default_destination": null
+  },
+  "verification_evidence": [
+    {"type": "none", "path": null, "claim": "Illustrative valid fixture; a released gateway must supply authentication, isolation, and bypass tests."}
+  ],
+  "known_blind_spots": ["Local model execution, local tools, subprocesses, and side effects that bypass the proxy are invisible."]
+}

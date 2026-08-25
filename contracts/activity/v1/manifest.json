@@ -1,0 +1,244 @@
+{
+  "contract": "singleaxis.fabric.activity",
+  "version": "1.0.0",
+  "schema": {
+    "path": "schema/fabric-decision-v1.schema.json",
+    "sha256": "967b73a03ec96478781f16aab51bd9d403c4930d64e8551aac95571632993b8b"
+  },
+  "scenarios": [
+    {
+      "name": "bare_decision",
+      "fixture": "goldens/bare_decision.json",
+      "sha256": "b0fad07d60e274c6da230620f8f8cbf76db3d4065ab760d592b236a89fed0c9d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "checkpoint",
+      "fixture": "goldens/checkpoint.json",
+      "sha256": "a5aec12c13b9768d0319d7a0694c5fb7c7a35673c272bb6186ca1f713b411c46",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "content_ref_stamped",
+      "fixture": "goldens/content_ref_stamped.json",
+      "sha256": "dc1c2a1dafc1a3794a37a9c875a715f600b0ec135b4836580900fe5fd2f392a2",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "decision_id_distinct",
+      "fixture": "goldens/decision_id_distinct.json",
+      "sha256": "b0fad07d60e274c6da230620f8f8cbf76db3d4065ab760d592b236a89fed0c9d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "delegation",
+      "fixture": "goldens/delegation.json",
+      "sha256": "d1fa32e21f1cad66c3b2f25f954e1481176a0ed0a250d7292450f2d85fb3ff99",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "escalation",
+      "fixture": "goldens/escalation.json",
+      "sha256": "5dec10982d6dd5a840f78ea2a47d0b18ec23bd70360c5fa5460a3d0334bc1801",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "eval_record",
+      "fixture": "goldens/eval_record.json",
+      "sha256": "0ce2f5954a32404257b3e282890d8de63687f88942bf42b191ad0379bbb1fe62",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "execution",
+      "fixture": "goldens/execution.json",
+      "sha256": "3af2ddf862e2982e71751ecbe36dfb9d1f61d548f1385ac7199231c3ed42de6d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "file_access",
+      "fixture": "goldens/file_access.json",
+      "sha256": "70b9a1b945c99fd9b7feb8914bd9d401343ef84755568e40ce07e37cc1bfc99e",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "guardrail_block",
+      "fixture": "goldens/guardrail_block.json",
+      "sha256": "a9d649bb6dedb14d9f699cfc993862651d27db5bda1e87cde782b4a736950c06",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "guardrail_redaction",
+      "fixture": "goldens/guardrail_redaction.json",
+      "sha256": "9c507a6bbf68132569da69021ed9f81c9024ae32a276cecb57b8b23821ba993c",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "hook",
+      "fixture": "goldens/hook.json",
+      "sha256": "b9efdf4215047904654ba085445a2c7b34aac55c75aae1f42cf0f4e1ddcbfc64",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "interaction",
+      "fixture": "goldens/interaction.json",
+      "sha256": "8bdc03b5810c061e8454d5d00e722b953ae6c2a2de72bbe411efe39495c8abc6",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "interaction_deviation",
+      "fixture": "goldens/interaction_deviation.json",
+      "sha256": "166900f910fccf3f532d57138ef4837e9c4178b40bd46183f8e300c2c7af0cee",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "interaction_tagged",
+      "fixture": "goldens/interaction_tagged.json",
+      "sha256": "182fe6850691e00ab1c2f2feba6f0b076dd4263f998c5a28d6d7f398cff4985c",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "llm_call",
+      "fixture": "goldens/llm_call.json",
+      "sha256": "357ee42666e6694d7ff670e4a7c8fd9407bb5d373013c92d6f6ded001a51103d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "llm_call_rich",
+      "fixture": "goldens/llm_call_rich.json",
+      "sha256": "b117d80709b8259ad8f13f52b8539bba3770317df7a2e2db6fc8b48669ce6e7f",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "mcp_inventory",
+      "fixture": "goldens/mcp_inventory.json",
+      "sha256": "cee776a8eb87c39e9e09a6948379fd629efab877342f0369e81366b245b4618b",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "memory_erase",
+      "fixture": "goldens/memory_erase.json",
+      "sha256": "16b1df84745d89fd53e34a86d486566c47e6927ddcfb65a44e1cc1becf9d2bfe",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "memory_invalidate",
+      "fixture": "goldens/memory_invalidate.json",
+      "sha256": "ff89510920936b466f04601c66cd6cfd44dad6f6dd53ade1cc8c15f8a267fe6d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "memory_read_write",
+      "fixture": "goldens/memory_read_write.json",
+      "sha256": "b4e1bda4b2e8083331586a4eec6fbfd91f3dad856b90b40939832c6e81081729",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_allow",
+      "fixture": "goldens/policy_allow.json",
+      "sha256": "fbbb4d2dde516251fd8be5d79073bfacb99d5e767e2feca7b9688bd70891f812",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_deny",
+      "fixture": "goldens/policy_deny.json",
+      "sha256": "3f202806168a2ac0a2e02bdab28bf50c56b832b6ac3c0a761f02320a4aaf1068",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_escalate",
+      "fixture": "goldens/policy_escalate.json",
+      "sha256": "22c05aa1b94640fc9605260bf8d72876fe73fabd4ee7a3d8b0e6fc30daedd359",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_fail_closed",
+      "fixture": "goldens/policy_fail_closed.json",
+      "sha256": "9542001c8f09975b5146c931b617cb35804e15b32d675769b7b32e85d8fd1a43",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_redact",
+      "fixture": "goldens/policy_redact.json",
+      "sha256": "9a2ff44893211e463b362707d6490508c62fbefbecc7bcb143ad0c4702d3ea48",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "policy_warn",
+      "fixture": "goldens/policy_warn.json",
+      "sha256": "ca404c9d62ac9a27041d85f6fb4bd88c15721c6495b3907eb43b90ba32faa62d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "queue_judge",
+      "fixture": "goldens/queue_judge.json",
+      "sha256": "1addedc679a84d6731e13ebccb65c0d6845001d11ccd26643af4d4aa584d6b46",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "replay_metadata",
+      "fixture": "goldens/replay_metadata.json",
+      "sha256": "2cdfe7d7bdc7ca57c72c2e56dd2f1c712e9089b82c4cb24a29a5831436938f21",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "retrieval",
+      "fixture": "goldens/retrieval.json",
+      "sha256": "d1a86bb9060d948db8c4804b52e5c106e8ab54537d49a1ff55fdc982c22eb3d6",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "side_effect",
+      "fixture": "goldens/side_effect.json",
+      "sha256": "642126024c54a815c3564184f302ddcb2fedb15bb00f8530842fb713365a7968",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "side_effect_parent_tool_call",
+      "fixture": "goldens/side_effect_parent_tool_call.json",
+      "sha256": "1bb1e4eeaeecde48dae7de69671b6e4c9d49958beea7ded877e785eb8f8ad20a",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "skill",
+      "fixture": "goldens/skill.json",
+      "sha256": "4d12d54a0a4499acb286fe4fd2d19938c5d8f3f344342bd739f16cbaa544efd7",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "step_retry",
+      "fixture": "goldens/step_retry.json",
+      "sha256": "715207a681b89c3655e4c0d2b0d112b2dbabe68252b0605488dfbb212f2c2611",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "tool_authorization_allow",
+      "fixture": "goldens/tool_authorization_allow.json",
+      "sha256": "19886948c998dde7a0b97e24fff1288b92fe5bc26c9cf3580fd5aec639fa9d03",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "tool_authorization_deny",
+      "fixture": "goldens/tool_authorization_deny.json",
+      "sha256": "5842a0537f70c70f005927829a57c1fa514e44c83d11290686c3841b61da6fe4",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "tool_call",
+      "fixture": "goldens/tool_call.json",
+      "sha256": "c3f38a640e3d120f8f90cdb31f60ab04bd8c9d1f09d42b6c4a4104d7f03fcfd4",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "tool_call_error",
+      "fixture": "goldens/tool_call_error.json",
+      "sha256": "4b1863166a129bbf6fcd588114ed04f10f827dc0c9a64f3dcfd257eb10aa134d",
+      "support": ["python", "typescript"]
+    },
+    {
+      "name": "workflow_execution",
+      "fixture": "goldens/workflow_execution.json",
+      "sha256": "301d030b9a71bb23372378860b521598f8c192b0309aea52fb454d34c609e3cf",
+      "support": ["python", "typescript"]
+    }
+  ]
+}

@@ -95,9 +95,9 @@ commercial control plane (L6).
 
 ### NOT in this repo (referenced for clarity)
 
-The following are described in specs 003/004/006/007/009 as
-**design of record** but ship in the SingleAxis commercial control
-plane (separate private repository), not here:
+The following are described in specs 003/004/006/007/009 as a public
+**design of record**, but their managed implementations are not part of this
+OSS distribution:
 
 - **L6 LLM-as-Judge:** judge worker pool, signed rubric library
 - **Telemetry Bridge:** sanitized egress to SingleAxis SaaS

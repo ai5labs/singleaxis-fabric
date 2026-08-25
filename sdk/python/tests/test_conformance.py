@@ -21,12 +21,16 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tests.conformance.runner import (
+    CONTRACT_DIR,
     GOLDENS_DIR,
+    MANIFEST_PATH,
     SCHEMA_DIR,
     golden_path,
     load_golden,
+    load_manifest,
     run_scenario,
     serialize,
+    sha256_file,
 )
 from tests.conformance.scenarios import SCENARIOS
 
@@ -63,6 +67,45 @@ def test_every_scenario_has_a_golden() -> None:
     """Guard against a scenario being added without a golden committed."""
     missing = [name for name in SCENARIOS if not golden_path(name).exists()]
     assert not missing, f"scenarios without goldens: {missing}"
+
+
+def test_python_coverage_exactly_matches_contract_manifest() -> None:
+    """Python must implement exactly the scenarios declared for it."""
+    manifest = load_manifest()
+    declared = {entry["name"] for entry in manifest["scenarios"] if "python" in entry["support"]}
+    assert set(SCENARIOS) == declared
+
+
+def test_contract_manifest_is_complete_and_digest_verified() -> None:
+    """Every declared artifact exists, is unique, and matches its pinned digest."""
+    manifest = load_manifest()
+    assert manifest["contract"] == "singleaxis.fabric.activity"
+    assert manifest["version"] == "1.0.0"
+    assert MANIFEST_PATH.parent == CONTRACT_DIR
+
+    names = [entry["name"] for entry in manifest["scenarios"]]
+    fixtures = [entry["fixture"] for entry in manifest["scenarios"]]
+    assert len(names) == len(set(names)), "manifest contains duplicate scenario names"
+    assert len(fixtures) == len(set(fixtures)), "manifest contains duplicate fixture paths"
+
+    schema_entry = manifest["schema"]
+    schema_path = CONTRACT_DIR / schema_entry["path"]
+    assert schema_path.is_file()
+    assert sha256_file(schema_path) == schema_entry["sha256"]
+
+    declared_files: set[str] = set()
+    for entry in manifest["scenarios"]:
+        assert set(entry["support"]) <= {"python", "typescript"}
+        assert entry["support"], f"scenario {entry['name']!r} has no supported implementation"
+        fixture = CONTRACT_DIR / entry["fixture"]
+        assert fixture.is_file(), f"missing fixture for scenario {entry['name']!r}"
+        assert sha256_file(fixture) == entry["sha256"], (
+            f"digest mismatch for contract scenario {entry['name']!r}"
+        )
+        declared_files.add(str(fixture.resolve()))
+
+    on_disk = {str(path.resolve()) for path in GOLDENS_DIR.glob("*.json")}
+    assert on_disk == declared_files, "contract goldens and manifest declarations differ"
 
 
 def test_goldens_are_deterministic(span_exporter: InMemorySpanExporter) -> None:

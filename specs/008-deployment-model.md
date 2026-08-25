@@ -87,7 +87,7 @@ charts/
         ├── sr-11-7.yaml                  # PHASE 2
         └── hipaa.yaml                    # PHASE 2
 
-                                     # (SingleAxis-internal overlay charts
+                                     # (private platform overlay charts
                                      # — judges, escalation service,
                                      # decision graph, telemetry bridge —
                                      # are maintained internally and not

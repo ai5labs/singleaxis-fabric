@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://singleaxis.com/schemas/fabric-chart-values-v1.json",
+  "title": "SingleAxis Fabric umbrella chart values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tenant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Tenant identifier. Production profiles enforce that this is non-empty."
+        },
+        "name": {"type": "string", "maxLength": 253}
+      }
+    },
+    "imagePullSecrets": {"$ref": "#/definitions/imagePullSecrets"},
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fabric"],
+      "properties": {
+        "fabric": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version"],
+          "properties": {
+            "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"}
+          }
+        }
+      }
+    },
+    "namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "name", "annotations", "labels"],
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "annotations": {"$ref": "#/definitions/stringMap"},
+        "labels": {"$ref": "#/definitions/stringMap"}
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["denyDefault"],
+      "properties": {"denyDefault": {"type": "boolean"}}
+    },
+    "otelCollector": {"$ref": "#/definitions/toggle"},
+    "nemoSidecar": {"$ref": "#/definitions/toggle"},
+    "presidioSidecar": {"$ref": "#/definitions/toggle"},
+    "redteamRunner": {"$ref": "#/definitions/toggle"},
+    "updateAgent": {"$ref": "#/definitions/toggle"},
+    "otel-collector": {"type": "object", "description": "Validated by the bundled otel-collector subchart schema."},
+    "nemo-sidecar": {"type": "object", "description": "Pass-through to the versioned nemo-sidecar subchart."},
+    "presidio-sidecar": {"type": "object", "description": "Pass-through to the versioned presidio-sidecar subchart."},
+    "redteam-runner": {"type": "object", "description": "Pass-through to the versioned redteam-runner subchart."},
+    "update-agent": {"type": "object", "description": "Pass-through to the versioned update-agent subchart."},
+    "langfuse": {
+      "type": "object",
+      "description": "Toggle and pass-through values for the bundled third-party Langfuse chart.",
+      "properties": {"enabled": {"type": "boolean"}}
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "regulations", "lockedFields"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "regulations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "lockedFields": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "tags": {
+      "type": "object",
+      "description": "Standard Helm dependency tags; extension keys are intentional.",
+      "additionalProperties": {"type": "boolean"}
+    }
+  },
+  "required": [
+    "tenant",
+    "imagePullSecrets",
+    "global",
+    "namespace",
+    "networkPolicy",
+    "otelCollector",
+    "nemoSidecar",
+    "presidioSidecar",
+    "langfuse",
+    "redteamRunner",
+    "updateAgent",
+    "profile"
+  ],
+  "definitions": {
+    "toggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {"enabled": {"type": "boolean"}}
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

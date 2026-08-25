@@ -58,11 +58,10 @@ filing a "but I expected …" issue.
   Guardrails ship as separate Helm subcharts (`presidio-sidecar`,
   `nemo-sidecar`). The SDK is a fail-loud client; without wired
   sidecars, the `guard_*` methods raise.
-- **It does not produce audit reports or evidence bundles.** Those
-  ship with the SingleAxis commercial control plane (separate
-  private repo). The SDK produces the collection inputs that a
-  commercial-tier evidence pipeline can later materialize into
-  bundles.
+- **It does not produce audit reports or evidence bundles.** Those belong to
+  an external Governance backend. The SDK produces the collection inputs that
+  a customer-owned backend or the SingleAxis Platform can later materialize
+  into bundles.
 - **It does not run managed judge / scoring workers.** OSS ships the
   eval-recording + judge-request *queueing* primitives (`record_eval`,
   `queue_judge`, the `QueueTransport` protocol) and a local/reference

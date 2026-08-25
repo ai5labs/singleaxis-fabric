@@ -22,8 +22,7 @@ owner: project-lead
 > - **L2 commercial — Signed policy bundles + lineage analytics +
 >   governance workflows.** The signed-bundle distribution mechanism,
 >   policy version drift detection, cross-decision policy lineage,
->   and the governance UI live in the SingleAxis commercial control
->   plane (`singleaxis-fabric-internal`). Sections "Signed policy
+>   and the governance UI live in the SingleAxis Platform. Sections "Signed policy
 >   bundles" and "Lineage and governance" below describe that L2
 >   pipeline as design of record; they are not implemented in the OSS
 >   distribution.
@@ -339,10 +338,8 @@ deployments. Auditors querying the Decision Graph can filter for
 `bundle_signature IS NOT NULL` to see only evaluations against
 signed policies.
 
-Bundle signing logic, key management, and bundle distribution are
-out of OSS scope. They live in
-`singleaxis-fabric-internal/components/policy-bundle-service/`
-(future component).
+Bundle signing logic, key management, and bundle distribution are out of OSS
+scope and belong to the private policy-bundle service.
 
 ## Lineage and governance (commercial)
 

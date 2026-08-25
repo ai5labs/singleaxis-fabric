@@ -10,9 +10,8 @@ Specs are numbered with a three-digit zero-padded prefix. New specs take
 the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
-Numbers 013-018 and 024 are allocated to specs in the SingleAxis
-commercial repository, which shares this numbering series. They are
-intentionally absent here; the next unused public number is 025.
+Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
+next unused public number is 026.
 
 ## Status values
 
@@ -52,9 +51,10 @@ Every spec declares a `Status` in its header:
 | [009](009-compliance-mapping.md) | Regulation-to-layer mapping | accepted |
 | [010](010-development-standards.md) | Development, testing, and release standards | accepted |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
-| [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | accepted |
+| [012](012-oss-commercialization-strategy.md) | Public distribution architecture | accepted |
 | [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | implemented |
 | [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | implemented |
 | [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | implemented |
 | [022](022-surface-logging.md) | Agent surface logging — MCP inventory, skills, delegation, hooks, file access | implemented |
 | [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |
+| [025](025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | accepted |

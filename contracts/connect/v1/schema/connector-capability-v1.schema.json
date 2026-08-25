@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/connect/v1/connector-capability-v1.schema.json",
+  "title": "SingleAxis Fabric connector capability manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "connector_id",
+    "display_name",
+    "release",
+    "implementation",
+    "compatibility",
+    "observation",
+    "control",
+    "content",
+    "identity",
+    "authentication",
+    "context_propagation",
+    "data_egress",
+    "verification_evidence",
+    "known_blind_spots"
+  ],
+  "properties": {
+    "schema_version": {"const": "singleaxis.fabric.connect-capability/v1"},
+    "connector_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "maxLength": 128
+    },
+    "display_name": {"type": "string", "minLength": 3, "maxLength": 160},
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "maturity", "distribution"],
+      "properties": {
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
+        "maturity": {"enum": ["illustrative", "experimental", "beta", "stable"]},
+        "distribution": {"enum": ["python-package", "npm-package", "container", "plugin", "external"]}
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "deployment_modes"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "in_process_sdk",
+            "framework_adapter",
+            "gateway_proxy",
+            "otlp_receiver",
+            "vendor_receiver",
+            "ebpf_discovery"
+          ]
+        },
+        "deployment_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["application", "sidecar", "daemonset", "gateway", "collector", "host_agent", "managed_service"]}
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activity_contract", "fabric_versions", "runtimes", "protocols"],
+      "properties": {
+        "activity_contract": {"type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "fabric_versions": {"type": "string", "minLength": 1, "maxLength": 80},
+        "runtimes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 80}},
+        "protocols": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic_surfaces", "decision_semantics", "coverage_basis"],
+      "properties": {
+        "semantic_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/semanticSurface"}
+        },
+        "decision_semantics": {"enum": ["native", "caller_reported", "protocol_preserved", "inferred", "none"]},
+        "coverage_basis": {"type": "string", "minLength": 8, "maxLength": 500}
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interposition", "agent_runtime_actions", "telemetry_pipeline_actions"],
+      "properties": {
+        "interposition": {"enum": ["none", "in_process", "inline_proxy", "telemetry_pipeline", "passive_probe"]},
+        "agent_runtime_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["block", "redact", "authorize", "modify", "escalate"]}
+        },
+        "telemetry_pipeline_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["accept", "reject", "redact", "sample", "route"]}
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_content_behavior", "default_raw_capture", "pre_egress_redaction", "sensitive_field_allowlist"],
+      "properties": {
+        "raw_content_behavior": {"enum": ["excluded", "hash_only", "configurable_raw", "transport_passthrough", "network_metadata_only"]},
+        "default_raw_capture": {"type": "boolean"},
+        "pre_egress_redaction": {"enum": ["not_applicable", "built_in", "operator_configurable", "none"]},
+        "sensitive_field_allowlist": {"type": "boolean"}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "strength", "tenant_partitioning"],
+      "properties": {
+        "source": {"enum": ["application_configuration", "framework_context", "gateway_credential_mapping", "telemetry_attributes", "vendor_metadata", "process_network_inference", "none"]},
+        "strength": {"enum": ["cryptographic", "authenticated_mapping", "asserted", "inferred", "none"]},
+        "tenant_partitioning": {"enum": ["enforced", "validated", "accepted_unverified", "not_available"]}
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingress_supported", "ingress_default", "egress_supported", "egress_default", "credential_handling"],
+      "properties": {
+        "ingress_supported": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/authMethod"}},
+        "ingress_default": {"$ref": "#/$defs/authMethod"},
+        "egress_supported": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/authMethod"}},
+        "egress_default": {"$ref": "#/$defs/authMethod"},
+        "credential_handling": {"type": "string", "minLength": 8, "maxLength": 500}
+      }
+    },
+    "context_propagation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w3c_tracecontext", "baggage", "correlation_limitations"],
+      "properties": {
+        "w3c_tracecontext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receive", "inject", "preserve"],
+          "properties": {
+            "receive": {"type": "boolean"},
+            "inject": {"type": "boolean"},
+            "preserve": {"type": "boolean"}
+          }
+        },
+        "baggage": {"enum": ["unsupported", "pass_through", "allowlisted"]},
+        "correlation_limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 8, "maxLength": 500}}
+      }
+    },
+    "data_egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network_egress", "protocols", "transport_security", "destinations", "default_destination"],
+      "properties": {
+        "network_egress": {"type": "boolean"},
+        "protocols": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}},
+        "transport_security": {"enum": ["not_applicable", "required", "operator_configurable", "delegated"]},
+        "destinations": {"enum": ["none", "operator_configured", "fixed_vendor", "local_only"]},
+        "default_destination": {"type": ["string", "null"], "maxLength": 300}
+      }
+    },
+    "verification_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "path", "claim"],
+        "properties": {
+          "type": {"enum": ["conformance_test", "unit_test", "integration_test", "configuration_test", "design_reference", "none"]},
+          "path": {"type": ["string", "null"], "maxLength": 300},
+          "claim": {"type": "string", "minLength": 8, "maxLength": 500}
+        }
+      }
+    },
+    "known_blind_spots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 8, "maxLength": 500}
+    }
+  },
+  "$defs": {
+    "semanticSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "source"],
+      "properties": {
+        "surface": {
+          "enum": [
+            "decision_boundary", "llm_operation", "tool_operation", "retrieval", "memory",
+            "side_effect", "policy_verdict", "guardrail_verdict", "authorization_verdict",
+            "escalation", "evaluation", "framework_lifecycle", "generic_interaction",
+            "otlp_span", "otlp_log", "process_lifecycle", "network_flow", "file_access_metadata"
+          ]
+        },
+        "source": {"enum": ["native_hook", "caller_reported", "protocol_preserved", "traffic_inferred", "kernel_inferred"]}
+      }
+    },
+    "authMethod": {
+      "enum": ["none", "in_process_boundary", "network_policy_only", "bearer_token", "mtls", "workload_identity", "vendor_defined", "delegated_to_exporter"]
+    }
+  }
+}

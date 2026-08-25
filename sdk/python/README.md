@@ -16,6 +16,68 @@ CrewAI (installed via extras — the core SDK stays framework-neutral).
 
 Beta — v0.7.x.
 
+## `fabricctl`: inspect before you connect
+
+The Python distribution installs `fabricctl`, a read-only-first operations
+CLI. Its MVP never changes host configuration and `verify --local` never
+makes a network request.
+
+```bash
+fabricctl version
+fabricctl doctor
+fabricctl doctor --json
+fabricctl config show
+fabricctl config validate
+fabricctl verify --local
+fabricctl deployment validate fabric-deployment.yaml
+fabricctl deployment digest fabric-deployment.yaml
+fabricctl deployment plan fabric-deployment.yaml
+```
+
+`doctor` checks the supported Python runtime and installed package identity,
+the required `FABRIC_TENANT_ID` and `FABRIC_AGENT_ID`, OTLP endpoint syntax,
+the privacy-sensitive `FABRIC_CAPTURE_LLM_CONTENT` setting, and any configured
+Presidio or NeMo Unix socket. Check IDs and JSON schemas are stable for
+automation. Output does not include sidecar paths, credentials, URL query
+parameters, or fragments.
+
+Exit codes are designed for deployment gates:
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | All checks passed. |
+| `1` | No failures, but operator attention is recommended. |
+| `2` | One or more checks failed. |
+
+`config show` displays only the effective allowlisted configuration; it does
+not dump the process environment. `verify --local` creates a deterministic
+synthetic decision with one model span and one tool span using an in-memory
+exporter, then verifies identity and parent/child correlation.
+
+`deployment validate` accepts bounded UTF-8 YAML or JSON and validates the
+public
+[`FabricDeployment` v1alpha1 contract](../../contracts/management/v1alpha1/README.md).
+It is strict and fail-closed: duplicate keys, unknown fields, unsupported
+connection or content modes, inline secrets/environment dumps, and missing
+assurance-level references produce stable diagnostics and exit `2`.
+
+`deployment digest` validates first, then prints a SHA-256 digest of canonical
+UTF-8 JSON containing every field supplied by the operator. YAML and JSON with
+the same data produce the same digest. Both commands are local-only: they do
+not resolve references, contact SingleAxis, apply configuration, or claim that
+an approval or rollout occurred. Site Controller reconciliation, signature and
+approval verification, reference authorization, rollout status, and effective
+configuration attestations remain future controller semantics.
+
+`deployment plan` turns a valid resource into a deterministic, non-mutating
+installation/readiness plan. JSON output uses the stable
+`fabricctl.deployment-plan/v1` envelope and includes the selected assurance
+level and integration mode, required OSS roles, opaque desired-state
+references, and unverified operator prerequisites with stable IDs. It does not
+resolve references or expose secret values. It never contacts a network,
+cluster, or platform, and it does not render Helm or imply that apply,
+reconciliation, approval verification, or rollout occurred.
+
 ### Shipping now
 
 - `Fabric` client (`Fabric.from_env`, `FabricConfig`, `close()`)

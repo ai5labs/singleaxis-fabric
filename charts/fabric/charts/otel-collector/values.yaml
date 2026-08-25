@@ -47,6 +47,27 @@ service:
     otlpHttp: 4318
     health: 13133
 
+# OTLP ingress transport security. Supplying serverCertificateSecret.name
+# enables TLS for both the gRPC and HTTP receivers. Supplying clientCASecret
+# additionally makes both receivers verify client certificates (mTLS).
+# Secret data is projected into the pod and referenced by file path; it is
+# never copied into the Collector ConfigMap or Helm release values.
+receiver:
+  # Fail the render unless receiver TLS is configured. Regulated profiles
+  # pin this on; the default remains false for local development clients.
+  requireTLS: false
+  # Fail the render unless TLS verifies client certificates against an
+  # operator-provisioned CA. This implies requireTLS.
+  requireClientCertificate: false
+  tls:
+    serverCertificateSecret:
+      name: ""
+      certKey: tls.crt
+      keyKey: tls.key
+    clientCASecret:
+      name: ""
+      key: ca.crt
+
 resources:
   limits:
     cpu: 500m
@@ -74,6 +95,18 @@ readinessProbe:
   initialDelaySeconds: 15
   periodSeconds: 5
   failureThreshold: 3
+
+# Gates liveness/readiness until the Collector has loaded its complete
+# pipeline configuration. These probes report Collector process health;
+# they deliberately do not claim that the remote telemetry backend is
+# reachable. Queue/export failure metrics must be alerted separately.
+startupProbe:
+  httpGet:
+    path: /
+    port: health
+  periodSeconds: 2
+  failureThreshold: 30
+  timeoutSeconds: 1
 
 nodeSelector: {}
 tolerations: []
@@ -105,35 +138,79 @@ fabric:
     enabled: true
     bundlePath: ""       # e.g. /etc/fabric/policy
     # Name of a ConfigMap whose .rego file(s) are mounted at
-    # bundlePath. Without it (or an out-of-band provisioning
-    # mechanism) the bundlePath volume renders as an emptyDir, and an
-    # empty bundle makes fabricpolicy FAIL CLOSED — every record and
-    # span is dropped. Set this whenever bundlePath is set.
+    # bundlePath. A non-empty path without this setting or the
+    # versioned reference policy below is rejected at render time;
+    # the chart never substitutes an emptyDir for a policy bundle.
     bundleConfigMap: ""
+    # A deliberately small, chart-owned policy for installations that
+    # need structurally complete wiring before a tenant policy is ready.
+    # v1 only admits the four Fabric event classes known to fabricguard,
+    # and requires a non-empty tenant_id on the event itself. It is NOT
+    # a tenant authorization policy and must be replaced for production
+    # decisions beyond telemetry egress admission.
+    referencePolicy:
+      enabled: false
+      version: v1
     query: data.fabric.egress.allow
     eventClassAttribute: event_class
 
-  # Presidio redaction via a Unix-socket sidecar. Disabled by default
-  # because it requires a co-located sidecar container; turn on once
-  # you wire `.sidecar` below or mount the socket from another pod.
-  #
-  # When ``enabled: true``, the chart fail-closes unless one of:
-  #   - ``existingSocketProvider`` names the out-of-band component
-  #     that mounts ``unixSocket`` (e.g. a separately-deployed
-  #     presidio-sidecar chart or DaemonSet).
-  #   - ``acceptMissingProvider: true`` is set (smoke/CI renders
-  #     only — runtime will error on every event).
+  # Presidio telemetry redaction over a pod-local Unix socket. Enabling
+  # the processor requires the embedded sidecar below: a provider name
+  # is not evidence that a socket is actually mounted into this pod.
+  # This protects captured telemetry before export; it does not inspect
+  # or redact prompts before an LLM call.
   redact:
     enabled: false
     unixSocket: /var/run/fabric/presidio.sock
     timeoutMs: 500
     eventClassAttribute: event_class
+    # Secure default: redact valid UTF-8 bytes and fail closed on opaque
+    # bytes. `passthrough` is a legacy exemption and must be selected
+    # deliberately; `reject` drops every non-empty byte value.
+    byteHandling: redact_utf8
     skipAttributes:
       - tenant_id
       - agent_id
       - decision_id
-    existingSocketProvider: ""
-    acceptMissingProvider: false
+    embedded:
+      enabled: false
+      image:
+        repository: ghcr.io/singleaxis/fabric-presidio-sidecar
+        tag: ""          # defaults to this chart's appVersion
+        pullPolicy: IfNotPresent
+      # The sidecar refuses to start without a real tenant HMAC key.
+      # The Secret is customer-created and is never rendered by Helm.
+      tenantKeySecret:
+        name: ""
+        key: tenant.key
+      redactionMode: hmac
+      # Dev-only no-op escape hatch supported by the image. The chart
+      # rejects it by default for all production-shaped installs.
+      allowPassthrough: false
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        # Must match the Collector: the UDS is intentionally mode 0600.
+        runAsUser: 65532
+        runAsGroup: 65532
+        capabilities:
+          drop: [ALL]
+      resources:
+        limits:
+          cpu: "1000m"
+          memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      startupProbe:
+        periodSeconds: 2
+        failureThreshold: 30
+        timeoutSeconds: 2
+      readinessProbe:
+        periodSeconds: 5
+        failureThreshold: 3
+        timeoutSeconds: 2
 
   # Deterministic HMAC sampler. Either `hmacKey` (inline, not
   # recommended outside dev) or `hmacKeySecret` (Secret name + key)
@@ -185,7 +262,7 @@ fabric:
 # SingleAxis commercial Telemetry Bridge service, which is NOT shipped
 # in this OSS distribution.
 #
-# WHAT HAPPENS WHEN THIS IS EMPTY: the `otlphttp/fabric` exporter is
+# WHAT HAPPENS WHEN THIS IS EMPTY: the `otlp_http/fabric` exporter is
 # not rendered at all, and the pipelines fall back to the `debug`
 # exporter. Spans go to the collector pod's stdout and are readable
 # with `kubectl logs`; NOTES.txt prints a loud post-install warning.
@@ -215,7 +292,30 @@ fabric:
 # Bridge, use the Bridge's ingress endpoint here.
 exporter:
   endpoint: ""
+  # Transport security. `insecure=true` is retained as the dev default
+  # because a bare chart has no endpoint. Regulated profiles set false,
+  # require an https:// endpoint, and reject insecureSkipVerify.
   insecure: true
+  insecureSkipVerify: false
+  requireTLS: false
+  tls:
+    # Secrets are created by the operator; Helm renders only file paths.
+    caSecret:
+      name: ""
+      key: ca.crt
+    clientCertificateSecret:
+      name: ""
+      certKey: tls.crt
+      keyKey: tls.key
+  auth:
+    # Adds exactly one secret-backed HTTP header to OTLP/HTTP requests.
+    # The secret value is injected into the pod environment and is never
+    # copied into values, the rendered ConfigMap, or Helm release data.
+    headerName: Authorization
+    secret:
+      name: ""
+      key: authorization
+  requireAuth: false
   # Fail the render when `endpoint` is empty instead of falling back to
   # the debug exporter. Default false, so a bare install works and is
   # loudly warned about. Profiles that make a retention or compliance
@@ -223,6 +323,36 @@ exporter:
   # regulated deployment should be forced to name its backend rather
   # than quietly inherit a dev posture. `eu-ai-act-high-risk` sets it.
   requireEndpoint: false
+
+  # Exporter helper resilience. An in-memory queue survives short backend
+  # failures but not pod/node loss. Persistence switches the workload to a
+  # StatefulSet and creates one retained PVC per replica, unless an existing
+  # claim is selected (existing claims are restricted to one replica).
+  sendingQueue:
+    enabled: true
+    numConsumers: 10
+    queueSize: 1000
+    blockOnOverflow: false
+    persistence:
+      enabled: false
+      directory: /var/lib/otelcol-fabric/storage
+      fsync: false
+      existingClaim: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 10Gi
+      storageClass: ""
+      annotations: {}
+  retry:
+    enabled: true
+    initialInterval: 5s
+    maxInterval: 30s
+    maxElapsedTime: 5m
+  timeout: 30s
+
+  # Compliance profiles use this render-time invariant rather than relying
+  # on a convention spread across several independent values.
+  requireDurableQueue: false
 
 # Also write to the debug exporter? Useful in dev, noisy in prod.
 # NOTE: the debug exporter is added automatically whenever
@@ -268,4 +398,14 @@ podDisruptionBudget:
 networkPolicy:
   enabled: false
   ingressFrom: []
+  # Exporter egress is distinct from additional destinations so regulated
+  # profiles can prove that an operator deliberately named both a peer and
+  # its ports. The chart cannot infer a CIDR or namespace from an arbitrary
+  # exporter URL.
+  exporterEgress:
+    requireExplicit: false
+    to: []
+    ports: []
+  # Additional non-exporter peers. This compatibility surface remains for
+  # DNS-independent internal services and operator extensions.
   egressTo: []
