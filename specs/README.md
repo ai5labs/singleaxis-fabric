@@ -58,3 +58,4 @@ Every spec declares a `Status` in its header:
 | [022](022-surface-logging.md) | Agent surface logging — MCP inventory, skills, delegation, hooks, file access | implemented |
 | [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |
 | [025](025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | accepted |
+| [026](026-fabricctl-lifecycle.md) | `fabricctl` lifecycle and deployment bundle | draft |
