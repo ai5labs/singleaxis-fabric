@@ -402,15 +402,15 @@ jobs:
           fi
       - name: Helm lint (subcharts)
         if: steps.filter.outputs.helm == 'true'
-        # Lint each subchart that has a Chart.yaml. The sampler
-        # validator requires an HMAC key source, so pass one.
+        # Lint every subchart against its own defaults. Do not inject
+        # chart-specific values into siblings with strict schemas.
         run: |
           shopt -s nullglob
           found=0
           for chart in charts/fabric/charts/*/Chart.yaml; do
             dir="$(dirname "$chart")"
             echo "::group::helm lint ${dir}"
-            helm lint "${dir}" --set fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+            helm lint "${dir}"
             echo "::endgroup::"
             found=1
           done
@@ -423,9 +423,21 @@ jobs:
           shopt -s nullglob
           for chart in charts/fabric/charts/*/Chart.yaml; do
             dir="$(dirname "$chart")"
+            name="$(basename "$dir")"
+            args=()
+            case "$name" in
+              langfuse)
+                args+=(--set-string database.url=postgresql://fabric:review-only@database.invalid/fabric)
+                ;;
+              presidio-sidecar)
+                args+=(--set tenantKey.existingSecret=fabric-presidio-tenant-key)
+                ;;
+              update-agent)
+                args+=(--set config.allowPlaceholderKey=true)
+                ;;
+            esac
             echo "::group::helm template ${dir}"
-            helm template ci "${dir}" --set fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
-              | head -1
+            helm template ci "${dir}" "${args[@]}" | head -1
             echo "::endgroup::"
           done
       - name: Chart render assertions

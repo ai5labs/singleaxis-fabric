@@ -21,6 +21,20 @@ expect_failure() {
   }
 }
 
+expect_failure_either() {
+  local expected_a="$1"
+  local expected_b="$2"
+  shift 2
+  local output
+  if output="$(helm template relay "${chart_dir}" "$@" 2>&1)"; then
+    fail "render unexpectedly succeeded: $*"
+  fi
+  if ! grep -Fq "${expected_a}" <<<"${output}" && ! grep -Fq "${expected_b}" <<<"${output}"; then
+    echo "${output}" >&2
+    fail "failure contained neither supported Helm error: ${expected_a} | ${expected_b}"
+  fi
+}
+
 default_render="$(helm template relay "${chart_dir}")"
 grep -q 'kind: StatefulSet' <<<"${default_render}" || fail "default is not a StatefulSet"
 grep -q 'emptyDir: {}' <<<"${default_render}" || fail "development queue is not visibly ephemeral"
@@ -45,7 +59,7 @@ grep -q 'create_directory: true' <<<"${production_render}" || fail "queue direct
 grep -q 'block_on_overflow: true' <<<"${production_render}" || fail "queue backpressure missing"
 grep -q 'max_elapsed_time: 0s' <<<"${production_render}" || fail "indefinite retry missing"
 grep -q 'valueFrom:' <<<"${production_render}" || fail "auth is not sourced from a Secret"
-grep -Fq '${env:FABRIC_RELAY_AUTH_HEADER}' <<<"${production_render}" || fail "config has no env reference"
+grep -Fq "\${env:FABRIC_RELAY_AUTH_HEADER}" <<<"${production_render}" || fail "config has no env reference"
 test "$(grep -c 'client_ca_file:' <<<"${production_render}")" -eq 2 || fail "receiver mTLS is not configured for both protocols"
 grep -q 'secretName: relay-server-tls' <<<"${production_render}" || fail "receiver server TLS Secret not mounted"
 grep -q 'secretName: relay-client-ca' <<<"${production_render}" || fail "receiver client CA Secret not mounted"
@@ -54,10 +68,12 @@ grep -q 'cidr: 203.0.113.0/24' <<<"${production_render}" || fail "explicit egres
 
 # There is no inline credential input in the schema. This must be rejected,
 # preventing credentials from entering ConfigMaps, Helm release state or GitOps.
-expect_failure "additional properties 'value' not allowed" \
+expect_failure_either "additional properties 'value' not allowed" \
+  "Additional property value is not allowed" \
   --set destination.auth.value=Bearer-secret
 
-expect_failure "additional properties 'certificate' not allowed" \
+expect_failure_either "additional properties 'certificate' not allowed" \
+  "Additional property certificate is not allowed" \
   --set receiver.tls.serverCertificateSecret.certificate=private-material
 
 expect_failure 'does not match pattern' \
