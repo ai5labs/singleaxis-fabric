@@ -56,7 +56,7 @@ def test_package_is_built_once_and_attached_to_github_release() -> None:
 
     assert text.count("npm run package:qualified") == 1
     assert "npm run package:qualified" in qualify
-    assert "--expected-version \"${VERSION}\"" in qualify
+    assert '--expected-version "${VERSION}"' in qualify
     assert "--smoke" in qualify
     assert "name: qualified-typescript-dist" in qualify
     assert "publish-npm," in github_release

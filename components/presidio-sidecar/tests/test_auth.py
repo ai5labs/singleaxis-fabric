@@ -48,8 +48,7 @@ def test_v1_rejects_missing_and_wrong_token(monkeypatch: pytest.MonkeyPatch) -> 
             == 401
         )
         assert (
-            c.post("/v1/redact", json=_REDACT, headers={"X-Fabric-Token": "s3c"}).status_code
-            == 401
+            c.post("/v1/redact", json=_REDACT, headers={"X-Fabric-Token": "s3c"}).status_code == 401
         )
 
 

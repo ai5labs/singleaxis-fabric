@@ -8,7 +8,7 @@ maintaining a mock surface."""
 from __future__ import annotations
 
 import base64
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -149,4 +149,4 @@ def locked_config_factory():  # type: ignore[no-untyped-def]
 @pytest.fixture
 def locked_config(locked_config_factory: Any) -> dict[str, Any]:
     """An otel-collector config with every locked control enabled."""
-    return locked_config_factory()
+    return cast(dict[str, Any], locked_config_factory())

@@ -87,9 +87,7 @@ def _is_uds_request(request: Request) -> bool:
 
     server = request.scope.get("server")
     return (
-        isinstance(server, tuple)
-        and len(server) == _ASGI_SERVER_TUPLE_LENGTH
-        and server[1] is None
+        isinstance(server, tuple) and len(server) == _ASGI_SERVER_TUPLE_LENGTH and server[1] is None
     )
 
 
