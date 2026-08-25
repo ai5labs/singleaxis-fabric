@@ -102,6 +102,44 @@ def test_invalid_fixtures_fail_schema_and_runtime(path: Path) -> None:
     assert diagnostics
 
 
+@pytest.mark.parametrize(
+    ("schema_name", "fixture_root"),
+    [
+        ("fabric-install-target.schema.json", _CONTRACT / "install-target"),
+        (
+            "fabric-secret-requirements.schema.json",
+            _CONTRACT / "derived" / "secret-requirements",
+        ),
+        (
+            "fabric-installation-plan.schema.json",
+            _CONTRACT / "derived" / "installation-plan",
+        ),
+        (
+            "fabric-bundle-manifest.schema.json",
+            _CONTRACT / "derived" / "bundle-manifest",
+        ),
+        (
+            "fabric-bundle-build-result.schema.json",
+            _CONTRACT / "derived" / "bundle-build-result",
+        ),
+        (
+            "fabric-bundle-verification-report.schema.json",
+            _CONTRACT / "derived" / "bundle-verification-report",
+        ),
+    ],
+)
+def test_offline_bundle_contract_fixtures(
+    schema_name: str,
+    fixture_root: Path,
+) -> None:
+    schema = json.loads((_CONTRACT / "schema" / schema_name).read_text(encoding="utf-8"))
+    validator = jsonschema.Draft202012Validator(schema)
+    for path in sorted((fixture_root / "valid").iterdir()):
+        assert not list(validator.iter_errors(_load_fixture(path))), path
+    for path in sorted((fixture_root / "invalid").iterdir()):
+        assert list(validator.iter_errors(_load_fixture(path))), path
+
+
 def test_validate_json_passes_offline_with_stable_envelope(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -235,6 +273,32 @@ def test_wrong_document_type_and_invalid_references_fail_closed() -> None:
         "deployment.identity.invalid_name",
         "deployment.reference.invalid",
     }
+
+
+@pytest.mark.parametrize(
+    "credential_like_reference",
+    [
+        "AKIAIOSFODNN7EXAMPLE",
+        "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        "0123456789abcdef0123456789abcdef01234567",
+    ],
+)
+def test_credential_like_references_fail_without_echoing_value(
+    credential_like_reference: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    value = _load_fixture(_CONTRACT / "valid" / "a0-local.yaml")
+    assert isinstance(value, dict)
+    value["spec"]["connection"]["tenantIdFrom"] = credential_like_reference
+    path = tmp_path / "deployment.yaml"
+    path.write_text(yaml.safe_dump(value), encoding="utf-8")
+
+    assert cli.main(["deployment", "validate", str(path), "--json"]) == 2
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["diagnostics"][0]["id"] == "deployment.reference.sensitive"
+    assert credential_like_reference not in output
 
 
 def test_cli_help_discloses_deployment_but_no_apply_surface(

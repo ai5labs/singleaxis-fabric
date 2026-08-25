@@ -1,7 +1,7 @@
 ---
 title: fabricctl lifecycle and deployment bundle
-status: draft
-revision: 1
+status: active-build
+revision: 2
 last_updated: 2026-08-25
 owner: product-architecture
 ---
@@ -21,17 +21,16 @@ account. The Python and TypeScript packages remain language SDKs distributed
 through PyPI and npm; they are not alternative implementations of the
 deployment CLI.
 
-This specification scopes the next build. It does not claim that the complete
-workflow is implemented today.
+This specification defines the lifecycle target and records implementation
+status by slice. It does not claim that install or reconciliation exists where
+the current-state section says it is deferred.
 
 ## Problem
 
-Fabric currently exposes two commands named `fabricctl`:
-
-- the released Go binary implements Kubernetes-oriented `doctor` and
-  `version`; and
-- the Python distribution implements local SDK checks plus offline
-  `FabricDeployment` validation, digest, and planning.
+Fabric historically exposed two commands named `fabricctl`. The Go binary now
+owns `version`, `doctor`, guided `init`, and offline `FabricDeployment`
+validation, digest, and planning. A legacy Python console entry point still
+exists during migration and must not become a second lifecycle implementation.
 
 Two independently implemented operator interfaces cannot provide stable
 automation, support, or evidence in a regulated deployment. They may disagree
@@ -152,38 +151,60 @@ rollout orchestration remain outside this OSS repository.
 
 ## Canonical configuration and generated bundle
 
-`singleaxis.yaml` is the canonical desired-state input. For the first slice it
-is one `FabricDeployment` resource. Later contract revisions may support a
-multi-resource bundle without changing the command lifecycle.
+`singleaxis.yaml` is the canonical agent desired state and contains one
+`FabricDeployment`. `install-target.yaml` is a separate canonical
+`FabricInstallTarget`; it binds the deployment digest to one exact
+distribution, public profile, and Kubernetes Helm target. Keeping these
+resources separate allows the same reviewed agent posture to be targeted at a
+different environment without changing or re-signing the agent definition.
+
+Offline Install Bundle v1 contains exactly six files:
 
 `fabricctl init --output-dir <directory>` writes a reviewable bundle:
 
 | File | Authority | Contents |
 |---|---|---|
 | `singleaxis.yaml` | canonical input | deployment identity, assurance level, connection mode, references, selected controls, Observe posture, and rollout reference |
+| `install-target.yaml` | canonical input | deployment digest binding, pinned OCI distribution and profile, Kubernetes context, namespace, release name, and non-secret environment bindings |
 | `fabric-values.yaml` | derived | deterministic Helm values rendered from the canonical input and selected public profile |
 | `secrets-required.yaml` | derived | required secret names, types, scopes, and provisioning instructions; never secret values |
-| `installation-plan.json` | derived | ordered actions, prerequisites, immutable artifacts, target, effects, and plan digest |
-| `bundle-manifest.json` | derived | contract versions, file digests, generator identity, creation time, and optional signature/approval metadata |
+| `installation-plan.json` | derived | resource digests, pinned chart/profile, target, offline actions, effects, and unresolved prerequisites |
+| `bundle-manifest.json` | derived | byte digests for the other five files, deterministic bundle digest, and generator name/version/commit |
 
-Derived files are replaced only after the operator confirms the write. File
-writes are atomic, existing files are not silently overwritten, and files use
-restrictive permissions where the operating system supports them. The bundle
-manifest covers every file byte-for-byte and excludes itself through an
-explicit manifest rule. Signing is detached or uses a contract-defined
-signature envelope.
+The authoritative bundle manifest contains no wall-clock timestamp. Time is
+an observation made by an installer or verifier and belongs in a signed
+receipt, not in deterministic desired state. The manifest excludes itself and
+computes `bundle_digest` by sorting its five entries by path, concatenating
+each UTF-8 path, one NUL byte, its lowercase 64-character SHA-256, and one LF
+byte, then hashing the resulting bytes with SHA-256.
 
-The plan includes:
+Files are created only after the operator confirms the write. Existing files
+are never replaced, each new file uses restrictive permissions and is synced,
+and newly created files are rolled back if the six-file commit cannot finish.
+The same generation engine is callable non-interactively by CI. The manifest
+covers every non-manifest file byte-for-byte and excludes itself through an
+explicit rule. Bundle signing is not implemented in Slice 1; Slice 2 must use
+a detached signature or a separately defined signature envelope so
+deterministic desired-state bytes do not self-reference.
 
-- desired-state digest and bundle digest;
-- selected backend, cluster context, namespace, and environment identity;
-- exact chart, image, binary, policy, and profile digests;
-- operations classified as create, update, replace, delete, or verify;
-- required references and whether each is unresolved, present, or verified;
-- approval identity and scope when required;
-- safety posture, expected telemetry destination, and trust boundaries;
-- rollback revision and compatibility constraints; and
-- stable diagnostic and action identifiers.
+Offline Install Bundle v1 supports Kubernetes Helm only. Docker Compose and
+local development remain deferred backends and do not appear as valid
+`FabricInstallTarget` values. The target has no arbitrary Helm-values map and
+cannot contain secret values; profile-driven rendering is the sole source of
+`fabric-values.yaml`.
+
+The current offline plan includes:
+
+- deployment and install-target digests;
+- selected Helm backend, expected cluster context, namespace, and release;
+- exact chart OCI reference/version/digest and profile digest;
+- ordered validate, render, and verify actions;
+- unresolved prerequisites with stable identifiers; and
+- explicit offline, non-mutating, readiness-unverified posture.
+
+The mutation plan introduced in Slice 2 must additionally identify resolved
+image and binary digests, create/update/replace/delete effects, approval scope,
+rollback revision, compatibility constraints, and stable target identity.
 
 Planning must not read secret values, contact a secret store, contact
 SingleAxis, or mutate a cluster. An opt-in `--refresh` operation may resolve
@@ -283,25 +304,30 @@ verified approved configuration during a management outage.
 
 ## Implementation slices
 
-### Slice 0 — one CLI and one contract engine
+### Slice 0 — one CLI and one contract engine (complete)
 
 - Port `FabricDeployment` validation, canonicalization, digest, and offline
   plan behavior to the Go CLI against shared contract fixtures.
-- Define stable JSON schemas and exit codes for validation, plan, and doctor.
-- Resolve the Python console-script collision and publish a deprecation path.
-- Add cross-language conformance tests proving identical accepted/rejected
-  fixtures and digests.
+- Define stable validation, plan identity, and exit semantics.
+- Establish the Go binary as the canonical CLI while keeping Python behavior
+  limited to a documented compatibility window.
+- Add cross-language conformance coverage for accepted/rejected
+  `FabricDeployment` fixtures and canonical digests.
 
 Exit criterion: one canonical binary can reproduce every current Python
 deployment validation and plan result without network or mutation.
 
-### Slice 1 — guided bundle generation
+### Slice 1 — guided bundle generation (complete)
 
 - Implement `init`, profile explanations, secret-reference collection, safe
-  review, and atomic bundle writes.
-- Implement top-level `plan --config` while retaining compatibility aliases
-  for current `deployment validate|digest|plan` commands.
-- Generate and validate all five bundle files.
+  review, and no-clobber bundle writes.
+- Implement non-interactive `bundle build` using the same engine while
+  retaining current `deployment validate|digest|plan` inspection commands.
+- Generate and validate all six Offline Install Bundle v1 files.
+- Validate the separate `FabricInstallTarget`, derived secret-requirements,
+  installation-plan, and bundle-manifest schemas.
+- Re-verify canonical inputs and every derived artifact through
+  `doctor --offline --bundle`, including re-hashed stale content.
 - Support Kubernetes only; label other backends unavailable.
 
 Exit criterion: interactive and non-interactive inputs produce equivalent,
@@ -376,20 +402,26 @@ under component, network, and management-service failure.
 
 ## Current state and migration
 
-At the time of this draft:
+At this revision:
 
-- the Go CLI provides `doctor` and `version` and is distributed as a signed
-  standalone release artifact;
-- the Python/PyPI console script provides local `doctor`, local `verify`, safe
-  configuration inspection, and offline `FabricDeployment` validation,
-  digest, and plan;
+- Slice 0 is complete: the Go CLI owns offline `FabricDeployment` validate,
+  digest, and plan behavior;
+- Slice 1 is complete: guided `init` and non-interactive `bundle build`
+  generate the exact six-file bundle, and offline doctor reconstructs and
+  verifies it without target access;
+- the public contract defines the separate `FabricInstallTarget` and the
+  derived secret-requirements, installation-plan, and bundle-manifest
+  artifacts;
+- the Python/PyPI console script is compatibility surface, not an alternative
+  place to add lifecycle features;
 - no CLI command installs, connects, upgrades, rolls back, or uploads support
   data; and
-- the private Management service does not yet generate and reconcile this
+- the private Management service does not yet generate and reconcile the
   complete public bundle.
 
-Slice 0 is therefore mandatory before adding the wizard or mutation. Adding
-new commands to both current CLIs would deepen an unsafe product split.
+Installation mutation remains blocked until Slice 2 defines pinned artifact
+and component-image verification, authorization, receipts, failure semantics,
+and recovery as enforceable contracts rather than CLI convenience behavior.
 
 ## References
 
