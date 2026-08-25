@@ -98,31 +98,30 @@ fabric:
 
     traceProcessingEnabled: true
 
-  # OPA policy gate. Bundle is optional — without it the processor is
-  # wired but passes everything through, which lets an operator stage
-  # the pipeline before shipping Rego.
+  # OPA policy gate. Disabled until a real policy ConfigMap is named.
+  # Enabling a no-op policy is unsafe: it looks enforced while passing
+  # every event. When enabled, bundlePath and bundleConfigMap are both
+  # required and the chart mounts that ConfigMap read-only.
   policy:
-    enabled: true
+    enabled: false
     bundlePath: ""       # e.g. /etc/fabric/policy
-    # Name of a ConfigMap whose .rego file(s) are mounted at
-    # bundlePath. Without it (or an out-of-band provisioning
-    # mechanism) the bundlePath volume renders as an emptyDir, and an
-    # empty bundle makes fabricpolicy FAIL CLOSED — every record and
-    # span is dropped. Set this whenever bundlePath is set.
+    # Name of an existing ConfigMap containing one or more .rego files.
+    # The chart deliberately never creates an empty policy volume.
     bundleConfigMap: ""
     query: data.fabric.egress.allow
     eventClassAttribute: event_class
 
-  # Presidio redaction via a Unix-socket sidecar. Disabled by default
-  # because it requires a co-located sidecar container; turn on once
-  # you wire `.sidecar` below or mount the socket from another pod.
+  # Presidio redaction over a Unix socket. Disabled by default. When
+  # enabled, provider.mode must select a realizable Kubernetes
+  # composition:
   #
-  # When ``enabled: true``, the chart fail-closes unless one of:
-  #   - ``existingSocketProvider`` names the out-of-band component
-  #     that mounts ``unixSocket`` (e.g. a separately-deployed
-  #     presidio-sidecar chart or DaemonSet).
-  #   - ``acceptMissingProvider: true`` is set (smoke/CI renders
-  #     only — runtime will error on every event).
+  #   sidecar        Co-locate the Fabric Presidio image in this pod
+  #                  and share an emptyDir socket directory. This is
+  #                  the recommended and tested topology.
+  #   externalVolume Mount an operator-supplied Kubernetes volume into
+  #                  the Collector. Another workload is responsible for
+  #                  creating the socket on that volume. Use only with a
+  #                  volume implementation that supports Unix sockets.
   redact:
     enabled: false
     unixSocket: /var/run/fabric/presidio.sock
@@ -132,6 +131,46 @@ fabric:
       - tenant_id
       - agent_id
       - decision_id
+    provider:
+      mode: ""
+      sidecar:
+        image:
+          repository: ghcr.io/singleaxis/fabric-presidio-sidecar
+          tag: ""          # defaults to this chart's appVersion
+          pullPolicy: IfNotPresent
+        tenantKeySecret:
+          name: ""
+          key: tenant.key
+        redactionMode: hmac
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          capabilities:
+            drop: [ALL]
+      externalVolume:
+        # Mount point shared with the external socket provider. The
+        # unixSocket value must resolve underneath this directory.
+        mountPath: /var/run/fabric
+        # A Kubernetes VolumeSource object, for example:
+        #   persistentVolumeClaim:
+        #     claimName: fabric-presidio-socket
+        # or (for a node-local provider) a CSI/hostPath source approved
+        # by the operator's security policy.
+        volumeSource: {}
+
+    # Removed unsafe compatibility keys. They remain parseable so old
+    # values fail with an actionable migration error rather than being
+    # silently ignored; neither can satisfy provider validation.
     existingSocketProvider: ""
     acceptMissingProvider: false
 
@@ -215,6 +254,9 @@ fabric:
 # Bridge, use the Bridge's ingress endpoint here.
 exporter:
   endpoint: ""
+  # Development convenience for local plaintext collectors only.
+  # Any profile setting requireEndpoint=true must use HTTPS and set
+  # this false; render-time validation rejects a weaker posture.
   insecure: true
   # Fail the render when `endpoint` is empty instead of falling back to
   # the debug exporter. Default false, so a bare install works and is

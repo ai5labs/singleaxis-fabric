@@ -5,7 +5,7 @@ description: |
   fabricguard, fabricpolicy, fabricredact, and fabricsampler processors
   plus the standard OTLP receivers and exporters.
 type: application
-version: 0.3.0
+version: 0.4.0
 appVersion: "0.7.0"
 kubeVersion: ">=1.29.0-0"
 keywords:

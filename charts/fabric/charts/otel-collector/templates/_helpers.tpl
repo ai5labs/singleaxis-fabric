@@ -74,31 +74,97 @@ with a bad key).
 {{- end -}}
 
 {{/*
-Validate fabric.redact config.
+Return the directory mounted into the Collector for the redaction
+socket. In sidecar mode it is derived from unixSocket; in external
+volume mode the operator declares it explicitly.
+*/}}
+{{- define "otel-collector.redactSocketMountPath" -}}
+{{- if eq .Values.fabric.redact.provider.mode "sidecar" -}}
+{{- dir .Values.fabric.redact.unixSocket -}}
+{{- else -}}
+{{- .Values.fabric.redact.provider.externalVolume.mountPath -}}
+{{- end -}}
+{{- end -}}
 
-``fabric.redact.enabled: true`` wires the fabricredact processor to a
-Unix socket at ``fabric.redact.unixSocket``. The Collector chart does
-not render a Presidio sidecar — that ships in components/presidio-sidecar
-as a dedicated chart (TBD). Without a socket provider this processor
-will permanently error.
-
-Fail-closed unless the operator has explicitly acknowledged one of:
-
-  fabric.redact.existingSocketProvider: <name>
-      Name of an out-of-band component (e.g. sidecar chart, DaemonSet)
-      that mounts the socket into this pod.
-
-  fabric.redact.acceptMissingProvider: true
-      Escape hatch for CI / smoke renders. The Collector will boot
-      but the redact processor will fail on every event — suitable
-      only for template verification, never for a real install.
+{{/*
+Validate fabric.redact config. Redaction can only be enabled when the
+rendered pod has a concrete provider and socket volume. A descriptive
+string and the old acceptMissingProvider escape hatch are deliberately
+not accepted as proof of a provider.
 */}}
 {{- define "otel-collector.validateRedact" -}}
 {{- if .Values.fabric.redact.enabled -}}
-{{- $provider := .Values.fabric.redact.existingSocketProvider | default "" -}}
-{{- $accept := .Values.fabric.redact.acceptMissingProvider | default false -}}
-{{- if and (eq $provider "") (not $accept) -}}
-{{- fail (printf "fabric.redact.enabled=true but no socket provider configured. Name the component that mounts %s, or accept a broken redact processor for a smoke render. From the fabric umbrella chart the value paths are prefixed with the subchart alias:\n  --set otel-collector.fabric.redact.existingSocketProvider=<name>\n  --set otel-collector.fabric.redact.acceptMissingProvider=true   (renders only; runtime errors on every event)\nInstalling this subchart directly, drop the `otel-collector.` prefix. The presidio-sidecar subchart IS bundled in the umbrella — enable it with --set presidioSidecar.enabled=true and --set presidio-sidecar.tenantKey.existingSecret=<secret>, then point existingSocketProvider at it." .Values.fabric.redact.unixSocket) -}}
+{{- $mode := .Values.fabric.redact.provider.mode | default "" -}}
+{{- if or .Values.fabric.redact.existingSocketProvider .Values.fabric.redact.acceptMissingProvider -}}
+{{- if eq $mode "" -}}
+{{- fail "fabric.redact existingSocketProvider/acceptMissingProvider cannot prove a realizable provider. Migrate to fabric.redact.provider.mode=sidecar (recommended) or externalVolume; enabled redaction never permits a missing provider." -}}
+{{- end -}}
+{{- end -}}
+{{- if not (has $mode (list "sidecar" "externalVolume")) -}}
+{{- fail "fabric.redact.enabled=true requires fabric.redact.provider.mode=sidecar or externalVolume" -}}
+{{- end -}}
+{{- if not (hasPrefix "/" .Values.fabric.redact.unixSocket) -}}
+{{- fail "fabric.redact.unixSocket must be an absolute path" -}}
+{{- end -}}
+{{- $socketPath := .Values.fabric.redact.unixSocket -}}
+{{- $cleanSocketPath := clean $socketPath -}}
+{{- if ne $socketPath $cleanSocketPath -}}
+{{- fail "fabric.redact.unixSocket must already be normalized (no duplicate separators, '.' segments, or '..' traversal)" -}}
+{{- end -}}
+{{- if hasSuffix "/" $socketPath -}}
+{{- fail "fabric.redact.unixSocket must name a socket file, not a directory" -}}
+{{- end -}}
+{{- $socketDir := dir $cleanSocketPath -}}
+{{- if or (eq $socketDir "/") (eq $socketDir ".") -}}
+{{- fail "fabric.redact.unixSocket must be located in a non-root absolute directory; mounting '/' as the socket volume is forbidden" -}}
+{{- end -}}
+{{- if eq $mode "sidecar" -}}
+{{- if not .Values.fabric.redact.provider.sidecar.image.repository -}}
+{{- fail "fabric.redact.provider.sidecar.image.repository is required" -}}
+{{- end -}}
+{{- if not .Values.fabric.redact.provider.sidecar.tenantKeySecret.name -}}
+{{- fail "fabric.redact provider sidecar requires provider.sidecar.tenantKeySecret.name; the redactor refuses to start without a tenant-specific HMAC key" -}}
+{{- end -}}
+{{- if not .Values.fabric.redact.provider.sidecar.tenantKeySecret.key -}}
+{{- fail "fabric.redact provider sidecar requires provider.sidecar.tenantKeySecret.key" -}}
+{{- end -}}
+{{- if not (has .Values.fabric.redact.provider.sidecar.redactionMode (list "hmac" "tag")) -}}
+{{- fail "fabric.redact.provider.sidecar.redactionMode must be hmac or tag" -}}
+{{- end -}}
+{{- else -}}
+{{- $external := .Values.fabric.redact.provider.externalVolume -}}
+{{- if or (not $external.mountPath) (not (hasPrefix "/" $external.mountPath)) -}}
+{{- fail "fabric.redact.provider.externalVolume.mountPath must be an absolute path" -}}
+{{- end -}}
+{{- $cleanMountPath := clean $external.mountPath -}}
+{{- if or (ne $external.mountPath $cleanMountPath) (eq $cleanMountPath "/") -}}
+{{- fail "fabric.redact.provider.externalVolume.mountPath must be a normalized, non-root absolute directory" -}}
+{{- end -}}
+{{- if not (hasPrefix (printf "%s/" (trimSuffix "/" $cleanMountPath)) $cleanSocketPath) -}}
+{{- fail "fabric.redact.unixSocket must be located underneath fabric.redact.provider.externalVolume.mountPath" -}}
+{{- end -}}
+{{- if empty $external.volumeSource -}}
+{{- fail "fabric.redact.provider.externalVolume.volumeSource must contain a real Kubernetes VolumeSource (for example persistentVolumeClaim, csi, or an approved hostPath)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+An enabled policy must have actual Rego mounted into the pod. The old
+empty bundle path and emptyDir behavior produced either a silent no-op
+or a fail-closed collector that dropped the entire audit stream.
+*/}}
+{{- define "otel-collector.validatePolicy" -}}
+{{- if .Values.fabric.policy.enabled -}}
+{{- if not .Values.fabric.policy.bundlePath -}}
+{{- fail "fabric.policy.enabled=true requires fabric.policy.bundlePath" -}}
+{{- end -}}
+{{- if not (hasPrefix "/" .Values.fabric.policy.bundlePath) -}}
+{{- fail "fabric.policy.bundlePath must be an absolute path" -}}
+{{- end -}}
+{{- if not .Values.fabric.policy.bundleConfigMap -}}
+{{- fail "fabric.policy.enabled=true requires fabric.policy.bundleConfigMap naming an existing ConfigMap with one or more .rego files; the chart never mounts an empty policy volume" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -134,6 +200,12 @@ escape. Profiles that cannot accept a stdout-only posture set
 {{- define "otel-collector.validateExporter" -}}
 {{- if and .Values.exporter.requireEndpoint (not .Values.exporter.endpoint) -}}
 {{- fail "otel-collector.exporter.endpoint is empty and this profile sets exporter.requireEndpoint=true. The stdout debug-exporter fallback is a dev posture: pod stdout is not durable and is not an audit trail, so a profile making a retention or compliance claim must name a real backend. Set --set otel-collector.exporter.endpoint=<OTLP/HTTP url> (Datadog/Honeycomb intake, your own collector chain, or the SingleAxis commercial Telemetry Bridge ingress). To render this profile without a backend anyway, pass --set otel-collector.exporter.requireEndpoint=false and understand that spans will only reach pod stdout." -}}
+{{- end -}}
+{{- if and .Values.exporter.requireEndpoint .Values.exporter.endpoint (not (hasPrefix "https://" .Values.exporter.endpoint)) -}}
+{{- fail "otel-collector.exporter.requireEndpoint=true requires an https:// exporter.endpoint; regulated profiles cannot export audit telemetry over plaintext HTTP" -}}
+{{- end -}}
+{{- if and .Values.exporter.requireEndpoint .Values.exporter.insecure -}}
+{{- fail "otel-collector.exporter.requireEndpoint=true requires exporter.insecure=false; regulated profiles cannot disable TLS verification" -}}
 {{- end -}}
 {{- end -}}
 

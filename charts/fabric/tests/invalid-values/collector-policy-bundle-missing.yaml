@@ -1,0 +1,5 @@
+fabric:
+  policy:
+    enabled: true
+    bundlePath: /etc/fabric/policy
+    bundleConfigMap: ""

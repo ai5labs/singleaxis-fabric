@@ -29,8 +29,12 @@ otel-collector:
     redact:
       enabled: false
     policy:
-      enabled: true
-      bundlePath: ""     # pass-through until Rego is wired
+      # Disabled is the only honest pass-through posture. An enabled
+      # policy must name an actual Rego ConfigMap; the Collector chart
+      # deliberately rejects an empty/no-op policy bundle.
+      enabled: false
+      bundlePath: ""
+      bundleConfigMap: ""
     sampler:
       enabled: true
       # Dev-only placeholder. 64-char hex satisfies the render-time
@@ -57,8 +61,11 @@ otel-collector:
 nemoSidecar:
   enabled: true
 nemo-sidecar:
-  rails:
-    bundlePath: /etc/fabric/rails
+  starterRails:
+    enabled: true
+  literalFilter:
+    enabled: true
+  allowPassthrough: false
 
 # Dev-only Langfuse: disabled by default so CI smoke runs don't need
 # Postgres. Flip enabled=true and set database.url to bring up the UI.

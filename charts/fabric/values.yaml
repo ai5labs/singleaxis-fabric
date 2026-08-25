@@ -75,6 +75,38 @@ otelCollector:
 #       hmacKeySecret:
 #         name: fabric-otel-sampler-key
 
+fabricRelay:
+  enabled: false       # Opt-in until Collector -> Relay -> destination
+                       # integration qualification is complete. Production
+                       # fails closed without an HTTPS allowlisted destination,
+                       # verified TLS, durable storage, and indefinite retries.
+                       # Enabling this does NOT automatically rewire the
+                       # otel-collector exporter to Relay; configure and verify
+                       # that hop explicitly before production use.
+# fabric-relay:
+#   mode: production
+#   receiver:
+#     tls:
+#       serverCertificateSecret: { name: fabric-relay-server-tls }
+#       clientCASecret: { name: fabric-relay-client-ca }
+#   destination:
+#     endpoint: https://otlp.example.com
+#     allowedEndpoints: [https://otlp.example.com]
+#     auth:
+#       secretRef: { name: fabric-relay-auth, key: authorization }
+#   persistence:
+#     enabled: true
+#     storageClass: encrypted-rwo
+#   debugExporter:
+#     enabled: false
+#   networkPolicy:
+#     enabled: true
+#     ingressFrom:
+#       - namespaceSelector:
+#           matchLabels: { kubernetes.io/metadata.name: fabric-system }
+#         podSelector:
+#           matchLabels: { app.kubernetes.io/name: otel-collector }
+
 nemoSidecar:
   enabled: false      # image published from v0.2.0; until then, build locally
                       # from components/nemo-sidecar/Dockerfile and override

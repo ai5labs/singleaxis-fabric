@@ -6,19 +6,41 @@ NeMo Colang guardrails sidecar. Spec:
 ## What this ships
 
 A FastAPI sidecar that evaluates prompts and outputs against a Colang
-rails configuration:
+rails configuration and an optional deterministic literal pre-filter:
 
 - `GET  /healthz`
-- `POST /v1/check` — returns `{allow, reasons, rails_fired}`
+- `POST /v1/check` — returns `{allowed, action, rail, block_response, modified_value}`
 
 ## Phase 1 scope
 
-- Shared `Deployment` + `Service` mode (TCP) for smoke tests and dev
-  clusters. Production should inject the container as a per-agent-pod
-  sidecar over a Unix domain socket for <100ms P99 — the
-  sidecar-injection webhook lands in Phase 2.
-- Passthrough engine (fail-open) when `railsConfigMap.name` is unset.
-  Production profiles must supply a Colang rails ConfigMap.
+- Shared `Deployment` + `Service` mode over TCP for smoke tests and
+  development clusters. This chart does not provide sidecar injection
+  or assert a production latency SLO.
+- A model-free starter bundle is enabled by default. Helm selects the
+  real `--starter-literal-only` engine, which validates the declaration,
+  blocks known instruction-override phrases, and allows benign input
+  without initializing NeMo or making an external call.
+- Passthrough is refused unless the operator disables the starter and
+  explicitly sets `allowPassthrough=true` for development.
+
+## Canonical starter bundle
+
+The canonical starter source is
+`components/nemo-sidecar/rails/starter`. Helm packages generated,
+byte-identical mirrors from `files/rails/starter` and reads them with
+`.Files.Get`; the ConfigMap does not maintain a second handwritten copy.
+
+After changing the canonical files, refresh the chart package from the
+repository root:
+
+```sh
+python components/nemo-sidecar/tools/sync_starter_chart_bundle.py
+python components/nemo-sidecar/tools/sync_starter_chart_bundle.py --check
+```
+
+Tests compare both packaged bytes and parsed Helm-rendered ConfigMap
+values to the canonical source. Extra stale flows therefore fail the
+same check as missing flows.
 
 ## Auth: shared token on `/v1/*`
 
@@ -49,7 +71,8 @@ permissions and are unaffected when the token is enabled.
 `networkPolicy.enabled` defaults to **true**: ingress is restricted to
 same-namespace pods, egress to DNS only (plus operator-defined
 `egressTo` for LLM-provider calls from the content-safety rail).
-Same-pod UDS traffic rides loopback and is unaffected. Widen
+Unix-socket traffic, when wired independently of this chart, is
+unaffected. Widen
 `networkPolicy.ingressFrom` for cross-namespace callers — and set
 `auth.tokenSecret` when you do.
 
@@ -57,19 +80,23 @@ Same-pod UDS traffic rides loopback and is unaffected. Widen
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `railsConfigMap.name` | `""` | ConfigMap containing the Colang rails. Unset → passthrough. |
+| `railsConfigMap.name` | `""` | Existing ConfigMap containing custom Colang rails. |
 | `railsConfigMap.mountPath` | `/etc/fabric/rails` | Where the rails are mounted; passed via `--rails-config`. |
+| `starterRails.enabled` | `true` | Package and mount the model-free starter when no custom ConfigMap is selected. |
+| `literalFilter.enabled` | `true` | Pass `--enable-default-literal-filter`; required with the starter. |
+| `allowPassthrough` | `false` | Explicit dev-only fail-open mode when no rails bundle is selected. |
 | `auth.tokenSecret.name` | `""` | Secret holding the shared token for `/v1/*` auth (`X-Fabric-Token`). Empty → auth off. |
 | `auth.tokenSecret.key` | `token` | Key within the token Secret. |
-| `networkPolicy.enabled` | `true` | Ingress same-namespace only; egress DNS-only. Same-pod UDS unaffected. |
+| `networkPolicy.enabled` | `true` | Ingress same-namespace only; egress DNS-only. |
 | `service.port` | `8080` | Container + Service TCP port. |
 
-## Latency posture (published budget)
+## Readiness and latency
 
-| Route | P99 target |
-|-------|------------|
-| `POST /v1/check` | <100ms (passthrough or Colang rails) |
+`GET /healthz` proves the process started and the configured engine
+loaded. It does not run a representative policy decision or validate
+credentials used later by custom model-backed rails.
 
-Budgets apply to the sidecar process itself — colocated UDS calls
-skip the TCP stack. The shared-Deployment mode shipped here is for
-smoke-tests and dev clusters only.
+The chart does not enforce or certify a P99 latency target. Operators
+must qualify `/v1/check` with their selected rails, topology and load.
+The shared-Deployment mode shipped here is for smoke tests and
+development clusters.

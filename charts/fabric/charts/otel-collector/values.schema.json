@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "SingleAxis Fabric OpenTelemetry Collector values",
+  "description": "Strict public configuration contract for the Fabric Collector chart. Kubernetes extension objects remain open where the chart forwards them verbatim.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 1 },
+    "image": { "$ref": "#/definitions/image" },
+    "imagePullSecrets": { "$ref": "#/definitions/imagePullSecrets" },
+    "nameOverride": { "type": "string", "maxLength": 63 },
+    "fullnameOverride": { "type": "string", "maxLength": 63 },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "annotations", "name"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "annotations": { "$ref": "#/definitions/stringMap" },
+        "name": { "type": "string", "maxLength": 253 }
+      }
+    },
+    "podAnnotations": { "$ref": "#/definitions/stringMap" },
+    "podLabels": { "$ref": "#/definitions/stringMap" },
+    "podSecurityContext": { "$ref": "#/definitions/kubernetesObject" },
+    "securityContext": { "$ref": "#/definitions/kubernetesObject" },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ports"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["otlpGrpc", "otlpHttp", "health"],
+          "properties": {
+            "otlpGrpc": { "$ref": "#/definitions/port" },
+            "otlpHttp": { "$ref": "#/definitions/port" },
+            "health": { "$ref": "#/definitions/port" }
+          }
+        }
+      }
+    },
+    "resources": { "$ref": "#/definitions/kubernetesObject" },
+    "livenessProbe": { "$ref": "#/definitions/kubernetesObject" },
+    "readinessProbe": { "$ref": "#/definitions/kubernetesObject" },
+    "nodeSelector": { "$ref": "#/definitions/stringMap" },
+    "tolerations": { "type": "array", "items": { "$ref": "#/definitions/kubernetesObject" } },
+    "affinity": { "$ref": "#/definitions/kubernetesObject" },
+    "topologySpreadConstraints": { "type": "array", "items": { "$ref": "#/definitions/kubernetesObject" } },
+    "fabric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guard", "policy", "redact", "sampler"],
+      "properties": {
+        "guard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "eventClassAttribute", "dropUnknownClasses", "maxFieldBytes", "extraAllowedFields", "traceProcessingEnabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "eventClassAttribute": { "type": "string", "minLength": 1 },
+            "dropUnknownClasses": { "type": "boolean" },
+            "maxFieldBytes": { "type": "integer", "minimum": 0 },
+            "extraAllowedFields": {
+              "type": "object",
+              "propertyNames": { "minLength": 1 },
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              }
+            },
+            "traceProcessingEnabled": { "type": "boolean" }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "bundlePath", "bundleConfigMap", "query", "eventClassAttribute"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "bundlePath": { "type": "string" },
+            "bundleConfigMap": { "type": "string", "maxLength": 253 },
+            "query": { "type": "string", "minLength": 1 },
+            "eventClassAttribute": { "type": "string", "minLength": 1 }
+          }
+        },
+        "redact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "unixSocket", "timeoutMs", "eventClassAttribute", "skipAttributes", "provider", "existingSocketProvider", "acceptMissingProvider"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "unixSocket": { "type": "string", "pattern": "^/" },
+            "timeoutMs": { "type": "integer", "minimum": 1 },
+            "eventClassAttribute": { "type": "string", "minLength": 1 },
+            "skipAttributes": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
+            "provider": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "sidecar", "externalVolume"],
+              "properties": {
+                "mode": { "type": "string", "enum": ["", "sidecar", "externalVolume"] },
+                "sidecar": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["image", "tenantKeySecret", "redactionMode", "resources", "securityContext"],
+                  "properties": {
+                    "image": { "$ref": "#/definitions/image" },
+                    "tenantKeySecret": { "$ref": "#/definitions/secretKeyReference" },
+                    "redactionMode": { "type": "string", "enum": ["hmac", "tag"] },
+                    "resources": { "$ref": "#/definitions/kubernetesObject" },
+                    "securityContext": { "$ref": "#/definitions/kubernetesObject" }
+                  }
+                },
+                "externalVolume": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["mountPath", "volumeSource"],
+                  "properties": {
+                    "mountPath": { "type": "string", "pattern": "^/" },
+                    "volumeSource": { "$ref": "#/definitions/kubernetesObject" }
+                  }
+                }
+              }
+            },
+            "existingSocketProvider": { "type": "string" },
+            "acceptMissingProvider": { "type": "boolean" }
+          }
+        },
+        "sampler": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "hmacKey", "hmacKeySecret", "defaultRate", "rates"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "hmacKey": { "type": "string" },
+            "hmacKeySecret": { "$ref": "#/definitions/secretKeyReference" },
+            "defaultRate": { "$ref": "#/definitions/rate" },
+            "rates": {
+              "type": "object",
+              "propertyNames": { "minLength": 1 },
+              "additionalProperties": { "$ref": "#/definitions/rate" }
+            }
+          }
+        }
+      }
+    },
+    "exporter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "insecure", "requireEndpoint"],
+      "properties": {
+        "endpoint": { "type": "string", "pattern": "^$|^https?://" },
+        "insecure": { "type": "boolean" },
+        "requireEndpoint": { "type": "boolean" }
+      }
+    },
+    "debugExporter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "verbosity"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "verbosity": { "type": "string", "enum": ["basic", "normal", "detailed"] }
+      }
+    },
+    "memoryLimiter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkIntervalSeconds", "limitMib"],
+      "properties": {
+        "checkIntervalSeconds": { "type": "integer", "minimum": 1 },
+        "limitMib": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeoutSeconds", "sendBatchSize"],
+      "properties": {
+        "timeoutSeconds": { "type": "integer", "minimum": 1 },
+        "sendBatchSize": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "minAvailable"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]+%$" }] }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "ingressFrom", "egressTo"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingressFrom": { "type": "array", "items": { "$ref": "#/definitions/kubernetesObject" } },
+        "egressTo": { "type": "array", "items": { "$ref": "#/definitions/kubernetesObject" } }
+      }
+    },
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fabric": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "version": { "type": "string" } }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "fabric": { "properties": { "policy": { "properties": { "enabled": { "const": true } } } } } }
+      },
+      "then": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "policy": {
+                "properties": {
+                  "bundlePath": { "type": "string", "pattern": "^/.+" },
+                  "bundleConfigMap": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "fabric": { "properties": { "redact": { "properties": { "enabled": { "const": true } } } } } }
+      },
+      "then": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "redact": {
+                "properties": {
+                  "existingSocketProvider": { "maxLength": 0 },
+                  "acceptMissingProvider": { "const": false },
+                  "provider": { "properties": { "mode": { "enum": ["sidecar", "externalVolume"] } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "redact": {
+                "properties": {
+                  "enabled": { "const": true },
+                  "provider": { "properties": { "mode": { "const": "sidecar" } } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "redact": {
+                "properties": {
+                  "provider": {
+                    "properties": {
+                      "sidecar": {
+                        "properties": {
+                          "image": { "properties": { "repository": { "minLength": 1 } } },
+                          "tenantKeySecret": {
+                            "properties": {
+                              "name": { "minLength": 1 },
+                              "key": { "minLength": 1 }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "redact": {
+                "properties": {
+                  "enabled": { "const": true },
+                  "provider": { "properties": { "mode": { "const": "externalVolume" } } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "redact": {
+                "properties": {
+                  "provider": {
+                    "properties": {
+                      "externalVolume": {
+                        "properties": {
+                          "mountPath": { "pattern": "^/.+" },
+                          "volumeSource": { "minProperties": 1 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "fabric": { "properties": { "sampler": { "properties": { "enabled": { "const": true } } } } } }
+      },
+      "then": {
+        "properties": {
+          "fabric": {
+            "properties": {
+              "sampler": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "hmacKey": { "minLength": 1 },
+                      "hmacKeySecret": { "properties": { "name": { "maxLength": 0 } } }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "hmacKey": { "maxLength": 0 },
+                      "hmacKeySecret": {
+                        "properties": {
+                          "name": { "minLength": 1 },
+                          "key": { "minLength": 1 }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "exporter": { "properties": { "requireEndpoint": { "const": true } } } } },
+      "then": { "properties": { "exporter": { "properties": { "endpoint": { "pattern": "^https?://.+" } } } } }
+    }
+  ],
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "kubernetesObject": { "type": "object", "additionalProperties": true },
+    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
+    "secretKeyReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "key"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 253 },
+        "key": { "type": "string", "maxLength": 253 }
+      }
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "rate": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

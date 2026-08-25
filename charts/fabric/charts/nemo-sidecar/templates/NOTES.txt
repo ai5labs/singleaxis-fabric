@@ -9,18 +9,26 @@ Routes:
 
 Rails config: mounted from ConfigMap "{{ .Values.railsConfigMap.name }}" at
 {{ .Values.railsConfigMap.mountPath }}.
-{{- else }}
+{{- else if .Values.starterRails.enabled }}
 
-WARNING: no railsConfigMap.name is set. The sidecar is running the
-passthrough engine (fail-open) — every /v1/check returns allow. This
-is dev-only. Production profiles must set .Values.railsConfigMap.name
-to a ConfigMap containing the Colang rails.
+Starter declaration: built-in model-free bundle at
+{{ .Values.railsConfigMap.mountPath }}.
+Runtime engine: deterministic literal-only (NeMo is not initialized).
+The starter blocks a documented set of literal instruction-override
+phrases. It is not a semantic or model-graded jailbreak detector.
+{{- else if .Values.allowPassthrough }}
+
+WARNING: explicit passthrough mode is enabled. Every /v1/check request
+is allowed. This mode is for local development only.
 {{- end }}
 
-NOTE: Phase 1 ships this as a shared TCP Deployment for smoke tests
-and dev clusters. Production deployments should inject this container
-as a per-agent-pod sidecar over a Unix domain socket — the injection
-webhook lands in Phase 2.
+NOTE: this is a shared TCP Deployment for smoke tests and development
+clusters. Sidecar injection and a production latency SLO are not
+provided by this chart.
+
+Readiness uses GET /healthz. It proves that the process started and its
+configured engine loaded; it does not execute a representative policy
+check or validate operator-supplied external model credentials.
 
 Smoke test:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nemo-sidecar.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}

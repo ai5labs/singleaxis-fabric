@@ -1,5 +1,6 @@
 {{- include "otel-collector.validateSampler" . -}}
 {{- include "otel-collector.validateRedact" . -}}
+{{- include "otel-collector.validatePolicy" . -}}
 {{- include "otel-collector.validateExporter" . -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
 apiVersion: v1

@@ -6,6 +6,9 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: fabric
 singleaxis.com/profile: {{ .Values.profile.name | quote }}
+{{- if eq .Values.profile.name "eu-ai-act-high-risk" }}
+singleaxis.com/assurance-contract: "eu-ai-act-high-risk-v1"
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -23,7 +26,7 @@ for evaluation on a single-user laptop.
 {{- end -}}
 
 {{/*
-Enforce profile.lockedFields as render-time invariants.
+Enforce render-time profile invariants.
 
 Helm merges profile values and user ``--set`` overrides BEFORE
 rendering, so a template cannot tell a profile default from a user
@@ -33,12 +36,12 @@ that value path MUST resolve truthy (i.e. the control stays enabled)
 or the render fails — on install, upgrade, ``helm template``, and
 parent-level ``helm lint`` alike.
 
-This is what makes the eu-ai-act-high-risk lock-list real:
-
-    otel-collector.fabric.guard.enabled
-    otel-collector.fabric.guard.dropUnknownClasses
-    otel-collector.fabric.guard.traceProcessingEnabled
-    otel-collector.fabric.redact.enabled
+The eu-ai-act-high-risk contract is keyed on profile identity and defined
+inside this trusted chart helper. It MUST NOT rely on profile.lockedFields:
+that list is ordinary merged values and a later overlay can clear or replace
+it. The hard-coded table below validates exact values before any parent
+resource renders. profile.lockedFields remains useful for custom profiles and
+for documenting the public contract, but is not the authority for high-risk.
 
 A tenant who passes e.g.
 ``--set otel-collector.fabric.guard.enabled=false`` together with the
@@ -55,7 +58,7 @@ Semantics:
     also require the sibling camelCase ``<Toggle>.enabled`` value
     (otel-collector -> otelCollector.enabled) to stay true whenever
     that toggle key exists.
-  - empty / absent lockedFields list       -> no-op (permissive-dev).
+  - empty / absent lockedFields list       -> no-op for custom profiles.
 
 Custom profiles derived per docs/regulatory-profiles.md get the same
 enforcement for whatever boolean fields they add to lockedFields.
@@ -67,6 +70,39 @@ against Helm 3.19), which is exactly why this check lives here rather
 than in the otel-collector subchart.
 */}}
 {{- define "fabric.validateProfileLocks" -}}
+{{- if eq .Values.profile.name "eu-ai-act-high-risk" -}}
+{{- $required := dict
+      "otelCollector.enabled" true
+      "otel-collector.fabric.guard.enabled" true
+      "otel-collector.fabric.guard.dropUnknownClasses" true
+      "otel-collector.fabric.guard.traceProcessingEnabled" true
+      "otel-collector.fabric.redact.enabled" true
+      "otel-collector.fabric.policy.enabled" true
+      "otel-collector.exporter.requireEndpoint" true
+      "updateAgent.enabled" true
+      "update-agent.config.failClosed" true
+      "update-agent.webhook.failurePolicy" "Fail"
+-}}
+{{- range $path, $expected := $required -}}
+  {{- $segs := splitList "." $path -}}
+  {{- $cur := $.Values -}}
+  {{- $missing := false -}}
+  {{- range $seg := $segs -}}
+    {{- if and (kindIs "map" $cur) (hasKey $cur $seg) -}}
+      {{- $cur = index $cur $seg -}}
+    {{- else -}}
+      {{- $missing = true -}}
+      {{- $cur = dict -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $missing -}}
+    {{- fail (printf "high-risk profile requires %q but that value path is missing" $path) -}}
+  {{- end -}}
+  {{- if not (deepEqual $cur $expected) -}}
+    {{- fail (printf "high-risk profile requires %q to equal %v; effective value is %v" $path $expected $cur) -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $locks := .Values.profile.lockedFields | default list -}}
 {{- range $path := $locks -}}
   {{- $segs := splitList "." $path -}}
@@ -77,7 +113,7 @@ than in the otel-collector subchart.
       {{- $cur = index $cur $seg -}}
     {{- else -}}
       {{- $missing = true -}}
-      {{- $cur = nil -}}
+      {{- $cur = dict -}}
     {{- end -}}
   {{- end -}}
   {{- if or $missing (not $cur) -}}

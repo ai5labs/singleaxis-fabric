@@ -52,29 +52,14 @@ Verify health:
 Run the bundled smoke test:
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 
-{{- if and .Values.fabric.policy.enabled (eq .Values.fabric.policy.bundlePath "") }}
+{{- if .Values.fabric.policy.enabled }}
 
-WARNING: fabricpolicy is enabled but bundlePath is empty. The
-processor is wired but no Rego is loaded — all records will pass.
-Set .Values.fabric.policy.bundlePath before relying on the gate.
+Policy bundle: ConfigMap {{ .Values.fabric.policy.bundleConfigMap }}
+mounted read-only at {{ .Values.fabric.policy.bundlePath }}.
 {{- end }}
-{{- if and .Values.fabric.policy.enabled (ne .Values.fabric.policy.bundlePath "") (not .Values.fabric.policy.bundleConfigMap) }}
+{{- if .Values.fabric.redact.enabled }}
 
-WARNING: fabricpolicy bundlePath is set to {{ .Values.fabric.policy.bundlePath }}
-but no ConfigMap is mounted there (fabric.policy.bundleConfigMap is
-empty). The volume renders as an emptyDir and will stay EMPTY unless
-you provision Rego into it out of band. An empty bundle makes
-fabricpolicy FAIL CLOSED: every record AND span in the pipeline is
-dropped, silently destroying your telemetry.
-
-Fix:
-  --set otel-collector.fabric.policy.bundleConfigMap=<configmap-with-rego>
-{{- end }}
-{{- if and .Values.fabric.redact.enabled (not (hasKey .Values "presidioSidecar")) }}
-
-NOTE: fabricredact is enabled. Make sure a Presidio sidecar listens
-on {{ .Values.fabric.redact.unixSocket }} inside the pod. The
-presidio-sidecar subchart ships in the fabric umbrella but is not
-enabled by default (it needs a tenant HMAC key Secret) — see
-charts/fabric/charts/presidio-sidecar/.
+Redaction provider: {{ .Values.fabric.redact.provider.mode }}
+Unix socket: {{ .Values.fabric.redact.unixSocket }}
+{{- if eq .Values.fabric.redact.provider.mode "sidecar" }}A Presidio container is co-located in every Collector pod.{{- end }}
 {{- end }}

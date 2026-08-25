@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from fabric_nemo_sidecar.literal_filter import LiteralJailbreakFilter
 
 _LOG = logging.getLogger("fabric_nemo_sidecar")
 
@@ -82,6 +85,90 @@ class PassthroughEngine:
             allowed=True,
             action="allow",
             rail=self._rail,
+            block_response=None,
+            modified_value=value,
+        )
+
+
+_STARTER_CONFIG_LINES = (
+    "models: []",
+    "rails:",
+    "input:",
+    "flows: []",
+    "output:",
+    "flows: []",
+)
+
+
+def _significant_lines(path: Path) -> tuple[str, ...]:
+    """Return non-empty, non-comment lines with indentation removed."""
+
+    return tuple(
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
+def validate_deterministic_starter_bundle(config_path: str | Path) -> None:
+    """Fail unless *config_path* declares the model-free starter bundle.
+
+    The deterministic starter does not execute Colang. Requiring the exact
+    no-model/no-flow declaration prevents an operator from accidentally
+    selecting literal-only mode for a custom bundle and believing its Colang
+    flows are active.
+    """
+
+    bundle = Path(config_path)
+    config = bundle / "config.yml"
+    rails = bundle / "rails.co"
+    if not config.is_file() or not rails.is_file():
+        raise ValueError(f"deterministic starter requires config.yml and rails.co in {bundle}")
+    if _significant_lines(config) != _STARTER_CONFIG_LINES:
+        raise ValueError(
+            "deterministic starter config.yml must declare models: [] and "
+            "empty input/output flows only; use NeMo mode for custom rails"
+        )
+    if _significant_lines(rails):
+        raise ValueError(
+            "deterministic starter rails.co must contain no active Colang; "
+            "use NeMo mode for custom rails"
+        )
+
+
+class DeterministicStarterEngine:
+    """Literal-only starter that never initializes or calls NeMo.
+
+    Input-phase values matching the configured literal filter are blocked.
+    Every other value and every output-phase value is allowed byte-for-byte.
+    This intentionally small behavior is deterministic, credential-free, and
+    incapable of external I/O.
+    """
+
+    __slots__ = ("_literal_filter",)
+
+    def __init__(self, literal_filter: LiteralJailbreakFilter) -> None:
+        self._literal_filter = literal_filter
+
+    @property
+    def literal_filter(self) -> LiteralJailbreakFilter:
+        return self._literal_filter
+
+    def check(self, phase: str, path: str, value: str) -> EngineResult:
+        del path
+        match = self._literal_filter.check(value) if phase == "input" else None
+        if match is not None:
+            return EngineResult(
+                allowed=False,
+                action="block",
+                rail=match.rail,
+                block_response=match.block_response,
+                modified_value=value,
+            )
+        return EngineResult(
+            allowed=True,
+            action="allow",
+            rail="deterministic_starter",
             block_response=None,
             modified_value=value,
         )

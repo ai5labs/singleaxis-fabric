@@ -60,12 +60,12 @@ yarn-error.log*
 
 # --- Helm ---
 # Note: first-party subcharts under charts/fabric/charts/<name>/ ARE
-# committed. Only ignore .tgz packages produced by `helm dependency
-# update` and the deprecated lock file.
+# committed. Ignore generated .tgz packages and the deprecated Helm v2
+# requirements lock. Keep Chart.lock under version control so dependency
+# versions and the dependency digest are reproducible.
 charts/*/*.tgz
 charts/*/charts/*.tgz
 charts/*/requirements.lock
-charts/*/Chart.lock
 
 # --- Terraform ---
 *.tfstate

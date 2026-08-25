@@ -2,4 +2,4 @@
 # SPDX-License-Identifier: Apache-2.0
 """Sidecar build version."""
 
-__version__ = "0.1.0"
+__version__ = "0.7.0"

@@ -1,0 +1,4 @@
+starterRails:
+  enabled: true
+literalFilter:
+  enabled: false

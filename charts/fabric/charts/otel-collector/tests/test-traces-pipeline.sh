@@ -76,12 +76,13 @@ fi
 pass "logs: pipeline present in both renders"
 
 # Case 5 (H-1): enabling redact/policy must chain them into the TRACES
-# pipeline too, not just logs. acceptMissingProvider bypasses the
-# render-time sidecar-provider gate (CI-only; runtime would error).
+# pipeline too, not just logs. Use the production-shaped co-located
+# provider; enabled redaction no longer has a missing-provider bypass.
 redact_render=$(helm template ci "${chart_dir}" \
   "${common_args[@]}" \
   --set fabric.redact.enabled=true \
-  --set fabric.redact.acceptMissingProvider=true)
+  --set fabric.redact.provider.mode=sidecar \
+  --set fabric.redact.provider.sidecar.tenantKeySecret.name=fabric-presidio-tenant-key)
 traces_block=$(awk '/^        traces:/{f=1} f&&/^        [a-z]+:$/&&$0!~/^        traces:/{f=0} f' <<<"${redact_render}")
 if ! grep -q -- "- fabricredact" <<<"${traces_block}"; then
   fail "fabricredact not chained into the traces pipeline (H-1 regression)"

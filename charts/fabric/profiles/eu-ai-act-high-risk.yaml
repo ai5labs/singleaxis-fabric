@@ -1,11 +1,11 @@
 # EU AI Act high-risk profile (Layer 1 only).
 #
-# Locked fields (see profile.lockedFields) MUST NOT be overridden by
-# tenant values — a tenant wanting different behaviour should switch
-# to a less strict profile. Enforcement is two layers: the parent
-# chart fails at render/template time on any locked override, and the
-# update-agent admission backstop keeps the flags set on collector
-# ConfigMaps in watched namespaces. See docs/regulatory-profiles.md.
+# The controls listed in profile.lockedFields document the contract and feed
+# generic tooling, but they are not its security boundary: values overlays can
+# mutate that list. The parent chart keys an exact, non-bypassable invariant
+# table on profile.name=eu-ai-act-high-risk. It fails rendering even when an
+# overlay clears lockedFields, while the update-agent admission backstop keeps
+# collector flags set after deployment. See docs/regulatory-profiles.md.
 #
 # NOTE: Production EU AI Act deployments also require judge-workers and
 # escalation-service from the SingleAxis-internal distribution (Layer 2).
@@ -22,6 +22,11 @@ profile:
     - otel-collector.fabric.guard.dropUnknownClasses
     - otel-collector.fabric.guard.traceProcessingEnabled
     - otel-collector.fabric.redact.enabled
+    - otel-collector.fabric.policy.enabled
+    - otel-collector.exporter.requireEndpoint
+    - updateAgent.enabled
+    - update-agent.config.failClosed
+    - update-agent.webhook.failurePolicy
 
 namespace:
   create: true
@@ -48,6 +53,11 @@ otel-collector:
   # an egressTo rule below that reaches it) at install time.
   exporter:
     requireEndpoint: true
+    # The current profile lock implementation only supports positive
+    # (truthy) controls. `requireEndpoint` is locked above and the
+    # Collector validator binds that positive lock to HTTPS plus this
+    # exact secure TLS posture, rejecting any insecure override.
+    insecure: false
   networkPolicy:
     enabled: true
     # Tighten ingress: only pods within fabric-system may post OTLP.
@@ -75,22 +85,27 @@ otel-collector:
     policy:
       enabled: true
       bundlePath: /etc/fabric/policy
+      # This profile deliberately requires a customer-owned policy.
+      # Kubernetes will keep the Collector unready if this ConfigMap
+      # does not exist, rather than starting with a no-op or empty
+      # policy. Populate it with one or more .rego files implementing
+      # data.fabric.egress.allow before installation, or override this
+      # name with another approved ConfigMap.
+      bundleConfigMap: fabric-high-risk-egress-policy
     # PII redaction is pinned on for this profile.
     #
-    # The Presidio sidecar chart is not yet part of the umbrella
-    # release (see components/presidio-sidecar). Until it lands, the
-    # operator MUST deploy the sidecar separately and set:
-    #
-    #   otel-collector.fabric.redact.existingSocketProvider: <name>
-    #
-    # Without that, the otel-collector chart fail-closes at render.
-    # We leave ``existingSocketProvider`` empty here so an installer
-    # who forgets to deploy the sidecar gets a loud error rather than
-    # a silent no-op redaction pipeline.
+    # A real Presidio provider is co-located with every Collector
+    # replica and communicates over a same-pod shared UDS volume. The
+    # Secret is customer-owned; a missing Secret prevents pod startup.
     redact:
       enabled: true
       unixSocket: /var/run/fabric/presidio.sock
-      existingSocketProvider: ""
+      provider:
+        mode: sidecar
+        sidecar:
+          tenantKeySecret:
+            name: fabric-presidio-tenant-key
+            key: tenant.key
     sampler:
       enabled: true
       hmacKeySecret:
@@ -105,6 +120,17 @@ nemoSidecar:
   enabled: true
 nemo-sidecar:
   replicaCount: 2
+  # A regulated deployment supplies an approved, versioned rails
+  # ConfigMap. The model-free starter is intentionally not treated as
+  # a production policy pack.
+  railsConfigMap:
+    name: fabric-high-risk-rails
+    mountPath: /etc/fabric/rails
+  starterRails:
+    enabled: false
+  literalFilter:
+    enabled: true
+  allowPassthrough: false
   networkPolicy:
     enabled: true
     # Restrict ingress to fabric-system pods (the SDK guard chain in the
@@ -115,8 +141,6 @@ nemo-sidecar:
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: fabric-system
-  rails:
-    bundlePath: /etc/fabric/rails
 
 # redteam-runner — COMPLIANCE PIN, NOT AN ENABLE.
 #

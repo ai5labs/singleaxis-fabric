@@ -1,10 +1,7 @@
 # Default values for the nemo-sidecar subchart.
 #
-# Latency posture (P99, per check, inside the sidecar process):
-#   /v1/check  <100ms  passthrough or Colang rails
-# When the container is colocated with the agent (sidecar pattern)
-# calls ride UDS and skip the TCP stack; the shared-Deployment mode
-# shipped here is for smoke-tests and dev clusters only.
+# The chart does not enforce a latency SLO. Measure /v1/check latency
+# against the selected rails and infrastructure before production use.
 
 replicaCount: 1
 
@@ -70,9 +67,10 @@ resources:
     cpu: 100m
     memory: 256Mi
 
-# NeMo cold-start loads the Colang bundle + spaCy models, which can
-# take 10-20s on a fresh pod. Bumped readiness initialDelaySeconds
-# from 3 to 20 to avoid Unready flapping during rolling deploys.
+# /healthz proves that the process is serving requests. Because engine
+# construction happens before uvicorn starts, it also proves that the
+# configured bundle could be loaded. It does not execute a policy check,
+# validate external model credentials, or establish a latency SLO.
 livenessProbe:
   httpGet:
     path: /healthz
@@ -98,9 +96,11 @@ topologySpreadConstraints: []
 #
 # Resolution order:
 #   1. If `railsConfigMap.name` is set → mount that ConfigMap.
-#   2. Else if `starterRails.enabled` → mount the in-chart starter
-#      bundle (deterministic `jailbreak defence` flow, no LLM).
-#   3. Else → passthrough engine (fail-open). Dev only.
+#   2. Else if `starterRails.enabled` → validate the in-chart starter
+#      declaration and run the deterministic literal-only engine. NeMo
+#      is not initialized and no external LLM is used.
+#   3. Else if `allowPassthrough=true` → explicit fail-open dev mode.
+#   4. Otherwise Helm rendering fails instead of deploying a crash loop.
 #
 # The starter bundle keeps fresh installs from shipping fail-open,
 # but is intentionally minimal. Production profiles should supply a
@@ -112,22 +112,32 @@ railsConfigMap:
 starterRails:
   enabled: true
 
-# PodDisruptionBudget. Honored only when replicaCount > 1 (i.e. the
-# sidecar-as-Service HA topology). Same-pod UDS deployments don't
-# need it because lifecycle is tied to the parent agent pod.
+# Deterministic input pre-filter. The starter bundle deliberately has
+# no model-backed Colang flow, so this MUST remain enabled when the
+# starter is selected. The chart rejects that unsafe combination.
+# Custom rails may disable it when their own input controls replace it.
+literalFilter:
+  enabled: true
+
+# Explicit escape hatch for local development only. When no custom or
+# starter bundle is selected, setting this to true passes the sidecar's
+# --allow-passthrough flag. The default fails safely at Helm render time.
+allowPassthrough: false
+
+# PodDisruptionBudget. Honored only when replicaCount > 1 for the
+# shared-Service topology shipped by this chart.
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
 # NetworkPolicy. Default ON so the shipped TCP listener is not a
-# cluster-wide oracle. Production runs same-pod via UDS, which rides
-# loopback inside the agent pod and is unaffected by this policy. The
-# sidecar-as-Service deployment (smoke/dev) gets ingress restricted to
-# same-namespace pods by default; widen via `ingressFrom` if callers
-# live in other namespaces (and set auth.tokenSecret — see above).
-# Egress is DNS-only to kube-system; `egressTo` is for NeMo's
-# content-safety rail when it calls out to an LLM provider for
-# refusal generation.
+# cluster-wide oracle. The shared-Service deployment gets ingress
+# restricted to same-namespace pods by default; widen via `ingressFrom`
+# if callers live in other namespaces (and set auth.tokenSecret — see
+# above).
+# Egress is DNS-only to kube-system. The starter makes no external LLM
+# calls. `egressTo` is only for operator-supplied rails that explicitly
+# call an external provider.
 networkPolicy:
   enabled: true
   ingressFrom: []

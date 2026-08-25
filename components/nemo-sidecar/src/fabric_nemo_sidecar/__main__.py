@@ -10,7 +10,7 @@ Concurrency and timeout knobs (env vars, all optional):
   Caps the number of in-flight requests so ``/check`` cannot starve
   ``/healthz`` by saturating the ~40-thread default pool.
 - ``FABRIC_REQUEST_TIMEOUT_MS`` (default 800) — per-request internal
-  timeout around ``LLMRails.generate``. Read by ``app.build_app``.
+  timeout around the selected engine. Read by ``app.build_app``.
 """
 
 from __future__ import annotations
@@ -110,11 +110,21 @@ def _build_engine(
     args: argparse.Namespace,
     literal_filter: LiteralJailbreakFilter | None,
 ) -> RailsEngine | None:
-    """Construct the rails engine from CLI args. Returns ``None`` when
-    ``--allow-passthrough`` is set and no ``--rails-config`` is given;
-    the caller logs a warning so the misconfiguration is visible in
-    pod logs.
-    """
+    """Construct exactly the runtime mode selected by CLI arguments."""
+
+    if args.starter_literal_only:
+        if literal_filter is None:
+            raise ValueError(
+                "--starter-literal-only requires --enable-default-literal-filter "
+                "or --literal-jailbreak-patterns"
+            )
+        from fabric_nemo_sidecar.rails import (  # noqa: PLC0415
+            DeterministicStarterEngine,
+            validate_deterministic_starter_bundle,
+        )
+
+        validate_deterministic_starter_bundle(args.rails_config)
+        return DeterministicStarterEngine(literal_filter)
 
     if args.rails_config:
         from fabric_nemo_sidecar.nemo_adapter import build_default_engine  # noqa: PLC0415
@@ -140,9 +150,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
         "--rails-config",
-        help="Directory containing the Colang rails config. Required "
-        "for production. Pass --allow-passthrough to opt into the "
-        "fail-open passthrough engine for local smoke tests only.",
+        help="Directory containing config.yml and rails.co. Custom "
+        "operator bundles run through NeMo. With "
+        "--starter-literal-only, the directory must contain the "
+        "model-free starter declaration and NeMo is never initialized.",
+    )
+    parser.add_argument(
+        "--starter-literal-only",
+        action="store_true",
+        help="Run the deterministic starter engine. Requires "
+        "--rails-config and a literal-filter option. This mode validates "
+        "that the bundle has models: [] and no active Colang flows, then "
+        "blocks literal matches and allows benign input without NeMo, "
+        "model credentials, or external I/O.",
     )
     parser.add_argument(
         "--allow-passthrough",
@@ -158,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         "the sidecar runs a deterministic case-insensitive substring "
         "filter against every input value before invoking NeMo. A "
         "match returns action='block' immediately without an "
-        "LLMRails.generate() call. Use to harden the starter rails "
+        "LLMRails.generate() call. Use to harden custom NeMo rails "
         "against NeMo's embedding-based canonical-form matching, "
         "which is too loose under FastEmbed for short-phrase patterns.",
     )
@@ -176,6 +196,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.uds and not args.port:
         parser.error("one of --uds or --port is required")
 
+    if args.starter_literal_only and not args.rails_config:
+        parser.error("--starter-literal-only requires --rails-config")
+    if args.allow_passthrough and (args.rails_config or args.starter_literal_only):
+        parser.error("--allow-passthrough cannot be combined with a rails runtime mode")
     if not args.rails_config and not args.allow_passthrough:
         parser.error(
             "--rails-config is required. Without it the sidecar would "
@@ -185,7 +209,12 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     literal_filter = _build_literal_filter(parser, args)
-    engine = _build_engine(args, literal_filter)
+    if literal_filter is not None and args.allow_passthrough:
+        parser.error("literal filters cannot be combined with --allow-passthrough")
+    try:
+        engine = _build_engine(args, literal_filter)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     # Concurrency env-var: parse robustly. A non-int value should
     # surface a clear error rather than crashing the whole sidecar

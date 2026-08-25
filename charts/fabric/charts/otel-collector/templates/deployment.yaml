@@ -68,6 +68,52 @@ spec:
               mountPath: {{ .Values.fabric.policy.bundlePath }}
               readOnly: true
             {{- end }}
+            {{- if .Values.fabric.redact.enabled }}
+            - name: redact-socket
+              mountPath: {{ include "otel-collector.redactSocketMountPath" . }}
+            {{- end }}
+        {{- if and .Values.fabric.redact.enabled (eq .Values.fabric.redact.provider.mode "sidecar") }}
+        - name: presidio-redactor
+          image: "{{ .Values.fabric.redact.provider.sidecar.image.repository }}:{{ .Values.fabric.redact.provider.sidecar.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.fabric.redact.provider.sidecar.image.pullPolicy }}
+          args:
+            - --uds
+            - {{ .Values.fabric.redact.unixSocket | quote }}
+            - --tenant-key-file
+            - {{ printf "/etc/fabric/tenant/%s" .Values.fabric.redact.provider.sidecar.tenantKeySecret.key | quote }}
+            - --redaction-mode
+            - {{ .Values.fabric.redact.provider.sidecar.redactionMode | quote }}
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n'); assert b'200 OK' in s.recv(256)" .Values.fabric.redact.unixSocket | quote }}
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n'); assert b'200 OK' in s.recv(256)" .Values.fabric.redact.unixSocket | quote }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.fabric.redact.provider.sidecar.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.fabric.redact.provider.sidecar.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: redact-socket
+              mountPath: {{ include "otel-collector.redactSocketMountPath" . }}
+            - name: redact-tmp
+              mountPath: /tmp
+            - name: redact-tenant-key
+              mountPath: /etc/fabric/tenant
+              readOnly: true
+        {{- end }}
       volumes:
         - name: config
           configMap:
@@ -85,16 +131,26 @@ spec:
         {{- end }}
         {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.bundlePath }}
         - name: policy-bundle
-          {{- if .Values.fabric.policy.bundleConfigMap }}
           configMap:
             name: {{ .Values.fabric.policy.bundleConfigMap }}
-          {{- else }}
-          # No in-chart provisioning mechanism configured: this volume
-          # stays EMPTY unless the operator mounts something out of
-          # band. An empty bundle makes fabricpolicy fail closed and
-          # drop every record/span — see NOTES.txt.
+        {{- end }}
+        {{- if .Values.fabric.redact.enabled }}
+        - name: redact-socket
+          {{- if eq .Values.fabric.redact.provider.mode "sidecar" }}
           emptyDir: {}
+          {{- else }}
+          {{- toYaml .Values.fabric.redact.provider.externalVolume.volumeSource | nindent 10 }}
           {{- end }}
+        {{- end }}
+        {{- if and .Values.fabric.redact.enabled (eq .Values.fabric.redact.provider.mode "sidecar") }}
+        - name: redact-tmp
+          emptyDir: {}
+        - name: redact-tenant-key
+          secret:
+            secretName: {{ .Values.fabric.redact.provider.sidecar.tenantKeySecret.name }}
+            items:
+              - key: {{ .Values.fabric.redact.provider.sidecar.tenantKeySecret.key }}
+                path: {{ .Values.fabric.redact.provider.sidecar.tenantKeySecret.key }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -281,15 +281,42 @@ jobs:
             threshold: 85
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            package:
+              - '${{ matrix.package }}/**'
+              - '.github/workflows/ci.yml'
+            nemo_starter:
+              - 'charts/fabric/charts/nemo-sidecar/**'
+      - name: Short-circuit if package contracts are unchanged
+        if: >-
+          steps.filter.outputs.package != 'true' &&
+          (matrix.package != 'components/nemo-sidecar' ||
+          steps.filter.outputs.nemo_starter != 'true')
+        run: echo "No changes affecting ${{ matrix.package }}; skipping package tests."
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: >-
+          steps.filter.outputs.package == 'true' ||
+          (matrix.package == 'components/nemo-sidecar' &&
+          steps.filter.outputs.nemo_starter == 'true')
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package with dev extras
+        if: >-
+          steps.filter.outputs.package == 'true' ||
+          (matrix.package == 'components/nemo-sidecar' &&
+          steps.filter.outputs.nemo_starter == 'true')
         working-directory: ${{ matrix.package }}
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: pytest with coverage gate
+        if: >-
+          steps.filter.outputs.package == 'true' ||
+          (matrix.package == 'components/nemo-sidecar' &&
+          steps.filter.outputs.nemo_starter == 'true')
         working-directory: ${{ matrix.package }}
         run: pytest --cov --cov-report=term-missing --cov-fail-under=${{ matrix.threshold }}
 
@@ -308,6 +335,11 @@ jobs:
           filters: |
             ts:
               - 'sdk/typescript/**'
+              # The TypeScript suite consumes Python's committed conformance
+              # goldens and mirrors the public telemetry contract. A Python
+              # contract change must therefore prove cross-SDK parity.
+              - 'sdk/python/src/fabric/**'
+              - 'sdk/python/tests/conformance/**'
               - '.github/workflows/ci.yml'
       - name: Short-circuit if no TypeScript SDK changes
         if: steps.filter.outputs.ts != 'true'
@@ -338,14 +370,29 @@ jobs:
         run: npm test
 
   helm-lint:
-    name: Helm / Kubernetes lint
+    name: Helm contracts / Kubernetes lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            helm:
+              - 'charts/fabric/**'
+              - 'components/nemo-sidecar/rails/starter/**'
+              - 'components/fabric-relay/examples/**'
+              - 'components/fabric-relay/ocb-config.yaml'
+              - '.github/workflows/ci.yml'
+      - name: Short-circuit if Helm contracts are unchanged
+        if: steps.filter.outputs.helm != 'true'
+        run: echo "No Helm or packaged runtime contract changes; skipping chart gates."
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        if: steps.filter.outputs.helm == 'true'
         with:
           version: "v3.15.0"
       - name: Helm lint (umbrella, if scaffolded)
+        if: steps.filter.outputs.helm == 'true'
         run: |
           if [ -f charts/fabric/Chart.yaml ]; then
             helm lint charts/fabric
@@ -353,6 +400,7 @@ jobs:
             echo "Umbrella chart not yet scaffolded; skipping."
           fi
       - name: Helm lint (subcharts)
+        if: steps.filter.outputs.helm == 'true'
         # Lint each subchart that has a Chart.yaml. The sampler
         # validator requires an HMAC key source, so pass one.
         run: |
@@ -369,6 +417,7 @@ jobs:
             echo "No subcharts found."
           fi
       - name: Helm template smoke render
+        if: steps.filter.outputs.helm == 'true'
         run: |
           shopt -s nullglob
           for chart in charts/fabric/charts/*/Chart.yaml; do
@@ -379,6 +428,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Chart render assertions
+        if: steps.filter.outputs.helm == 'true'
         # Per-chart shell tests that assert specific render-time behaviour
         # (e.g. spec 016 §4.1: traces: pipeline gating, §4.3: hmacKey
         # render-time validation). Each script is self-contained and
@@ -390,6 +440,148 @@ jobs:
             bash "${script}"
             echo "::endgroup::"
           done
+      - name: Umbrella schema and profile assertions
+        if: steps.filter.outputs.helm == 'true'
+        # Closed values schemas and deployment-profile tests live at the
+        # umbrella level, so they are intentionally separate from subchart
+        # render assertions.
+        run: |
+          shopt -s nullglob
+          for script in charts/fabric/tests/*.sh; do
+            echo "::group::${script}"
+            bash "${script}"
+            echo "::endgroup::"
+          done
+
+  release-identity:
+    name: Coordinated release identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            identity:
+              - 'VERSION'
+              - 'scripts/verify_release_identity.py'
+              - 'scripts/tests/test_verify_release_identity.py'
+              - 'scripts/tests/fixtures/release_identity_cases.json'
+              - 'charts/fabric/Chart.yaml'
+              - 'charts/fabric/Chart.lock'
+              - 'charts/fabric/values.yaml'
+              - 'charts/fabric/charts/*/Chart.yaml'
+              - 'components/*/ocb-config.yaml'
+              - 'components/*/src/**/_version.py'
+              - 'sdk/python/pyproject.toml'
+              - 'sdk/python/src/fabric/_version.py'
+              - 'sdk/python/src/fabric/_attributes.py'
+              - 'sdk/typescript/package.json'
+              - 'sdk/typescript/package-lock.json'
+              - 'sdk/typescript/src/attributes.ts'
+              - '.github/workflows/release.yml'
+              - '.github/workflows/ci.yml'
+      - name: Short-circuit if release declarations are unchanged
+        if: steps.filter.outputs.identity != 'true'
+        run: echo "No coordinated release identity changes; skipping verifier."
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: steps.filter.outputs.identity == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install verifier test dependency
+        if: steps.filter.outputs.identity == 'true'
+        run: python -m pip install pytest==8.4.2
+      - name: Test release identity verifier
+        if: steps.filter.outputs.identity == 'true'
+        run: python -m pytest scripts/tests/test_verify_release_identity.py -q
+      - name: Verify repository release identity
+        if: steps.filter.outputs.identity == 'true'
+        run: python scripts/verify_release_identity.py --json
+
+  fabricctl:
+    name: fabricctl test / vet / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            fabricctl:
+              - 'tools/fabricctl/**'
+              - '.github/workflows/ci.yml'
+      - name: Short-circuit if fabricctl is unchanged
+        if: steps.filter.outputs.fabricctl != 'true'
+        run: echo "No fabricctl changes; skipping Go gates."
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.filter.outputs.fabricctl == 'true'
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Test
+        if: steps.filter.outputs.fabricctl == 'true'
+        working-directory: tools/fabricctl
+        run: go test ./...
+      - name: Vet
+        if: steps.filter.outputs.fabricctl == 'true'
+        working-directory: tools/fabricctl
+        run: go vet ./...
+      - name: Reproducible build
+        if: steps.filter.outputs.fabricctl == 'true'
+        working-directory: tools/fabricctl
+        run: make build VERSION=ci COMMIT="${GITHUB_SHA}" DATE=1970-01-01T00:00:00Z
+
+  fabric-relay:
+    name: Fabric Relay component / chart / OCB validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: filter
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            relay:
+              - 'components/fabric-relay/**'
+              - 'charts/fabric/charts/fabric-relay/**'
+              - 'charts/fabric/Chart.yaml'
+              - 'charts/fabric/values.yaml'
+              - 'charts/fabric/values.schema.json'
+              - 'charts/fabric/profiles/**'
+              - 'VERSION'
+              - '.github/workflows/ci.yml'
+      - name: Short-circuit if Relay contracts are unchanged
+        if: steps.filter.outputs.relay != 'true'
+        run: echo "No Fabric Relay changes; skipping component gates."
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        if: steps.filter.outputs.relay == 'true'
+        with:
+          version: "v3.15.0"
+      - name: Static configuration assertions
+        if: steps.filter.outputs.relay == 'true'
+        working-directory: components/fabric-relay
+        run: make test
+      - name: Relay chart assertions
+        if: steps.filter.outputs.relay == 'true'
+        run: bash charts/fabric/charts/fabric-relay/tests/test-render.sh
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.filter.outputs.relay == 'true'
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Install pinned OpenTelemetry Collector Builder
+        if: steps.filter.outputs.relay == 'true'
+        run: go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+      - name: Build Relay distribution with OCB
+        if: steps.filter.outputs.relay == 'true'
+        working-directory: components/fabric-relay
+        run: '"$(go env GOPATH)/bin/builder" --config ocb-config.yaml'
+      - name: Validate production and development configurations
+        if: steps.filter.outputs.relay == 'true'
+        working-directory: components/fabric-relay
+        run: |
+          FABRIC_RELAY_AUTH_HEADER=ci-placeholder ./dist/fabric-relay validate --config examples/production.yaml
+          ./dist/fabric-relay validate --config examples/development.yaml
 
   collector-image-build:
     name: Collector image build (PR smoke)
@@ -412,6 +604,26 @@ jobs:
         run: |
           docker run --rm --entrypoint=/otelcol-fabric fabric-otelcol:pr --help \
             | head -5
+
+  relay-image-build:
+    name: Fabric Relay image build (PR smoke)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build Relay (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: components/fabric-relay
+          file: components/fabric-relay/Dockerfile
+          push: false
+          load: true
+          tags: fabric-relay:pr
+          cache-from: type=gha,scope=fabric-relay
+          cache-to: type=gha,mode=max,scope=fabric-relay
+      - name: Smoke-run --help
+        run: docker run --rm fabric-relay:pr --help | head -5
 
   sidecar-image-build:
     name: Sidecar image build (PR smoke)
@@ -442,7 +654,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
   trivy-scan:
-    name: Trivy container scan (PR)
+    name: Trivy ${{ matrix.image }} container scan (PR)
     runs-on: ubuntu-latest
     # PR-only: scanning on every main push would double the spend
     # for the same commits already scanned on the incoming PR.
@@ -450,22 +662,29 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: fabric-otelcol
+            context: components/otel-collector-fabric
+            dockerfile: components/otel-collector-fabric/Dockerfile
+          - image: fabric-relay
+            context: components/fabric-relay
+            dockerfile: components/fabric-relay/Dockerfile
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build collector image for scan
-        # Reuses the same Dockerfile as collector-image-build but
-        # tags separately (fabric-otelcol:trivy) so the two jobs
-        # can run in parallel without racing on the :pr tag.
+      - name: Build ${{ matrix.image }} image for scan
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
-          context: components/otel-collector-fabric
-          file: components/otel-collector-fabric/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: false
           load: true
-          tags: fabric-otelcol:trivy
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ matrix.image }}:trivy
+          cache-from: type=gha,scope=trivy-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=trivy-${{ matrix.image }}
       - name: Trivy image scan
         # Upstream only publishes v-prefixed tags (`v0.36.0`). Pinning
         # `@0.36.0` (no prefix) was failing CI with "unable to find
@@ -474,12 +693,12 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: fabric-otelcol:trivy
+          image-ref: ${{ matrix.image }}:trivy
           severity: "HIGH,CRITICAL"
           ignore-unfixed: true
           exit-code: "1"
           format: sarif
-          output: trivy-image.sarif
+          output: trivy-${{ matrix.image }}.sarif
           # Without this, the action unsets TRIVY_SEVERITY for SARIF
           # output (see entrypoint.sh), so any MEDIUM/LOW finding also
           # trips exit-code:1. We want HIGH/CRITICAL as the gate.
@@ -488,8 +707,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:
-          sarif_file: trivy-image.sarif
-          category: trivy-image
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
 
   license-header:
     name: SPDX license headers

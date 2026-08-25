@@ -1,0 +1,8 @@
+fabric:
+  redact:
+    enabled: true
+    provider:
+      mode: externalVolume
+      externalVolume:
+        mountPath: /var/run/fabric
+        volumeSource: {}

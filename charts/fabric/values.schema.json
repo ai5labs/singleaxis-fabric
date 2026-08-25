@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "SingleAxis Fabric umbrella values",
+  "description": "Public installation contract for the SingleAxis Fabric OSS distribution. Unknown top-level component and management keys are rejected; each critical subchart owns its detailed schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tenant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 253 },
+        "name": { "type": "string", "maxLength": 253 }
+      }
+    },
+    "imagePullSecrets": { "$ref": "#/definitions/imagePullSecrets" },
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fabric"],
+      "properties": {
+        "fabric": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$" }
+          }
+        }
+      }
+    },
+    "namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "name", "annotations", "labels"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 63 },
+        "annotations": { "$ref": "#/definitions/stringMap" },
+        "labels": { "$ref": "#/definitions/stringMap" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["denyDefault"],
+      "properties": { "denyDefault": { "type": "boolean" } }
+    },
+    "otelCollector": { "$ref": "#/definitions/componentToggle" },
+    "fabricRelay": { "$ref": "#/definitions/componentToggle" },
+    "nemoSidecar": { "$ref": "#/definitions/componentToggle" },
+    "presidioSidecar": { "$ref": "#/definitions/componentToggle" },
+    "redteamRunner": { "$ref": "#/definitions/componentToggle" },
+    "updateAgent": { "$ref": "#/definitions/componentToggle" },
+    "otel-collector": { "$ref": "#/definitions/subchartValues" },
+    "fabric-relay": { "$ref": "#/definitions/subchartValues" },
+    "nemo-sidecar": { "$ref": "#/definitions/subchartValues" },
+    "presidio-sidecar": { "$ref": "#/definitions/subchartValues" },
+    "redteam-runner": { "$ref": "#/definitions/subchartValues" },
+    "update-agent": { "$ref": "#/definitions/subchartValues" },
+    "langfuse": { "$ref": "#/definitions/subchartValues" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "regulations", "lockedFields"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "regulations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "lockedFields": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)+$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "tags": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "telemetry": { "type": "boolean" },
+        "guardrails": { "type": "boolean" },
+        "observability": { "type": "boolean" },
+        "security": { "type": "boolean" }
+      }
+    }
+  },
+  "definitions": {
+    "componentToggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "subchartValues": {
+      "type": "object",
+      "description": "Validated by the dependency's own values.schema.json when one is published.",
+      "additionalProperties": true
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

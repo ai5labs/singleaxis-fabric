@@ -1,13 +1,12 @@
 apiVersion: v2
 name: nemo-sidecar
 description: |
-  SingleAxis Fabric NeMo Colang guardrails sidecar (spec 005). Phase 1
-  ships a TCP Deployment + Service suitable for shared-node dev
-  clusters and smoke testing. Production deployments inject this
-  container as a per-agent-pod sidecar for <100ms P99 UDS latency —
-  the injection webhook lands in Phase 2.
+  SingleAxis Fabric NeMo Colang guardrails sidecar (spec 005). Ships a
+  TCP Deployment and Service with a deterministic model-free starter
+  policy for development and smoke testing. Per-agent-pod UDS injection
+  and a production latency SLO are not provided by this chart.
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "0.7.0"
 kubeVersion: ">=1.29.0-0"
 keywords:
