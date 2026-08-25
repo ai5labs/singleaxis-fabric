@@ -1,0 +1,62 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "example.framework.adapter",
+  "display_name": "Example Framework Adapter",
+  "release": {"version": "0.1.0", "maturity": "illustrative", "distribution": "plugin"},
+  "implementation": {"kind": "framework_adapter", "deployment_modes": ["application"]},
+  "compatibility": {
+    "activity_contract": "1.0.0",
+    "fabric_versions": ">=0.7.0,<1.0.0",
+    "runtimes": ["framework-defined runtime"],
+    "protocols": ["framework lifecycle hooks", "OpenTelemetry API"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "decision_boundary", "source": "native_hook"},
+      {"surface": "llm_operation", "source": "native_hook"},
+      {"surface": "tool_operation", "source": "native_hook"},
+      {"surface": "framework_lifecycle", "source": "native_hook"}
+    ],
+    "decision_semantics": "native",
+    "coverage_basis": "Framework lifecycle hooks provide named model, tool, and agent-turn boundaries when the adapter is registered."
+  },
+  "control": {
+    "interposition": "in_process",
+    "agent_runtime_actions": ["block", "redact", "authorize", "escalate"],
+    "telemetry_pipeline_actions": []
+  },
+  "content": {
+    "raw_content_behavior": "configurable_raw",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "built_in",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "framework_context",
+    "strength": "asserted",
+    "tenant_partitioning": "validated"
+  },
+  "authentication": {
+    "ingress_supported": ["in_process_boundary"],
+    "ingress_default": "in_process_boundary",
+    "egress_supported": ["none", "delegated_to_exporter"],
+    "egress_default": "none",
+    "credential_handling": "The adapter inherits local application identity and delegates telemetry exporter credentials to the host."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
+    "baggage": "allowlisted",
+    "correlation_limitations": ["Framework hook coverage can change between framework versions or when user code bypasses the registered hooks."]
+  },
+  "data_egress": {
+    "network_egress": false,
+    "protocols": ["OpenTelemetry in-process API"],
+    "transport_security": "delegated",
+    "destinations": "local_only",
+    "default_destination": null
+  },
+  "verification_evidence": [
+    {"type": "none", "path": null, "claim": "Illustrative valid fixture; a released adapter must replace this with executable version-specific evidence."}
+  ],
+  "known_blind_spots": ["Direct provider or tool calls that bypass framework hooks are not visible to the adapter."]
+}

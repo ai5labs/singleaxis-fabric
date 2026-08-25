@@ -5,10 +5,10 @@ span-event attribute contract emitted by the Python SDK, versioned by
 `SCHEMA_VERSION = "1.0"` (`fabric.decision.SCHEMA_VERSION`).
 
 It exists to guard against _silent schema drift_: downstream consumers
-(Telemetry Bridge, replay engine, audit exporters) and a future
-TypeScript SDK all depend on this exact wire contract. The golden
-fixtures here are the artifact the TypeScript SDK will be validated
-against.
+(Telemetry Bridge, replay engine, audit exporters) and other SDKs all
+depend on this exact wire contract. The public, implementation-neutral
+contract under `contracts/activity/v1` is the artifact both Python and
+TypeScript are validated against.
 
 ## Layout
 
@@ -22,10 +22,13 @@ against.
 - `runner.py` — shared harness used by both the runner and the
   regeneration entrypoint.
 - `generate.py` — regeneration entrypoint.
-- `goldens/<scenario>.json` — the frozen, normalized output per
-  scenario.
-- `schema/fabric-decision-v1.schema.json` — the formal JSON Schema for
-  the decision span and each event type at `SCHEMA_VERSION` 1.0.
+- `../../../../contracts/activity/v1/manifest.json` — scenario support and
+  SHA-256 pins for every contract artifact.
+- `../../../../contracts/activity/v1/goldens/<scenario>.json` — the frozen,
+  normalized output per scenario.
+- `../../../../contracts/activity/v1/schema/fabric-decision-v1.schema.json`
+  — the formal JSON Schema for the decision span and each event type at
+  `SCHEMA_VERSION` 1.0.
 
 The pytest runner lives at `tests/test_conformance.py` and runs in the
 normal `sdk/python` pytest invocation, so CI enforces it.
@@ -60,7 +63,9 @@ From `sdk/python`:
 python -m tests.conformance.generate
 ```
 
-This re-runs every scenario and rewrites `goldens/<scenario>.json`
+This re-runs every scenario and rewrites the public contract goldens
 using the same normalization the runner asserts against. Review the
-resulting JSON diff, and bump `SCHEMA_VERSION` if the change is
-breaking.
+resulting JSON diff, update the pinned SHA-256 values in `manifest.json`,
+and bump the contract/schema version if the change is breaking. Until
+the manifest is deliberately updated, conformance fails closed on
+digest mismatch.

@@ -1,0 +1,29 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "invalid.receiver.runtime-control",
+  "display_name": "Invalid Receiver Runtime Control",
+  "release": {"version": "0.1.0", "maturity": "illustrative", "distribution": "container"},
+  "implementation": {"kind": "otlp_receiver", "deployment_modes": ["collector"]},
+  "compatibility": {"activity_contract": "1.0.0", "fabric_versions": "illustrative", "runtimes": ["OCI"], "protocols": ["OTLP"]},
+  "observation": {
+    "semantic_surfaces": [{"surface": "otlp_span", "source": "protocol_preserved"}],
+    "decision_semantics": "protocol_preserved",
+    "coverage_basis": "An OTLP receiver sees exported telemetry after the application action."
+  },
+  "control": {"interposition": "telemetry_pipeline", "agent_runtime_actions": ["block"], "telemetry_pipeline_actions": ["reject"]},
+  "content": {"raw_content_behavior": "transport_passthrough", "default_raw_capture": false, "pre_egress_redaction": "operator_configurable", "sensitive_field_allowlist": true},
+  "identity": {"source": "telemetry_attributes", "strength": "asserted", "tenant_partitioning": "accepted_unverified"},
+  "authentication": {
+    "ingress_supported": ["none"], "ingress_default": "none",
+    "egress_supported": ["none"], "egress_default": "none",
+    "credential_handling": "No credentials in this deliberately invalid fixture."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
+    "baggage": "pass_through",
+    "correlation_limitations": ["The receiver cannot block an agent action that already occurred."]
+  },
+  "data_egress": {"network_egress": false, "protocols": ["local output"], "transport_security": "not_applicable", "destinations": "local_only", "default_destination": "debug://stdout"},
+  "verification_evidence": [{"type": "none", "path": null, "claim": "Deliberately invalid runtime-control overclaim fixture."}],
+  "known_blind_spots": ["This fixture falsely claims an OTLP receiver can block the agent runtime."]
+}

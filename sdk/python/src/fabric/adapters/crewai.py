@@ -65,6 +65,7 @@ stays thin.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -77,6 +78,11 @@ if TYPE_CHECKING:
     from ..escalation import EscalationSummary
 
 logger = logging.getLogger("fabric.adapters.crewai")
+
+
+def _sha256(value: str) -> str:
+    """Return a correlation-safe digest without retaining raw CrewAI content."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -123,12 +129,16 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
             # carries ``.thought`` / ``.output`` / ``.text``. Reading only
             # ``.log`` silently captured nothing on modern crewai, so probe
             # the known field names in preference order and record the first
-            # non-empty string. Truncate to keep the span attribute bounded;
-            # full transcripts belong in Langfuse, not on the decision span.
+            # non-empty string. Reasoning, output, and parser text can contain
+            # prompts, secrets, or regulated data, so raw previews never land
+            # on spans. Emit only the source field plus digest and length;
+            # authorized full content belongs in a customer-controlled store.
             for field in ("thought", "log", "output", "text"):
-                preview = getattr(event, field, None)
-                if isinstance(preview, str) and preview:
-                    attrs["fabric.crewai.log_preview"] = preview[:200]
+                content = getattr(event, field, None)
+                if isinstance(content, str) and content:
+                    attrs["fabric.crewai.content_field"] = field
+                    attrs["fabric.crewai.content_sha256"] = _sha256(content)
+                    attrs["fabric.crewai.content_chars"] = len(content)
                     break
             decision.span.add_event("fabric.crewai.step", attributes=attrs)
         except Exception:
@@ -141,7 +151,8 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
             }
             description = getattr(output, "description", None)
             if isinstance(description, str) and description:
-                attrs["fabric.crewai.task_description"] = description[:200]
+                attrs["fabric.crewai.task_description_sha256"] = _sha256(description)
+                attrs["fabric.crewai.task_description_chars"] = len(description)
             agent = getattr(output, "agent", None)
             if isinstance(agent, str) and agent:
                 attrs["fabric.crewai.agent"] = agent

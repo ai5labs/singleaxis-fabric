@@ -1,0 +1,61 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "example.vendor.receiver",
+  "display_name": "Example Existing Vendor Telemetry Receiver",
+  "release": {"version": "0.1.0", "maturity": "illustrative", "distribution": "plugin"},
+  "implementation": {"kind": "vendor_receiver", "deployment_modes": ["collector", "managed_service"]},
+  "compatibility": {
+    "activity_contract": null,
+    "fabric_versions": ">=0.7.0,<1.0.0",
+    "runtimes": ["vendor API supported versions"],
+    "protocols": ["vendor telemetry API"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "llm_operation", "source": "protocol_preserved"},
+      {"surface": "tool_operation", "source": "protocol_preserved"},
+      {"surface": "generic_interaction", "source": "protocol_preserved"}
+    ],
+    "decision_semantics": "protocol_preserved",
+    "coverage_basis": "Consumes only fields exposed by the existing vendor telemetry API and maps them without claiming unexposed agent state."
+  },
+  "control": {
+    "interposition": "telemetry_pipeline",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": ["accept", "reject", "redact", "route"]
+  },
+  "content": {
+    "raw_content_behavior": "transport_passthrough",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "operator_configurable",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "vendor_metadata",
+    "strength": "asserted",
+    "tenant_partitioning": "accepted_unverified"
+  },
+  "authentication": {
+    "ingress_supported": ["vendor_defined"],
+    "ingress_default": "vendor_defined",
+    "egress_supported": ["vendor_defined", "mtls"],
+    "egress_default": "vendor_defined",
+    "credential_handling": "Vendor credentials must be secret-backed, scoped read-only, and excluded from logs and exported attributes."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
+    "baggage": "allowlisted",
+    "correlation_limitations": ["Vendor sampling, schema loss, retention, and identifier semantics constrain downstream reconstruction fidelity."]
+  },
+  "data_egress": {
+    "network_egress": true,
+    "protocols": ["vendor API over TLS"],
+    "transport_security": "required",
+    "destinations": "fixed_vendor",
+    "default_destination": "vendor-defined telemetry API"
+  },
+  "verification_evidence": [
+    {"type": "none", "path": null, "claim": "Illustrative valid fixture; each real vendor connector needs versioned mapping and loss tests."}
+  ],
+  "known_blind_spots": ["The receiver cannot recover telemetry the vendor did not capture, retained only briefly, sampled out, or withheld from its API."]
+}

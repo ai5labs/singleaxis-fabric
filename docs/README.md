@@ -11,14 +11,29 @@ shorter, action-oriented doors in.
 - [**Architecture**](architecture.md) — the 3-layer mental model
   (SDK / sidecars / collector) and the "never block the agent
   request path" principle. Links to the authoritative specs.
+- [**Product planes and packaging**](../specs/025-product-planes-and-packaging.md)
+  — the canonical Connect, Control, Observe, Assurance, Governance,
+  and Management model, including lifecycle and deployment options.
 - [**OpenTelemetry GenAI conventions**](genai-semantic-conventions.md) —
   standard spans, attributes, metrics, compatibility, and privacy controls.
+- [**Integration models**](integration-models.md) — select and compose SDK,
+  framework, gateway, receiver, vendor, and eBPF discovery integrations without
+  overstating their visibility or control.
+- [**Connect capability contract**](../contracts/connect/v1/README.md) —
+  digest-pinned machine-readable connector claims, evidence, and blind spots.
+- [**Assurance findings**](assurance-findings.md) — one trace-correlated result
+  contract for deterministic tests, judges, red teams, and human review, with
+  clear Observe and Governance boundaries.
 - [**Deployment**](deployment.md) — Helm chart, the
   `permissive-dev` and `eu-ai-act-high-risk` profiles, and the
   L1-OSS / L2-control-plane boundary.
 - [**Building Fabric**](building-fabric.md) — engineering rules for
   rebuilding Fabric as operational infrastructure for autonomous
   systems.
+- [**Install a pinned release**](install.md) — production installation,
+  artifact pinning, promotion records, and deployment constraints.
+- [**Verify a release**](verify-release.md) — hashes, signatures,
+  provenance, and exact-SHA qualification evidence.
 - [**Decision Graph**](decision-graph.md) — the causal graph primitive
   that powers replay, audit, governance, and evaluation.
 - [**OSS / Commercial Boundary**](oss-commercial-boundary.md) — what

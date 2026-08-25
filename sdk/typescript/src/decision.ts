@@ -43,7 +43,7 @@ import {
   SPAN_NAME_DECISION,
 } from "./attributes.js";
 import { activeExecution } from "./execution.js";
-import { policyInputHash, randomUuid, sha256Hex } from "./hash.js";
+import { policyInputHash, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import {
   LlmCall,
   ToolCall,
@@ -123,17 +123,13 @@ export type EscalationMode = "sync" | "async" | "deferred";
  */
 export type ReplayBehavior = "replay" | "suppress" | "mock" | "manual";
 
-const POLICY_DECISIONS: readonly PolicyDecision[] = [
-  "allow",
-  "deny",
-  "warn",
-  "escalate",
-  "redact",
-];
+const POLICY_DECISIONS: readonly PolicyDecision[] = ["allow", "deny", "warn", "escalate", "redact"];
 const TOOL_AUTH_DECISIONS: readonly ToolAuthorizationDecision[] = ["allow", "deny"];
 const ESCALATION_MODES: readonly EscalationMode[] = ["sync", "async", "deferred"];
 const REPLAY_BEHAVIORS: readonly ReplayBehavior[] = ["replay", "suppress", "mock", "manual"];
 const GUARDRAIL_PHASES: readonly GuardrailPhase[] = ["input", "output_stream", "output_final"];
+const INTERACTION_DIRECTIONS: readonly InteractionDirection[] = ["inbound", "outbound", "internal"];
+const BASELINE_STATUSES: readonly BaselineStatus[] = ["match", "deviation", "unknown"];
 
 /** A detected PII/entity class and how many times it occurred. */
 export interface GuardrailEntity {
@@ -299,6 +295,70 @@ export interface ToolAuthorizationOptions {
   reason?: string;
 }
 
+/** Replay envelope inputs. Only hashes and lineage identifiers are emitted. */
+export interface ReplayMetadataOptions {
+  stateHash?: string;
+  toolResultHashes?: string[];
+}
+
+/** One privacy-preserving MCP tool definition used for inventory hashing. */
+export interface McpToolDefinition {
+  name: string;
+  description?: string | null;
+  inputSchema?: unknown;
+}
+
+export interface McpInventoryOptions {
+  server: string;
+  transport: string;
+  tools: McpToolDefinition[];
+  resources?: unknown[];
+  prompts?: unknown[];
+}
+
+export interface SkillOptions {
+  source?: string;
+  manifestHash?: string;
+  signed?: boolean;
+}
+
+export interface HookOptions {
+  modified: boolean;
+  inputHash?: string;
+  outputHash?: string;
+}
+
+export interface FileAccessOptions {
+  contentHash?: string;
+  sizeBytes?: number;
+  /** Hash the path locally instead of emitting it. Defaults to true. */
+  redactPath?: boolean;
+}
+
+export type InteractionDirection = "inbound" | "outbound" | "internal";
+export type BaselineStatus = "match" | "deviation" | "unknown";
+
+export interface InteractionOptions {
+  direction?: InteractionDirection;
+  /** Caller-supplied hash of the interaction payload; raw payload is never accepted. */
+  payloadHash?: string;
+  /** Metadata is canonicalized and hashed locally; it is never emitted in clear. */
+  metadata?: Record<string, unknown>;
+  /** Hash the target locally instead of emitting it. Defaults to true. */
+  redactTarget?: boolean;
+  tags?: string[];
+  baseline?: { name: string; status: BaselineStatus };
+  /** Result of host-side signature verification; no key or artifact is accepted. */
+  signature?: { verified: boolean; scheme: string; keyId?: string };
+}
+
+const COVERED_INTERACTION_KINDS = new Set<string>();
+
+/** Reset one-shot generic coverage signals. Primarily useful for isolated test processes. */
+export function resetCoverageRegistry(): void {
+  COVERED_INTERACTION_KINDS.clear();
+}
+
 /**
  * One agent turn. Not safe to share across async tasks — open one
  * `Decision` per turn.
@@ -328,6 +388,17 @@ export class Decision {
   private policyEvalCount = 0;
   private readonly policyEngines = new Set<string>();
   private toolAuthCount = 0;
+  private readonly decisionId: string;
+  private readonly resolvedExecutionId?: string;
+  private readonly checkpointIds: string[] = [];
+  private readonly suppressedSideEffectIds: string[] = [];
+  private skillCount = 0;
+  private delegationCount = 0;
+  private delegationDepth = 0;
+  private hookCount = 0;
+  private fileAccessCount = 0;
+  private interactionCount = 0;
+  private readonly interactionKinds = new Set<string>();
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
@@ -356,6 +427,7 @@ export class Decision {
     const active = activeExecution();
     const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
     const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    this.resolvedExecutionId = executionId;
     // The attempt/retry metadata has no per-decision kwarg, so it is inherited
     // from the active execution when present and otherwise the config value.
     const executionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
@@ -380,14 +452,12 @@ export class Decision {
       span.setAttribute(ATTR_EXECUTION_RETRY_REASON, executionRetryReason);
     }
     if (executionRetryPreviousAttemptId !== undefined) {
-      span.setAttribute(
-        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-        executionRetryPreviousAttemptId,
-      );
+      span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, executionRetryPreviousAttemptId);
     }
     span.setAttribute(ATTR_SESSION, ids.sessionId);
     span.setAttribute(ATTR_REQUEST, ids.requestId);
-    span.setAttribute(ATTR_DECISION_ID, ids.decisionId ?? randomUuid());
+    this.decisionId = ids.decisionId ?? randomUuid();
+    span.setAttribute(ATTR_DECISION_ID, this.decisionId);
     if (ids.userId !== undefined) {
       span.setAttribute(ATTR_USER, ids.userId);
     }
@@ -402,7 +472,7 @@ export class Decision {
     const span = startLlmSpan(this.tracer, options);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
-      const call = new LlmCall(span);
+      const call = new LlmCall(span, options.captureContent ?? false);
       return runAndEnd(span, () => fn(call));
     });
   }
@@ -688,9 +758,13 @@ export class Decision {
     this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
     this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
 
+    const sideEffectId = options.sideEffectId ?? randomUuid();
+    if ((options.replayBehavior ?? "suppress") === "suppress") {
+      this.suppressedSideEffectIds.push(sideEffectId);
+    }
     const attrs: Record<string, string | number | boolean> = {
       [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_SE_ID]: options.sideEffectId ?? randomUuid(),
+      [A.ATTR_SE_ID]: sideEffectId,
       [A.ATTR_SE_TYPE]: options.type,
       [A.ATTR_SE_TARGET_SYSTEM]: options.targetSystem,
       [A.ATTR_SE_OPERATION]: options.operation,
@@ -721,9 +795,11 @@ export class Decision {
   checkpoint(stepName: string, options: CheckpointOptions = {}): void {
     this.checkpointCount += 1;
     this.span.setAttribute(A.ATTR_CHECKPOINT_COUNT, this.checkpointCount);
+    const checkpointId = options.checkpointId ?? randomUuid();
+    this.checkpointIds.push(checkpointId);
     const attrs: Record<string, string | number | boolean> = {
       [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_CHECKPOINT_ID]: options.checkpointId ?? randomUuid(),
+      [A.ATTR_CHECKPOINT_ID]: checkpointId,
       [A.ATTR_CHECKPOINT_STEP_NAME]: stepName,
     };
     if (options.stateHash !== undefined) {
@@ -877,6 +953,234 @@ export class Decision {
     this.span.addEvent(A.EVENT_NAME_TOOL_AUTHORIZATION, attrs);
   }
 
+  /** Emit a replay envelope derived from checkpoints and suppressed side effects in this decision. */
+  recordReplayMetadata(options: ReplayMetadataOptions = {}): void {
+    const attrs: Record<string, string | string[]> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_REPLAY_METADATA_VERSION]: "1",
+      [A.ATTR_REPLAY_DECISION_ID]: this.decisionId,
+    };
+    if (this.resolvedExecutionId !== undefined) {
+      attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
+    }
+    if (this.checkpointIds.length > 0) {
+      attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
+    }
+    if (this.suppressedSideEffectIds.length > 0) {
+      attrs[A.ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS] = [...this.suppressedSideEffectIds];
+    }
+    if (options.stateHash !== undefined) {
+      attrs[A.ATTR_REPLAY_STATE_HASH] = options.stateHash;
+    }
+    if (options.toolResultHashes && options.toolResultHashes.length > 0) {
+      attrs[A.ATTR_REPLAY_TOOL_RESULT_HASHES] = [...options.toolResultHashes];
+    }
+    this.span.addEvent(A.EVENT_NAME_REPLAY, attrs);
+  }
+
+  /** Record an MCP server's advertised surface using definition hashes, never raw schemas. */
+  recordMcpInventory(options: McpInventoryOptions): {
+    tools: string[];
+    toolsHash: string;
+  } {
+    assertNonEmpty("recordMcpInventory: server", options.server);
+    assertNonEmpty("recordMcpInventory: transport", options.transport);
+    for (const tool of options.tools) {
+      assertNonEmpty("recordMcpInventory: tool name", tool.name);
+    }
+    const definitions = options.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? null,
+      inputSchema: tool.inputSchema ?? null,
+    }));
+    const tools = definitions.map(
+      (definition) =>
+        `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
+    );
+    const toolsHash = sha256Hex(pythonJsonStringify(definitions));
+    const attrs: Record<string, string | number | string[]> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_MCP_SERVER]: options.server,
+      [A.ATTR_MCP_TRANSPORT]: options.transport,
+      [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
+      [A.ATTR_MCP_TOOLS]: tools,
+      [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
+    };
+    if (options.resources !== undefined) {
+      attrs[A.ATTR_MCP_RESOURCE_COUNT] = options.resources.length;
+    }
+    if (options.prompts !== undefined) {
+      attrs[A.ATTR_MCP_PROMPT_COUNT] = options.prompts.length;
+    }
+    this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
+    return { tools, toolsHash };
+  }
+
+  /** Record a loaded skill by identity and integrity metadata. */
+  recordSkill(name: string, version: string, options: SkillOptions = {}): void {
+    assertNonEmpty("recordSkill: name", name);
+    assertNonEmpty("recordSkill: version", version);
+    this.skillCount += 1;
+    this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
+    const attrs: Record<string, string | boolean> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_SKILL_NAME]: name,
+      [A.ATTR_SKILL_VERSION]: version,
+    };
+    if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
+    if (options.manifestHash !== undefined) {
+      attrs[A.ATTR_SKILL_MANIFEST_HASH] = options.manifestHash;
+    }
+    if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
+    this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
+  }
+
+  /** Run a delegated operation while recording only the target agent, protocol, and depth. */
+  delegate<T>(toAgent: string, protocol: string, fn: () => T): T {
+    assertNonEmpty("delegate: toAgent", toAgent);
+    assertNonEmpty("delegate: protocol", protocol);
+    this.delegationCount += 1;
+    this.delegationDepth += 1;
+    this.span.setAttribute(A.ATTR_DELEGATION_COUNT, this.delegationCount);
+    this.span.addEvent(A.EVENT_NAME_DELEGATION, {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_DELEGATION_TO_AGENT]: toAgent,
+      [A.ATTR_DELEGATION_PROTOCOL]: protocol,
+      [A.ATTR_DELEGATION_DEPTH]: this.delegationDepth,
+    });
+    let result: T;
+    try {
+      result = fn();
+    } catch (error) {
+      this.delegationDepth -= 1;
+      throw error;
+    }
+    if (isThenable(result)) {
+      return result.then(
+        (value) => {
+          this.delegationDepth -= 1;
+          return value;
+        },
+        (error: unknown) => {
+          this.delegationDepth -= 1;
+          throw error;
+        },
+      ) as T;
+    }
+    this.delegationDepth -= 1;
+    return result;
+  }
+
+  /** Record a lifecycle hook without accepting raw hook inputs or outputs. */
+  recordHook(name: string, phase: string, options: HookOptions): void {
+    assertNonEmpty("recordHook: name", name);
+    assertNonEmpty("recordHook: phase", phase);
+    this.hookCount += 1;
+    this.span.setAttribute(A.ATTR_HOOK_COUNT, this.hookCount);
+    const attrs: Record<string, string | boolean> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_HOOK_NAME]: name,
+      [A.ATTR_HOOK_PHASE]: phase,
+      [A.ATTR_HOOK_MODIFIED]: options.modified,
+    };
+    if (options.inputHash !== undefined) attrs[A.ATTR_HOOK_INPUT_HASH] = options.inputHash;
+    if (options.outputHash !== undefined) {
+      attrs[A.ATTR_HOOK_OUTPUT_HASH] = options.outputHash;
+    }
+    this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
+  }
+
+  /** Record filesystem access, with opt-in local path hashing for sensitive paths. */
+  recordFileAccess(path: string, operation: string, options: FileAccessOptions = {}): void {
+    assertNonEmpty("recordFileAccess: path", path);
+    assertNonEmpty("recordFileAccess: operation", operation);
+    if (options.sizeBytes !== undefined) {
+      assertNonNegativeInt("recordFileAccess: sizeBytes", options.sizeBytes);
+    }
+    this.fileAccessCount += 1;
+    this.span.setAttribute(A.ATTR_FILE_ACCESS_COUNT, this.fileAccessCount);
+    const redactPath = options.redactPath ?? true;
+    const attrs: Record<string, string | number | boolean> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_FILE_OPERATION]: operation,
+      [A.ATTR_FILE_PATH_REDACTED]: redactPath,
+    };
+    if (redactPath) attrs[A.ATTR_FILE_PATH_HASH] = sha256Hex(path);
+    else attrs[A.ATTR_FILE_PATH] = path;
+    if (options.contentHash !== undefined) {
+      attrs[A.ATTR_FILE_CONTENT_HASH] = options.contentHash;
+    }
+    if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
+    this.span.addEvent(A.EVENT_NAME_FILE, attrs);
+  }
+
+  /**
+   * Capture an open-vocabulary interaction. Payloads are hash-only; metadata
+   * is canonicalized and hashed; sensitive targets can be locally hashed.
+   */
+  recordInteraction(kind: string, target: string, options: InteractionOptions = {}): void {
+    assertNonEmpty("recordInteraction: kind", kind);
+    assertNonEmpty("recordInteraction: target", target);
+    if (options.direction !== undefined) {
+      assertOneOf("recordInteraction: direction", options.direction, INTERACTION_DIRECTIONS);
+    }
+    if (options.baseline !== undefined) {
+      assertNonEmpty("recordInteraction: baseline name", options.baseline.name);
+      assertOneOf("recordInteraction: baseline status", options.baseline.status, BASELINE_STATUSES);
+    }
+    this.interactionCount += 1;
+    this.interactionKinds.add(kind);
+    this.span.setAttribute(A.ATTR_INTERACTION_COUNT, this.interactionCount);
+    this.span.setAttribute(A.ATTR_INTERACTION_KINDS, sortedSet(this.interactionKinds));
+    const redactTarget = options.redactTarget ?? true;
+    const attrs: Record<string, string | boolean | string[]> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_INTERACTION_KIND]: kind,
+      [A.ATTR_INTERACTION_TARGET_REDACTED]: redactTarget,
+    };
+    if (redactTarget) attrs[A.ATTR_INTERACTION_TARGET_HASH] = sha256Hex(target);
+    else attrs[A.ATTR_INTERACTION_TARGET] = target;
+    if (options.direction !== undefined) {
+      attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
+    }
+    if (options.payloadHash !== undefined) {
+      attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = options.payloadHash;
+    }
+    if (options.metadata !== undefined) {
+      attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
+    }
+    if (options.tags && options.tags.length > 0) attrs[A.ATTR_TAGS] = [...options.tags];
+    if (options.baseline !== undefined) {
+      attrs[A.ATTR_BASELINE_NAME] = options.baseline.name;
+      attrs[A.ATTR_BASELINE_STATUS] = options.baseline.status;
+    }
+    if (options.signature !== undefined) {
+      attrs[A.ATTR_SIGNATURE_VERIFIED] = options.signature.verified;
+      attrs[A.ATTR_SIGNATURE_SCHEME] = options.signature.scheme;
+      if (options.signature.keyId !== undefined) {
+        attrs[A.ATTR_SIGNATURE_KEY_ID] = options.signature.keyId;
+      }
+    }
+    this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
+
+    if (!COVERED_INTERACTION_KINDS.has(kind)) {
+      COVERED_INTERACTION_KINDS.add(kind);
+      this.recordCoverage(kind, "new_kind");
+    }
+    if (options.baseline?.status === "deviation" && (!options.tags || options.tags.length === 0)) {
+      this.recordCoverage(kind, "unclassified_deviation");
+    }
+  }
+
+  private recordCoverage(kind: string, reason: string): void {
+    this.span.addEvent(A.EVENT_NAME_COVERAGE, {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_COVERAGE_KIND]: kind,
+      [A.ATTR_COVERAGE_SUGGESTION]: "generic",
+      [A.ATTR_COVERAGE_REASON]: reason,
+    });
+  }
+
   /** Set a custom scalar attribute on the decision span. */
   setAttribute(key: string, value: string | number | boolean): void {
     assertScalarAttribute(key, value);
@@ -993,12 +1297,22 @@ function assertFiniteNumber(field: string, value: number): void {
   }
 }
 
+function assertNonNegativeInt(field: string, value: number): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${field} must be a non-negative integer; got ${String(value)}`);
+  }
+}
+
+function assertNonEmpty(field: string, value: string): void {
+  if (value.trim() === "") {
+    throw new Error(`${field} must be non-empty`);
+  }
+}
+
 /** Throw unless `value` is one of `allowed`. */
 function assertOneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): void {
   if (typeof value !== "string" || !allowed.includes(value as T)) {
-    throw new Error(
-      `${field} must be one of {${allowed.join(", ")}}; got ${describe(value)}`,
-    );
+    throw new Error(`${field} must be one of {${allowed.join(", ")}}; got ${describe(value)}`);
   }
 }
 

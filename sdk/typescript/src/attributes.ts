@@ -70,9 +70,8 @@ export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 export const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
 export const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
 export const GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens";
-export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens";
-export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS =
-  "gen_ai.usage.cache_creation.input_tokens";
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
 export const GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk";
 export const GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id";
 export const GEN_AI_CONVERSATION_COMPACTED = "gen_ai.conversation.compacted";
@@ -115,6 +114,23 @@ export const FABRIC_TOOL_RESULT_HASH = "fabric.tool.result_hash";
 export const FABRIC_TOOL_KIND = "fabric.tool.kind";
 export const FABRIC_TOOL_ERROR = "fabric.tool.error";
 export const FABRIC_TOOL_ERROR_CATEGORY = "fabric.tool.error_category";
+export const FABRIC_TOOL_RETRY_COUNT = "fabric.tool.retry.count";
+export const FABRIC_TOOL_RETRY_REASON = "fabric.tool.retry.reason";
+export const FABRIC_TOOL_IDEMPOTENT = "fabric.tool.idempotent";
+export const FABRIC_TOOL_IDEMPOTENCY_KEY = "fabric.tool.idempotency_key";
+
+export const FABRIC_STEP_ID = "fabric.step.id";
+export const FABRIC_STEP_ATTEMPT_ID = "fabric.step.attempt_id";
+export const FABRIC_STEP_ATTEMPT = "fabric.step.attempt";
+export const FABRIC_STEP_RETRY_REASON = "fabric.step.retry.reason";
+export const FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID = "fabric.step.retry.previous_attempt_id";
+
+export const FABRIC_LLM_CACHE_READ_TOKENS = "fabric.llm.usage.cache_read_tokens";
+export const FABRIC_LLM_CACHE_CREATION_TOKENS = "fabric.llm.usage.cache_creation_tokens";
+export const FABRIC_LLM_STREAMING_TTFT_MS = "fabric.llm.streaming.ttft_ms";
+export const FABRIC_LLM_STREAMING_CHUNK_COUNT = "fabric.llm.streaming.chunk_count";
+export const FABRIC_LLM_RETRY_COUNT = "fabric.llm.retry.count";
+export const FABRIC_LLM_RETRY_REASON = "fabric.llm.retry.reason";
 
 // -- Guardrail (fabric.guardrail span event, per spec 005) --------------
 //
@@ -275,3 +291,76 @@ export const ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count";
 
 export const ATTR_TOOL_AUTH_DECISION = "fabric.tool.authorization.decision";
 export const ATTR_TOOL_AUTH_REASON = "fabric.tool.authorization.reason";
+
+// -- Replay, inventory, extensibility, and generic interaction events ----
+
+export const EVENT_NAME_REPLAY = "fabric.replay";
+export const ATTR_REPLAY_METADATA_VERSION = "fabric.replay.metadata_version";
+export const ATTR_REPLAY_EXECUTION_ID = "fabric.replay.execution_id";
+export const ATTR_REPLAY_DECISION_ID = "fabric.replay.decision_id";
+export const ATTR_REPLAY_CHECKPOINT_IDS = "fabric.replay.checkpoint_ids";
+export const ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS = "fabric.replay.suppressed_side_effect_ids";
+export const ATTR_REPLAY_STATE_HASH = "fabric.replay.state_hash";
+export const ATTR_REPLAY_TOOL_RESULT_HASHES = "fabric.replay.tool_result_hashes";
+
+export const EVENT_NAME_MCP_INVENTORY = "fabric.mcp.inventory";
+export const ATTR_MCP_SERVER = "fabric.mcp.server";
+export const ATTR_MCP_TRANSPORT = "fabric.mcp.transport";
+export const ATTR_MCP_TOOL_COUNT = "fabric.mcp.tool_count";
+export const ATTR_MCP_TOOLS = "fabric.mcp.tools";
+export const ATTR_MCP_TOOLS_HASH = "fabric.mcp.tools_hash";
+export const ATTR_MCP_RESOURCE_COUNT = "fabric.mcp.resource_count";
+export const ATTR_MCP_PROMPT_COUNT = "fabric.mcp.prompt_count";
+
+export const EVENT_NAME_SKILL = "fabric.skill";
+export const ATTR_SKILL_COUNT = "fabric.skill_count";
+export const ATTR_SKILL_NAME = "fabric.skill.name";
+export const ATTR_SKILL_VERSION = "fabric.skill.version";
+export const ATTR_SKILL_SOURCE = "fabric.skill.source";
+export const ATTR_SKILL_MANIFEST_HASH = "fabric.skill.manifest_hash";
+export const ATTR_SKILL_SIGNED = "fabric.skill.signed";
+
+export const EVENT_NAME_DELEGATION = "fabric.delegation";
+export const ATTR_DELEGATION_COUNT = "fabric.delegation_count";
+export const ATTR_DELEGATION_TO_AGENT = "fabric.delegation.to_agent";
+export const ATTR_DELEGATION_PROTOCOL = "fabric.delegation.protocol";
+export const ATTR_DELEGATION_DEPTH = "fabric.delegation.depth";
+
+export const EVENT_NAME_HOOK = "fabric.hook";
+export const ATTR_HOOK_COUNT = "fabric.hook_count";
+export const ATTR_HOOK_NAME = "fabric.hook.name";
+export const ATTR_HOOK_PHASE = "fabric.hook.phase";
+export const ATTR_HOOK_MODIFIED = "fabric.hook.modified";
+export const ATTR_HOOK_INPUT_HASH = "fabric.hook.input_hash";
+export const ATTR_HOOK_OUTPUT_HASH = "fabric.hook.output_hash";
+
+export const EVENT_NAME_FILE = "fabric.file";
+export const ATTR_FILE_ACCESS_COUNT = "fabric.file_access_count";
+export const ATTR_FILE_PATH = "fabric.file.path";
+export const ATTR_FILE_PATH_HASH = "fabric.file.path_hash";
+export const ATTR_FILE_PATH_REDACTED = "fabric.file.path_redacted";
+export const ATTR_FILE_OPERATION = "fabric.file.operation";
+export const ATTR_FILE_CONTENT_HASH = "fabric.file.content_hash";
+export const ATTR_FILE_SIZE_BYTES = "fabric.file.size_bytes";
+
+export const EVENT_NAME_INTERACTION = "fabric.interaction";
+export const ATTR_INTERACTION_COUNT = "fabric.interaction_count";
+export const ATTR_INTERACTION_KINDS = "fabric.interaction_kinds";
+export const ATTR_INTERACTION_KIND = "fabric.interaction.kind";
+export const ATTR_INTERACTION_TARGET = "fabric.interaction.target";
+export const ATTR_INTERACTION_TARGET_HASH = "fabric.interaction.target_hash";
+export const ATTR_INTERACTION_TARGET_REDACTED = "fabric.interaction.target_redacted";
+export const ATTR_INTERACTION_DIRECTION = "fabric.interaction.direction";
+export const ATTR_INTERACTION_PAYLOAD_HASH = "fabric.interaction.payload_hash";
+export const ATTR_INTERACTION_METADATA_HASH = "fabric.interaction.metadata_hash";
+export const ATTR_TAGS = "fabric.tags";
+export const ATTR_BASELINE_NAME = "fabric.baseline.name";
+export const ATTR_BASELINE_STATUS = "fabric.baseline.status";
+export const ATTR_SIGNATURE_VERIFIED = "fabric.signature.verified";
+export const ATTR_SIGNATURE_SCHEME = "fabric.signature.scheme";
+export const ATTR_SIGNATURE_KEY_ID = "fabric.signature.key_id";
+
+export const EVENT_NAME_COVERAGE = "fabric.coverage";
+export const ATTR_COVERAGE_KIND = "fabric.coverage.kind";
+export const ATTR_COVERAGE_REASON = "fabric.coverage.reason";
+export const ATTR_COVERAGE_SUGGESTION = "fabric.coverage.suggestion";

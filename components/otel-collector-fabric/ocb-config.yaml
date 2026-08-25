@@ -20,6 +20,11 @@ extensions:
   # health_check extension ships from the contrib distribution; keep
   # the version pinned to the same v0.150.0 as the rest of the manifest.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
+  # Durable exporter queues use the contrib file-storage extension.
+  # Merely compiling this component does not make delivery durable: a
+  # writable persistent volume and `sending_queue.storage` must also be
+  # configured (the Helm chart does both when persistence is enabled).
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0

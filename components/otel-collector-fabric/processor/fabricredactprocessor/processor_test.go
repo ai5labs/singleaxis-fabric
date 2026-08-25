@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -135,6 +137,10 @@ func TestConfigValidate(t *testing.T) {
 		{"ok", func(c *Config) { c.UnixSocket = "/tmp/s" }, false},
 		{"zero timeout", func(c *Config) { c.UnixSocket = "/tmp/s"; c.Timeout = 0 }, true},
 		{"empty class attr", func(c *Config) { c.UnixSocket = "/tmp/s"; c.EventClassAttribute = "" }, true},
+		{"secure bytes default", func(c *Config) { c.UnixSocket = "/tmp/s"; c.ByteHandling = "" }, false},
+		{"reject bytes", func(c *Config) { c.UnixSocket = "/tmp/s"; c.ByteHandling = ByteHandlingReject }, false},
+		{"legacy bytes passthrough", func(c *Config) { c.UnixSocket = "/tmp/s"; c.ByteHandling = ByteHandlingPassthrough }, false},
+		{"unknown bytes mode", func(c *Config) { c.UnixSocket = "/tmp/s"; c.ByteHandling = "base64" }, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,17 +259,18 @@ func TestProcessorSkipsListedAttributes(t *testing.T) {
 	if _, err := r.processLogs(context.Background(), ld); err != nil {
 		t.Fatalf("processLogs: %v", err)
 	}
-	// `event_class` + `body` get sent; `skipme` is skipped.
-	if calls != 2 {
-		t.Fatalf("expected 2 sidecar calls, got %d", calls)
+	// Keys and values for `event_class` + `body` get sent; `skipme` is an
+	// explicit key/value exemption.
+	if calls != 4 {
+		t.Fatalf("expected 4 sidecar calls, got %d", calls)
 	}
 }
 
 func TestProcessorEmptyStringSkipped(t *testing.T) {
 	calls := 0
-	client := fakeClient{fn: func(_ context.Context, _, _ string) (RedactionResult, error) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
 		calls++
-		return RedactionResult{}, nil
+		return RedactionResult{Value: value}, nil
 	}}
 	cfg := createDefaultConfig()
 	cfg.UnixSocket = "ignored"
@@ -276,8 +283,8 @@ func TestProcessorEmptyStringSkipped(t *testing.T) {
 	if _, err := r.processLogs(context.Background(), ld); err != nil {
 		t.Fatalf("processLogs: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("expected 1 call (event_class only), got %d", calls)
+	if calls != 3 {
+		t.Fatalf("expected 3 calls (two keys + event_class value), got %d", calls)
 	}
 }
 
@@ -323,7 +330,7 @@ func TestClientRoundTripOverUDS(t *testing.T) {
 
 func TestClientNon200IsError(t *testing.T) {
 	sock := startUDSSidecar(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "nope", http.StatusBadGateway)
+		http.Error(w, "echoed ada@example.com", http.StatusBadGateway)
 	}))
 	c, err := NewUDSClient(sock, time.Second)
 	if err != nil {
@@ -331,8 +338,9 @@ func TestClientNon200IsError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 
-	if _, err := c.Redact(context.Background(), "a", "b"); err == nil || !strings.Contains(err.Error(), "502") {
-		t.Fatalf("expected 502 error, got %v", err)
+	if _, err := c.Redact(context.Background(), "a", "b"); err == nil ||
+		!strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "ada@example.com") {
+		t.Fatalf("expected sanitized 502 error, got %v", err)
 	}
 }
 
@@ -361,6 +369,33 @@ func TestClientUnreachableSocketFailsClosed(t *testing.T) {
 
 	if _, err := c.Redact(context.Background(), "a", "b"); err == nil {
 		t.Fatal("expected transport error against missing socket")
+	}
+}
+
+func TestClientTimeoutFailsClosedAtProcessorBoundary(t *testing.T) {
+	sock := startUDSSidecar(t, http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		<-req.Context().Done()
+	}))
+	c, err := NewUDSClient(sock, 25*time.Millisecond)
+	if err != nil {
+		t.Fatalf("NewUDSClient: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = sock
+	cfg.Timeout = 25 * time.Millisecond
+	r := newRedactor(cfg, c, zaptest.NewLogger(t))
+	ld := makeLogsOneRecord(map[string]any{"note": "ada@example.com"})
+
+	started := time.Now()
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("timeout was not bounded: %s", elapsed)
+	}
+	if recordCount(ld) != 0 {
+		t.Fatal("timed-out redaction must drop the record")
 	}
 }
 
@@ -508,12 +543,12 @@ func TestTracesRedactsSpanEventAttributes(t *testing.T) {
 
 func TestTracesSkipsListedAttributes(t *testing.T) {
 	calls := 0
-	client := fakeClient{fn: func(_ context.Context, path, _ string) (RedactionResult, error) {
+	client := fakeClient{fn: func(_ context.Context, path, value string) (RedactionResult, error) {
 		calls++
 		if path == "fabric.decision.skipme" {
 			t.Errorf("skip attribute sent to sidecar at path=%q", path)
 		}
-		return RedactionResult{Value: "x"}, nil
+		return RedactionResult{Value: value}, nil
 	}}
 	cfg := createDefaultConfig()
 	cfg.UnixSocket = "ignored"
@@ -528,8 +563,8 @@ func TestTracesSkipsListedAttributes(t *testing.T) {
 	if _, err := r.processTraces(context.Background(), td); err != nil {
 		t.Fatalf("processTraces: %v", err)
 	}
-	if calls != 2 { // event_class + note; skipme skipped
-		t.Fatalf("expected 2 sidecar calls, got %d", calls)
+	if calls != 5 { // span name + key/value pairs; skipme exempted
+		t.Fatalf("expected 5 sidecar calls, got %d", calls)
 	}
 }
 
@@ -597,7 +632,10 @@ func TestRedactsNestedMapAndSliceValues(t *testing.T) {
 	var calls []call
 	client := fakeClient{fn: func(_ context.Context, path, value string) (RedactionResult, error) {
 		calls = append(calls, call{path, value})
-		return RedactionResult{Value: "H:" + value, Hashed: true}, nil
+		if strings.Contains(value, "@") {
+			return RedactionResult{Value: "H:" + value, Hashed: true}, nil
+		}
+		return RedactionResult{Value: value}, nil
 	}}
 	cfg := createDefaultConfig()
 	cfg.UnixSocket = "ignored"
@@ -644,5 +682,260 @@ func TestRedactsNestedMapAndSliceValues(t *testing.T) {
 		if !found {
 			t.Fatalf("missing sidecar path %q; got %v", w, joined)
 		}
+	}
+}
+
+func TestLogsRedactsNestedBodyAndUTF8Bytes(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		return RedactionResult{Value: strings.ReplaceAll(value, "ada@example.com", "<EMAIL>")}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	ld := plog.NewLogs()
+	lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	body := lr.Body().SetEmptyMap()
+	body.PutStr("prompt", "contact ada@example.com")
+	attachments := body.PutEmptySlice("attachments")
+	attachments.AppendEmpty().SetEmptyBytes().FromRaw([]byte("owner=ada@example.com"))
+	lr.Attributes().PutEmptyBytes("raw").FromRaw([]byte("ada@example.com"))
+
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	rec, ok := firstRecord(ld)
+	if !ok {
+		t.Fatal("record unexpectedly dropped")
+	}
+	bodyOut := rec.Body().Map()
+	prompt, _ := bodyOut.Get("prompt")
+	if prompt.Str() != "contact <EMAIL>" {
+		t.Fatalf("nested body string leaked: %q", prompt.Str())
+	}
+	attachment, _ := bodyOut.Get("attachments")
+	if got := string(attachment.Slice().At(0).Bytes().AsRaw()); got != "owner=<EMAIL>" {
+		t.Fatalf("nested body bytes leaked: %q", got)
+	}
+	raw, _ := rec.Attributes().Get("raw")
+	if got := string(raw.Bytes().AsRaw()); got != "<EMAIL>" {
+		t.Fatalf("attribute bytes leaked: %q", got)
+	}
+}
+
+func TestInvalidUTF8BytesFailClosedByDefault(t *testing.T) {
+	calls := 0
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		calls++
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	ld := plog.NewLogs()
+	lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	lr.Body().SetEmptyBytes().FromRaw([]byte{0xff, 0xfe, 'a'})
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	if recordCount(ld) != 0 {
+		t.Fatal("uninspectable bytes must drop the record")
+	}
+	if calls != 0 {
+		t.Fatalf("invalid UTF-8 must not be coerced into a sidecar request; calls=%d", calls)
+	}
+}
+
+func TestSensitiveAttributeOrNestedMapKeyFailsClosed(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		return RedactionResult{Value: strings.ReplaceAll(value, "ada@example.com", "<EMAIL>")}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	for _, tc := range []struct {
+		name  string
+		build func(plog.LogRecord)
+	}{
+		{
+			name: "attribute key",
+			build: func(lr plog.LogRecord) {
+				lr.Attributes().PutStr("owner.ada@example.com", "safe-value")
+			},
+		},
+		{
+			name: "nested map key",
+			build: func(lr plog.LogRecord) {
+				lr.Attributes().PutEmptyMap("payload").PutStr("ada@example.com", "safe-value")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ld := plog.NewLogs()
+			lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+			tc.build(lr)
+			if _, err := r.processLogs(context.Background(), ld); err != nil {
+				t.Fatalf("processLogs: %v", err)
+			}
+			if recordCount(ld) != 0 {
+				t.Fatal("sensitive structural key must fail closed instead of being renamed")
+			}
+		})
+	}
+}
+
+func TestSensitiveNumericAttributeFailsClosedWithoutChangingType(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		if value == "123456789" {
+			return RedactionResult{Value: "<ACCOUNT>"}, nil
+		}
+		return RedactionResult{Value: value}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+	ld := makeLogsOneRecord(map[string]any{"account_number": 123456789})
+
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	if recordCount(ld) != 0 {
+		t.Fatal("numeric identifier requiring redaction must drop instead of leaking or changing type")
+	}
+}
+
+func TestByteHandlingRejectAndExplicitLegacyPassthrough(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mode      string
+		wantCount int
+	}{
+		{name: "reject", mode: ByteHandlingReject, wantCount: 0},
+		{name: "explicit passthrough", mode: ByteHandlingPassthrough, wantCount: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+				return RedactionResult{Value: value}, nil
+			}}
+			cfg := createDefaultConfig()
+			cfg.UnixSocket = "ignored"
+			cfg.ByteHandling = tc.mode
+			r := newRedactor(cfg, client, zaptest.NewLogger(t))
+			ld := plog.NewLogs()
+			lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+			lr.Body().SetEmptyBytes().FromRaw([]byte("ada@example.com"))
+			if _, err := r.processLogs(context.Background(), ld); err != nil {
+				t.Fatalf("processLogs: %v", err)
+			}
+			if got := recordCount(ld); got != tc.wantCount {
+				t.Fatalf("record count=%d want=%d", got, tc.wantCount)
+			}
+		})
+	}
+}
+
+func TestTracesRedactsAllContentBearingFields(t *testing.T) {
+	client := fakeClient{fn: func(_ context.Context, _, value string) (RedactionResult, error) {
+		return RedactionResult{Value: strings.ReplaceAll(value, "ada@example.com", "<EMAIL>")}, nil
+	}}
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, zaptest.NewLogger(t))
+
+	td := ptrace.NewTraces()
+	rs := td.ResourceSpans().AppendEmpty()
+	rs.SetSchemaUrl("https://schemas.example/v1?owner=ada@example.com")
+	rs.Resource().Attributes().PutEmptyBytes("resource.owner").FromRaw([]byte("ada@example.com"))
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.SetSchemaUrl("https://schemas.example/v1")
+	ss.Scope().SetName("agent-ada@example.com")
+	ss.Scope().SetVersion("1.2.3")
+	ss.Scope().Attributes().PutStr("scope.owner", "ada@example.com")
+	sp := ss.Spans().AppendEmpty()
+	sp.SetName("invoke ada@example.com")
+	sp.TraceState().FromRaw("tenant=ada@example.com")
+	sp.Status().SetMessage("failed for ada@example.com")
+	sp.Attributes().PutStr("prompt", "ask ada@example.com")
+	ev := sp.Events().AppendEmpty()
+	ev.SetName("guardrail ada@example.com")
+	ev.Attributes().PutStr("input", "ada@example.com")
+	link := sp.Links().AppendEmpty()
+	link.TraceState().FromRaw("tenant=ada@example.com")
+	link.Attributes().PutStr("owner", "ada@example.com")
+
+	if _, err := r.processTraces(context.Background(), td); err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if spanCount(td) != 1 {
+		t.Fatal("span unexpectedly dropped")
+	}
+	got := td.ResourceSpans().At(0)
+	if got.SchemaUrl() != "" {
+		t.Fatalf("redacted resource schema URL must be cleared, got %q", got.SchemaUrl())
+	}
+	resourceOwner, _ := got.Resource().Attributes().Get("resource.owner")
+	if string(resourceOwner.Bytes().AsRaw()) != "<EMAIL>" {
+		t.Fatalf("resource bytes leaked: %q", resourceOwner.Bytes().AsRaw())
+	}
+	gotScope := got.ScopeSpans().At(0)
+	if gotScope.SchemaUrl() != "https://schemas.example/v1" || gotScope.Scope().Version() != "1.2.3" {
+		t.Fatal("safe structural metadata was not preserved")
+	}
+	if gotScope.Scope().Name() != "agent-<EMAIL>" {
+		t.Fatalf("scope name leaked: %q", gotScope.Scope().Name())
+	}
+	gotSpan := gotScope.Spans().At(0)
+	if gotSpan.Name() != "invoke <EMAIL>" || gotSpan.Status().Message() != "failed for <EMAIL>" {
+		t.Fatalf("span name/status leaked: %q / %q", gotSpan.Name(), gotSpan.Status().Message())
+	}
+	if gotSpan.TraceState().AsRaw() != "" || gotSpan.Links().At(0).TraceState().AsRaw() != "" {
+		t.Fatal("changed trace state must be cleared")
+	}
+	if gotSpan.Events().At(0).Name() != "guardrail <EMAIL>" {
+		t.Fatalf("event name leaked: %q", gotSpan.Events().At(0).Name())
+	}
+	for _, attr := range []pcommon.Value{
+		mustGet(t, gotScope.Scope().Attributes(), "scope.owner"),
+		mustGet(t, gotSpan.Attributes(), "prompt"),
+		mustGet(t, gotSpan.Events().At(0).Attributes(), "input"),
+		mustGet(t, gotSpan.Links().At(0).Attributes(), "owner"),
+	} {
+		if attr.Str() != "<EMAIL>" && attr.Str() != "ask <EMAIL>" {
+			t.Fatalf("attribute content leaked: %q", attr.Str())
+		}
+	}
+}
+
+func mustGet(t *testing.T, attrs pcommon.Map, key string) pcommon.Value {
+	t.Helper()
+	v, ok := attrs.Get(key)
+	if !ok {
+		t.Fatalf("missing attribute %q", key)
+	}
+	return v
+}
+
+func TestSidecarDeadlineFailureDropsPayloadWithoutLoggingContent(t *testing.T) {
+	secret := "ada@example.com"
+	client := fakeClient{fn: func(_ context.Context, _, _ string) (RedactionResult, error) {
+		return RedactionResult{}, errors.New("deadline while redacting " + secret)
+	}}
+	logger := zaptest.NewLogger(t, zaptest.WrapOptions(zap.Hooks(func(entry zapcore.Entry) error {
+		if strings.Contains(entry.Message, secret) {
+			t.Errorf("collector log leaked content: %q", entry.Message)
+		}
+		return nil
+	})))
+	cfg := createDefaultConfig()
+	cfg.UnixSocket = "ignored"
+	r := newRedactor(cfg, client, logger)
+	ld := makeLogsOneRecord(map[string]any{"note": secret})
+	if _, err := r.processLogs(context.Background(), ld); err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	if recordCount(ld) != 0 {
+		t.Fatal("deadline failure must drop the record")
 	}
 }

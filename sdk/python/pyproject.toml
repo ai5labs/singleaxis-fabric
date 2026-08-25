@@ -25,7 +25,13 @@ dependencies = [
   "opentelemetry-api>=1.41",
   "opentelemetry-sdk>=1.41",
   "pydantic>=2.8,<3.0",
+  # Bounded, safe-load-only parser used by fabricctl for the public
+  # FabricDeployment contract. Duplicate keys and unsafe YAML tags are rejected.
+  "PyYAML>=6.0.2,<7.0",
 ]
+
+[project.scripts]
+fabricctl = "fabric.cli:main"
 
 [project.optional-dependencies]
 otlp = [
@@ -143,6 +149,7 @@ dev = [
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
+  "types-PyYAML>=6.0.12",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   # httpx powers the HTTP-backed adapters (lakera, opa); pulled into
   # [dev] so their adapter tests can construct and exercise the client.
@@ -166,7 +173,11 @@ Issues        = "https://github.com/singleaxis/singleaxis-fabric/issues"
 path = "src/fabric/_version.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/README.md", "/LICENSE"]
+# Release sdists are production source artifacts, not test-fixture bundles.
+# Conformance goldens are authoritative at the repository-level contracts/
+# path and intentionally do not ship as a stale duplicate under tests/.
+include = ["/src", "/README.md", "/LICENSE"]
+exclude = ["/tests", "**/.gitignore"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric"]

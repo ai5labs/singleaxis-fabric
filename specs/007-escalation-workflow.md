@@ -21,8 +21,8 @@ owner: project-lead
 >
 > - **L2 commercial — SASF Review service + signed verdict + resume
 >   protocol.** The reviewer dashboard, signed decision webhook, and
->   durable checkpoint store live in the SingleAxis commercial control
->   plane (separate private repository). Sections "SASF Review",
+>   durable checkpoint store belong to the external Governance plane and are
+>   not part of this OSS distribution. Sections "SASF Review",
 >   "Signed decision webhook", and "Resume protocol" below describe
 >   that L2 pipeline as design of record; they are not implemented in
 >   the OSS distribution.

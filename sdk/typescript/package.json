@@ -1,22 +1,28 @@
 {
   "name": "@singleaxis/fabric",
   "version": "0.7.0",
-  "description": "TypeScript SDK for SingleAxis Fabric — OpenTelemetry-native capture core emitting the fabric.*/gen_ai.* span contract for AI agents.",
+  "description": "OpenTelemetry-native capture SDK for reconstructing AI agent decisions with the SingleAxis Fabric activity contract.",
   "license": "Apache-2.0",
   "type": "module",
-  "private": true,
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/",
+    "tag": "beta"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
@@ -43,30 +49,25 @@
     "governance"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.6.0"
   },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --check .",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@opentelemetry/api": "1.9.0",
-    "@opentelemetry/sdk-trace-node": "2.10.0"
+    "test": "vitest run",
+    "test:package": "node --test test/package-artifact.node.mjs",
+    "package:qualified": "node scripts/package-qualified.mjs"
   },
   "peerDependencies": {
-    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentelemetry/exporter-trace-otlp-http": {
-      "optional": true
-    }
+    "@opentelemetry/api": ">=1.9.0 <1.10.0"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
+    "@opentelemetry/api": "1.9.0",
     "@opentelemetry/context-async-hooks": "2.10.0",
+    "@opentelemetry/sdk-trace-node": "2.10.0",
     "@types/node": "22.18.0",
     "@typescript-eslint/eslint-plugin": "8.20.0",
     "@typescript-eslint/parser": "8.20.0",

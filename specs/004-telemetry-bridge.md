@@ -10,9 +10,9 @@ owner: project-lead
 
 > **Scope note (2026-04-27; NATS clarified 2026-08-22).** This spec is
 > the **design of record** for the Telemetry Bridge, the egress
-> component of the SingleAxis commercial control plane (Layer 2). The
-> implementation lives in a separate private repository, not in this
-> OSS distribution. The spec is retained here so partners and auditors
+> component of the external Management plane (Layer 2). Its managed
+> implementation is not part of this OSS distribution. The spec is retained
+> here so partners and auditors
 > can review the wire contract, redaction guarantees, envelope
 > encryption, and signed manifest format that govern the egress path.
 > L1 OSS deployments never run the Bridge; they emit OTLP to whatever

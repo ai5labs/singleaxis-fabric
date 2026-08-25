@@ -1,7 +1,7 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
-  "title": "SingleAxis Fabric umbrella values",
-  "description": "Public installation contract for the SingleAxis Fabric OSS distribution. Unknown top-level component and management keys are rejected; each critical subchart owns its detailed schema.",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://singleaxis.com/schemas/fabric-chart-values-v1.json",
+  "title": "SingleAxis Fabric umbrella chart values",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -10,11 +10,15 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
-        "id": { "type": "string", "maxLength": 253 },
-        "name": { "type": "string", "maxLength": 253 }
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Tenant identifier. Production profiles enforce that this is non-empty."
+        },
+        "name": {"type": "string", "maxLength": 253}
       }
     },
-    "imagePullSecrets": { "$ref": "#/definitions/imagePullSecrets" },
+    "imagePullSecrets": {"$ref": "#/definitions/imagePullSecrets"},
     "global": {
       "type": "object",
       "additionalProperties": false,
@@ -25,7 +29,7 @@
           "additionalProperties": false,
           "required": ["version"],
           "properties": {
-            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$" }
+            "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"}
           }
         }
       }
@@ -35,71 +39,76 @@
       "additionalProperties": false,
       "required": ["create", "name", "annotations", "labels"],
       "properties": {
-        "create": { "type": "boolean" },
-        "name": { "type": "string", "minLength": 1, "maxLength": 63 },
-        "annotations": { "$ref": "#/definitions/stringMap" },
-        "labels": { "$ref": "#/definitions/stringMap" }
+        "create": {"type": "boolean"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+        "annotations": {"$ref": "#/definitions/stringMap"},
+        "labels": {"$ref": "#/definitions/stringMap"}
       }
     },
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
       "required": ["denyDefault"],
-      "properties": { "denyDefault": { "type": "boolean" } }
+      "properties": {"denyDefault": {"type": "boolean"}}
     },
-    "otelCollector": { "$ref": "#/definitions/componentToggle" },
-    "fabricRelay": { "$ref": "#/definitions/componentToggle" },
-    "nemoSidecar": { "$ref": "#/definitions/componentToggle" },
-    "presidioSidecar": { "$ref": "#/definitions/componentToggle" },
-    "redteamRunner": { "$ref": "#/definitions/componentToggle" },
-    "updateAgent": { "$ref": "#/definitions/componentToggle" },
-    "otel-collector": { "$ref": "#/definitions/subchartValues" },
-    "fabric-relay": { "$ref": "#/definitions/subchartValues" },
-    "nemo-sidecar": { "$ref": "#/definitions/subchartValues" },
-    "presidio-sidecar": { "$ref": "#/definitions/subchartValues" },
-    "redteam-runner": { "$ref": "#/definitions/subchartValues" },
-    "update-agent": { "$ref": "#/definitions/subchartValues" },
-    "langfuse": { "$ref": "#/definitions/subchartValues" },
+    "otelCollector": {"$ref": "#/definitions/toggle"},
+    "fabricRelay": {"$ref": "#/definitions/toggle"},
+    "nemoSidecar": {"$ref": "#/definitions/toggle"},
+    "presidioSidecar": {"$ref": "#/definitions/toggle"},
+    "redteamRunner": {"$ref": "#/definitions/toggle"},
+    "updateAgent": {"$ref": "#/definitions/toggle"},
+    "otel-collector": {"type": "object", "description": "Validated by the bundled otel-collector subchart schema."},
+    "fabric-relay": {"type": "object", "description": "Validated by the bundled fabric-relay subchart schema."},
+    "nemo-sidecar": {"type": "object", "description": "Pass-through to the versioned nemo-sidecar subchart."},
+    "presidio-sidecar": {"type": "object", "description": "Pass-through to the versioned presidio-sidecar subchart."},
+    "redteam-runner": {"type": "object", "description": "Pass-through to the versioned redteam-runner subchart."},
+    "update-agent": {"type": "object", "description": "Pass-through to the versioned update-agent subchart."},
+    "langfuse": {
+      "type": "object",
+      "description": "Toggle and pass-through values for the bundled third-party Langfuse chart.",
+      "properties": {"enabled": {"type": "boolean"}}
+    },
     "profile": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "regulations", "lockedFields"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "regulations": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
-        "lockedFields": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)+$" },
-          "uniqueItems": true
-        }
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "regulations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "lockedFields": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
       }
     },
     "tags": {
       "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "telemetry": { "type": "boolean" },
-        "guardrails": { "type": "boolean" },
-        "observability": { "type": "boolean" },
-        "security": { "type": "boolean" }
-      }
+      "description": "Standard Helm dependency tags; extension keys are intentional.",
+      "additionalProperties": {"type": "boolean"}
     }
   },
+  "required": [
+    "tenant",
+    "imagePullSecrets",
+    "global",
+    "namespace",
+    "networkPolicy",
+    "otelCollector",
+    "fabricRelay",
+    "nemoSidecar",
+    "presidioSidecar",
+    "langfuse",
+    "redteamRunner",
+    "updateAgent",
+    "profile"
+  ],
   "definitions": {
-    "componentToggle": {
+    "toggle": {
       "type": "object",
       "additionalProperties": false,
       "required": ["enabled"],
-      "properties": { "enabled": { "type": "boolean" } }
+      "properties": {"enabled": {"type": "boolean"}}
     },
-    "subchartValues": {
+    "stringMap": {
       "type": "object",
-      "description": "Validated by the dependency's own values.schema.json when one is published.",
-      "additionalProperties": true
+      "additionalProperties": {"type": "string"}
     },
     "imagePullSecrets": {
       "type": "array",
@@ -107,9 +116,8 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["name"],
-        "properties": { "name": { "type": "string", "minLength": 1 } }
+        "properties": {"name": {"type": "string", "minLength": 1}}
       }
-    },
-    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } }
+    }
   }
 }

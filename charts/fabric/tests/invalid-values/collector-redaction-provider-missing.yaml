@@ -1,5 +1,0 @@
-fabric:
-  redact:
-    enabled: true
-    provider:
-      mode: ""

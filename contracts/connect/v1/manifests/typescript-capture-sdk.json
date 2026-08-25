@@ -1,0 +1,81 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "singleaxis.fabric.typescript-capture-sdk",
+  "display_name": "SingleAxis Fabric TypeScript Capture SDK",
+  "release": {"version": "0.2.0", "maturity": "beta", "distribution": "npm-package"},
+  "implementation": {"kind": "in_process_sdk", "deployment_modes": ["application"]},
+  "compatibility": {
+    "activity_contract": "1.0.0",
+    "fabric_versions": ">=0.2.0,<1.0.0",
+    "runtimes": ["Node.js >=20"],
+    "protocols": ["OpenTelemetry API", "W3C Trace Context through host OpenTelemetry configuration"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "decision_boundary", "source": "native_hook"},
+      {"surface": "llm_operation", "source": "native_hook"},
+      {"surface": "tool_operation", "source": "native_hook"},
+      {"surface": "retrieval", "source": "caller_reported"},
+      {"surface": "memory", "source": "caller_reported"},
+      {"surface": "side_effect", "source": "caller_reported"},
+      {"surface": "policy_verdict", "source": "caller_reported"},
+      {"surface": "guardrail_verdict", "source": "caller_reported"},
+      {"surface": "authorization_verdict", "source": "caller_reported"},
+      {"surface": "escalation", "source": "caller_reported"},
+      {"surface": "evaluation", "source": "caller_reported"},
+      {"surface": "framework_lifecycle", "source": "caller_reported"},
+      {"surface": "generic_interaction", "source": "caller_reported"},
+      {"surface": "file_access_metadata", "source": "caller_reported"}
+    ],
+    "decision_semantics": "native",
+    "coverage_basis": "In-process decision, LLM, and tool spans with host-reported capture primitives; no framework or sidecar I/O adapters ship in this package."
+  },
+  "control": {
+    "interposition": "in_process",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": []
+  },
+  "content": {
+    "raw_content_behavior": "configurable_raw",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "none",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "application_configuration",
+    "strength": "asserted",
+    "tenant_partitioning": "accepted_unverified"
+  },
+  "authentication": {
+    "ingress_supported": ["in_process_boundary"],
+    "ingress_default": "in_process_boundary",
+    "egress_supported": ["none", "delegated_to_exporter"],
+    "egress_default": "none",
+    "credential_handling": "The package accepts no Fabric service credential; exporter authentication is configured by the host application."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
+    "baggage": "pass_through",
+    "correlation_limitations": [
+      "The explicit start/end API does not automatically parent child spans; the callback API is required for automatic nesting.",
+      "Framework, policy, guardrail, and MCP behavior is visible only when the host records it."
+    ]
+  },
+  "data_egress": {
+    "network_egress": false,
+    "protocols": ["OpenTelemetry in-process API"],
+    "transport_security": "delegated",
+    "destinations": "local_only",
+    "default_destination": null
+  },
+  "verification_evidence": [
+    {"type": "conformance_test", "path": "sdk/typescript/test/conformance.test.ts", "claim": "Executes declared public activity-contract scenarios."},
+    {"type": "unit_test", "path": "sdk/typescript/test/primitives.test.ts", "claim": "Exercises decision, LLM, tool, content, and correlation behavior."}
+  ],
+  "known_blind_spots": [
+    "The package is currently marked private and is not yet published to npm.",
+    "No framework adapters, guardrail clients, policy transports, queue transports, or MCP wrappers ship in the TypeScript package.",
+    "Tenant and agent identifiers are non-empty caller assertions and are not cryptographically verified.",
+    "Optional raw content capture has no built-in redactor and must be governed before exporter egress."
+  ]
+}

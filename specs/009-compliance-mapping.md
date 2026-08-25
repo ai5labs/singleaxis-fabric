@@ -22,7 +22,7 @@ owner: compliance-lead
 >   mappings.** The signed Evidence Bundle, the `/evidence/bundle`
 >   endpoint, the queryable Decision Graph, the per-regulation control
 >   mapping documents, and the retention enforcement all live in the
->   SingleAxis commercial control plane (separate private repo). They
+>   external Governance plane. They
 >   are described in this spec for design-of-record transparency.
 >   `docs/compliance/mappings/` ships empty in this OSS distribution
 >   by design — concrete mapping files (`eu-ai-act.md` etc.) land

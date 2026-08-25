@@ -4,6 +4,17 @@ Service:       {{ include "otel-collector.fullname" . }}
 OTLP/gRPC:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpGrpc }}
 OTLP/HTTP:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpHttp }}
 Health check:  {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.health }}
+Ingress TLS:   {{ ternary "enabled" "disabled" (not (empty .Values.receiver.tls.serverCertificateSecret.name)) }}
+Client certs:  {{ ternary "required" "not required" .Values.receiver.requireClientCertificate }}
+NetworkPolicy: {{ ternary "enabled" "disabled" .Values.networkPolicy.enabled }}
+Exporter rule: {{ ternary "explicit peer + ports" "not required" .Values.networkPolicy.exporterEgress.requireExplicit }}
+
+{{- if not .Values.receiver.tls.serverCertificateSecret.name }}
+
+WARNING: OTLP ingress is plaintext. This is a local-development posture.
+Configure receiver.tls.serverCertificateSecret and set receiver.requireTLS
+before accepting telemetry across a trust boundary.
+{{- end }}
 
 {{- if not .Values.exporter.endpoint }}
 
@@ -28,6 +39,24 @@ Point the collector at a real OTLP/HTTP backend:
 See charts/fabric/charts/otel-collector/values.yaml for backend
 examples (Datadog, Honeycomb, your own collector chain).
 =====================================================================
+{{- else }}
+
+Exporter:      {{ .Values.exporter.endpoint }}
+TLS required:  {{ .Values.exporter.requireTLS }}
+Auth Secret:   {{ .Values.exporter.auth.secret.name | default "not configured" }}
+Queue:         {{ ternary "enabled" "disabled" .Values.exporter.sendingQueue.enabled }}
+Persistence:   {{ ternary "PVC-backed" "in-memory" .Values.exporter.sendingQueue.persistence.enabled }}
+
+{{- if .Values.exporter.sendingQueue.persistence.enabled }}
+The exporter queue survives Collector restarts on retained PVC storage.
+This provides bounded at-least-once transport, NOT exactly-once delivery:
+ambiguous acknowledgements can produce duplicates and permanent errors,
+queue/disk exhaustion, storage loss, or pre-queue policy drops can still
+lose telemetry. The queue is not the authoritative evidence store.
+{{- else }}
+WARNING: exporter queue state is memory-only and is lost with the pod.
+Enable exporter.sendingQueue.persistence for restart-safe buffering.
+{{- end }}
 {{- end }}
 {{- if not .Values.fabric.sampler.enabled }}
 
@@ -52,14 +81,16 @@ Verify health:
 Run the bundled smoke test:
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 
-{{- if .Values.fabric.policy.enabled }}
+{{- if and .Values.fabric.policy.enabled (eq .Values.fabric.policy.bundlePath "") }}
 
-Policy bundle: ConfigMap {{ .Values.fabric.policy.bundleConfigMap }}
-mounted read-only at {{ .Values.fabric.policy.bundlePath }}.
+WARNING: fabricpolicy is enabled but bundlePath is empty. The
+processor is wired but no Rego is loaded — all records will pass.
+Set .Values.fabric.policy.bundlePath before relying on the gate.
 {{- end }}
 {{- if .Values.fabric.redact.enabled }}
 
-Redaction provider: {{ .Values.fabric.redact.provider.mode }}
-Unix socket: {{ .Values.fabric.redact.unixSocket }}
-{{- if eq .Values.fabric.redact.provider.mode "sidecar" }}A Presidio container is co-located in every Collector pod.{{- end }}
+Telemetry redaction uses the pod-local Presidio container over
+{{ .Values.fabric.redact.unixSocket }}. It protects captured telemetry
+before export; it does not redact a prompt before the agent sends it to
+an LLM.
 {{- end }}

@@ -10,7 +10,10 @@ OCB ?= $(shell command -v ocb || command -v builder)
 DIST_DIR := dist
 PROCESSOR_DIRS := processor/fabricguardprocessor processor/fabricpolicyprocessor processor/fabricsamplerprocessor processor/fabricredactprocessor
 
-.PHONY: all build test lint clean tidy
+.PHONY: all build test lint qualify-config qualify-image clean tidy
+
+COLLECTOR_BINARY ?= $(DIST_DIR)/otelcol-fabric
+COLLECTOR_IMAGE ?= fabric-otelcol:pr
 
 all: test build
 
@@ -33,6 +36,15 @@ tidy:
 
 lint:
 	@for d in $(PROCESSOR_DIRS); do (cd $$d && go vet ./...) || exit 1; done
+
+# Configuration acceptance for the built distribution. This proves that the
+# binary/image recognizes the regulated component graph; it does not send
+# telemetry or qualify live backend delivery.
+qualify-config:
+	./tests/qualify-distribution-config.sh --binary "$(COLLECTOR_BINARY)"
+
+qualify-image:
+	./tests/qualify-distribution-config.sh --image "$(COLLECTOR_IMAGE)"
 
 clean:
 	rm -rf $(DIST_DIR)

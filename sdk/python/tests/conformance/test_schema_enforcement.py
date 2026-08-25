@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """JSON Schema enforcement for the emitted decision contract.
 
-The frozen goldens in ``tests/conformance/goldens`` are *normalized*
+The frozen goldens in ``contracts/activity/v1/goldens`` are *normalized*
 (latencies / UUIDs are replaced with the literal string
 ``"<normalized>"``), so they cannot be validated against the numeric /
 hash schema types directly. This module instead drives every frozen
 scenario, captures the *raw* finished spans (real numeric latencies,
 real hashes), and validates each component against
-``schema/fabric-decision-v1.schema.json``:
+``contracts/activity/v1/schema/fabric-decision-v1.schema.json``:
 
 * the ``fabric.decision`` span attributes -> ``decision_span``;
 * every span *event* -> the per-event subschema under ``events`` (and
@@ -24,7 +24,6 @@ tenant-scope additions, which the 18 frozen scenarios do not cover.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -32,6 +31,7 @@ from jsonschema import Draft202012Validator
 
 from fabric import Fabric, FabricConfig, MemoryKind
 
+from .runner import SCHEMA_DIR
 from .scenarios import SCENARIOS
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     )
     from opentelemetry.util.types import AttributeValue
 
-SCHEMA_PATH = Path(__file__).parent / "schema" / "fabric-decision-v1.schema.json"
+SCHEMA_PATH = SCHEMA_DIR / "fabric-decision-v1.schema.json"
 
 DECISION_SPAN_NAME = "fabric.decision"
 EXECUTION_SPAN_NAME = "fabric.execution"

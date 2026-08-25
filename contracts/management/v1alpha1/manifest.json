@@ -1,0 +1,53 @@
+{
+  "contract": "singleaxis.fabric.management.FabricDeployment",
+  "version": "v1alpha1",
+  "apiVersion": "fabric.singleaxis.dev/v1alpha1",
+  "kind": "FabricDeployment",
+  "files": [
+    {
+      "path": "README.md",
+      "role": "documentation",
+      "sha256": "ad0988a91a0791859e0de7e265b7c4a32c6e43b9e30b631aab48cc685e104262"
+    },
+    {
+      "path": "schema/fabric-deployment.schema.json",
+      "role": "schema",
+      "sha256": "8dc4282aeb5046b0628911169e8e6c2ad3ae782e27274fc9ccab7b8c33c5e253"
+    },
+    {
+      "path": "valid/a0-local.yaml",
+      "role": "valid-fixture",
+      "sha256": "67b39326f89ddd1bddb4f95e67f497b5e74d5e7abb8ea78c863f11a011a9e1a0"
+    },
+    {
+      "path": "valid/a3-regulated.json",
+      "role": "valid-fixture",
+      "sha256": "78ada0bb4ed84f37cbc7976d8188ee4338147991344693fa21d7766bd26145b6"
+    },
+    {
+      "path": "invalid/inline-secret.yaml",
+      "role": "invalid-fixture",
+      "sha256": "bdc02c22e3ba5814c65732fb15ca959e15cf41609e9f93cd1a07d85193112253"
+    },
+    {
+      "path": "invalid/missing-a3-references.yaml",
+      "role": "invalid-fixture",
+      "sha256": "fc45b5e223ec334204c7b7e291ec149a9fcea6161e309dcc3871b406da1f1259"
+    },
+    {
+      "path": "invalid/missing-a3-workload-identity.yaml",
+      "role": "invalid-fixture",
+      "sha256": "98755bdf9b88b7021dc32d3c471c747b220c63bf088688129fe81ea5fcff4cbd"
+    },
+    {
+      "path": "invalid/raw-content.yaml",
+      "role": "invalid-fixture",
+      "sha256": "b6cd12077bd199460a143c376c7a806fbf590b9a0db4e9712eeb09da000a292b"
+    },
+    {
+      "path": "invalid/unknown-field.json",
+      "role": "invalid-fixture",
+      "sha256": "4e5826f3215ead2b0d864f910c3bc49ca07845c3f795e1d5ffcb6359dde684e9"
+    }
+  ]
+}

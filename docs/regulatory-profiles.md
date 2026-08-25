@@ -11,21 +11,17 @@ components, different posture.
 
 | | `permissive-dev` | `eu-ai-act-high-risk` |
 |---|---|---|
-| **Intended for** | local development, CI smoke tests, demos | production deployments under EU AI Act Annex III (high-risk) |
-| **Production safe?** | **No** | Yes (with your signing keys + KMS) |
-| **Presidio redaction** | ON (HMAC) | ON (HMAC, real recognizer set, fail-loud on missing key) |
-| **NeMo guardrails** | optional | ON, output rails enforced |
-| **OPA policy at 4 points** | optional | Required at all 4 points |
-| **Egress allowlist (`fabricguard`)** | warn-only | enforce |
-| **Sampling (`fabricsampler`)** | 100% | HMAC-keyed tail sampling per event class |
-| **Tail-sample of denials/blocks** | retain | retain (regulator wants the bad cases) |
-| **Network policies** | none | strict — sidecars cannot egress to public internet |
-| **PodDisruptionBudgets** | none | yes |
-| **Resource requests/limits** | minimal | production-sized |
-| **Update-agent signing key** | placeholder allowed | real key required (chart fails to install otherwise) |
-| **Exporter endpoint** | optional | required (chart fails to install otherwise) |
-| **Tenant HMAC key** | dev placeholder | real Secret required |
-| **Locked fields** | none | `otel-collector.fabric.guard.enabled`, `otel-collector.fabric.guard.dropUnknownClasses`, `otel-collector.fabric.guard.traceProcessingEnabled`, `otel-collector.fabric.redact.enabled` |
+| **Intended for** | local development, CI smoke tests, demos | customer-qualified high-risk deployments |
+| **Compliance claim** | none | none; technical posture only |
+| **Telemetry PII redaction** | off | embedded Presidio, fail-loud Secret reference |
+| **Collector allowlist/policy** | development defaults | guard, trace processing, reference egress policy, and redaction locked on |
+| **OTLP receiver** | plaintext development ingress | server TLS plus verified client certificates |
+| **Exporter** | debug stdout unless configured | HTTPS, Secret-backed auth, durable queue, unlimited transient retry |
+| **Network policy** | deny-default off | namespace deny-default plus explicit exporter peer/port |
+| **Sampling** | fixed development key | operator Secret-backed deterministic key |
+| **Availability** | one replica | two replicas, PDB, retained per-replica queue PVC |
+| **Update verification** | development posture | fail-closed admission with a real trusted key |
+| **Locked fields** | none | security posture fields listed in the profile |
 
 ## Install
 
@@ -36,34 +32,34 @@ helm upgrade --install fabric oci://ghcr.io/singleaxis/charts/fabric \
 
 # eu-ai-act-high-risk — production posture
 helm upgrade --install fabric oci://ghcr.io/singleaxis/charts/fabric \
+  --namespace fabric-system --create-namespace \
   --values profiles/eu-ai-act-high-risk.yaml \
-  --set tenant.id=acme-corp \
-  --set update-agent.config.signingKeySecret=acme-update-agent-key \
-  --set presidio-sidecar.tenantKeySecret=acme-tenant-hmac \
-  --set otel-collector.exporter.endpoint=https://otel.acme.example
+  --set tenant.id=TENANT_UUID \
+  --set 'update-agent.config.trustedKeys[0].publicKey=BASE64_ED25519_PUBLIC_KEY' \
+  --set otel-collector.exporter.endpoint=https://otel.acme.example \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
+
+Replace the documentation CIDR with an approved backend or controlled
+egress-gateway peer. Provision the five Secrets listed in
+[`deployment.md`](deployment.md), install cert-manager, and provision the
+configured webhook issuer before rollout. Webhook certificate issuance and
+rotation stay with that operator-managed PKI; the profile does not put a
+generated private key into Helm release state.
 
 ## Fail-loud guards
 
-The `eu-ai-act-high-risk` profile uses Helm `fail` templates rather than
-hidden defaults. Missing-on-purpose to force a conscious deployer choice:
-
-| Guard | Override (only for dry-render / kind) |
-|---|---|
-| `tenant.id` is set | `--set tenant.id=...` |
-| Real update-agent signing key | `--set update-agent.config.allowPlaceholderKey=true` |
-| Presidio redact-socket provider | `--set otel-collector.fabric.redact.acceptMissingProvider=true` |
-
-If a guard fires, the failure message tells you exactly which field and
-why. Don't bypass guards in production.
-
-The exporter endpoint is **no longer** one of these guards. An unset
-`otel-collector.exporter.endpoint` renders the debug exporter and
-routes spans to the collector pod's stdout with a loud post-install
-warning, rather than failing the render — so the former
-`exporter.acceptUnsetEndpoint` escape hatch is gone. For a regulated
-profile that is still the wrong end state: set a real endpoint, since
-stdout is neither durable nor an audit trail.
+The `eu-ai-act-high-risk` profile uses schema and Helm failures instead of
+inventing deployment-specific values. It requires a tenant ID, HTTPS exporter,
+Secret-backed exporter auth, persistent queue, receiver mTLS, explicit exporter
+NetworkPolicy peer/ports, and a real update verification key. It also pins the
+update admission controller on, fail-closed, with cert-manager TLS. The only
+dry-render exception is `update-agent.config.allowPlaceholderKey=true`; it must
+never be stored in production values. Missing Kubernetes Secret objects are
+detected by the pod rollout, because Helm can validate references but cannot
+read or prove operator-owned secret data.
 
 ## Deriving a custom profile
 
@@ -92,14 +88,26 @@ A few good practices:
 
 ## Locked-field enforcement
 
-The `eu-ai-act-high-risk` profile locks four controls:
+The `eu-ai-act-high-risk` profile locks the complete security posture:
 
 ```yaml
 lockedFields:
+  - networkPolicy.denyDefault
   - otel-collector.fabric.guard.enabled
   - otel-collector.fabric.guard.dropUnknownClasses
   - otel-collector.fabric.guard.traceProcessingEnabled
   - otel-collector.fabric.redact.enabled
+  - otel-collector.receiver.requireTLS
+  - otel-collector.receiver.requireClientCertificate
+  - otel-collector.exporter.requireEndpoint
+  - otel-collector.exporter.requireTLS
+  - otel-collector.exporter.requireAuth
+  - otel-collector.exporter.requireDurableQueue
+  - otel-collector.exporter.sendingQueue.persistence.enabled
+  - otel-collector.networkPolicy.enabled
+  - otel-collector.networkPolicy.exporterEgress.requireExplicit
+  - update-agent.config.failClosed
+  - update-agent.networkPolicy.enabled
 ```
 
 Helm merges profile values and user `--set` overrides **before**
@@ -147,9 +155,10 @@ less strict profile rather than fight these checks.
 ## What the profile does *not* do
 
 - It does not provision your IdP, KMS, or HSM. Those stay in your control.
-- It does not enable the Commercial plane. To ship sanitized evidence to
-  SingleAxis-hosted services, set `commercial.enabled=true` and provide a
-  license key.
-- It does not authorize tool calls — that's wired by your application
-  via the `ToolAuthorizer` protocol. The profile only enforces *that
-  the call happens*.
+- It does not enable a hidden platform connection. Configure the Relay exporter
+  explicitly for a customer backend or approved SingleAxis Platform endpoint.
+- It does not authorize tool calls. Application or gateway code must invoke and
+  enforce the selected `ToolAuthorizer`; the Collector can record and filter
+  authorization events only after they are emitted.
+- It does not map mTLS certificate subjects to Fabric tenants. That workload
+  identity binding remains a deployment/controller responsibility.

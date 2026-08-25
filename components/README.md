@@ -1,23 +1,22 @@
 # Components
 
-This directory holds the **Layer 1** (public, Apache-2.0) Fabric-authored
-services that run inside the `fabric-system` namespace. Each subdirectory
-is an independently buildable artifact (container image and, usually, a
-Helm subchart).
+This directory holds the public, Apache-2.0 Fabric services. Each subdirectory
+is an independently buildable artifact (container image and, usually, a Helm
+subchart).
 
 Components follow the layout described in
 [`../specs/002-architecture.md`](../specs/002-architecture.md).
 
-Components not in this repository are maintained by SingleAxis
-internally and are not part of this distribution.
+Managed platform services are separate consumers of the public contracts;
+they are not hidden dependencies of these components.
 
 ## Status
 
-All components are pre-alpha. Directories exist as placeholders with
-pointers to the relevant specs. Code lands in Phase 1 onward (see
-[`../specs/011-roadmap.md`](../specs/011-roadmap.md)).
+Maturity is declared by each artifact and release manifest. The Collector
+processors are alpha and the overall distribution is beta; operators should
+qualify the exact released image and chart for their environment.
 
-## Layout (Layer 1)
+## Layout
 
 | Directory | Role | Primary spec |
 |-----------|------|--------------|
@@ -32,10 +31,10 @@ Third-party subcharts (Postgres, Langfuse) are **not** in this
 directory — they are referenced from `../charts/fabric/Chart.yaml` as
 upstream dependencies.
 
-## Not here (Layer 2 / Layer 3)
+## Not in this distribution
 
-The following live in a separate SingleAxis-internal repo and are not
-part of the public release:
+The following are Governance, Management, or managed Assurance capabilities,
+not part of the public runtime release:
 
 - `telemetry-bridge/` — sanitized egress bridge + reference ingest
 - `decision-graph/` — Graph Builder worker + read API
@@ -43,9 +42,8 @@ part of the public release:
 - `escalation-service/` — HITL review + signed verdict workflow
 - `fabric-admin-ui/` — Operator and reviewer UI
 
-The primary specs for these components remain in `../specs/` for
-transparency about the design of record; implementation is internal
-during Phase 1.
+Public contracts remain usable by a customer-owned implementation or the
+SingleAxis Platform. Public code does not import or require a private service.
 
 ## Component layout convention
 

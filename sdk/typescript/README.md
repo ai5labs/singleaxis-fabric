@@ -7,25 +7,21 @@ opens OpenTelemetry spans per agent decision and emits the `fabric.*` /
 
 ## Status
 
-**Not at parity with the Python SDK — not a drop-in substitute.** This is
-a capture library only: 7 modules against Python's 58, reproducing **19 of
-the 39 shared conformance goldens**. It has no framework adapters (e.g.
-LangGraph / CrewAI bridges), no guardrail or policy transports (sidecar
-clients, OPA/Cedar engines), no MCP instrumentation, and no host-side I/O
-helpers. Outstanding work is tracked in
+**Wire-contract parity for the capture surface.** The SDK executes and
+deep-compares **all 39 of 39 public activity-contract scenarios** against
+the same versioned fixtures as Python. It remains a capture library, not a
+drop-in replacement for Python's framework adapters or host-side I/O:
+there are no LangGraph/CrewAI bridges, guardrail or policy transports, or
+MCP session wrappers. Outstanding integration work is tracked in
 [`docs/typescript-parity-backlog.md`](../../docs/typescript-parity-backlog.md);
-npm publishing is planned after parity.
+the npm beta is deliberately limited to this capture contract.
 
 Conformance-validated against the **same** golden fixtures the Python
-suite uses (`../python/tests/conformance/goldens/*.json`) by
+suite uses (`../../contracts/activity/v1/goldens/*.json`) by
 [`test/conformance.test.ts`](test/conformance.test.ts). The goldens are
-read from that shared location, never copied. Reproduced goldens (19):
-`bare_decision`, `execution`, `llm_call`, `tool_call`,
-`guardrail_redaction`, `guardrail_block`, `content_ref_stamped`,
-`escalation`, `retrieval`, `memory_read_write`, `side_effect`,
-`checkpoint`, `eval_record`, `queue_judge`, `policy_allow`, `policy_deny`,
-`policy_fail_closed`, `tool_authorization_allow`,
-`tool_authorization_deny`.
+read from that shared location, never copied. The contract manifest also
+declares language support and pins the schema and every fixture by SHA-256;
+the test fails if a declared TypeScript scenario is not actually executed.
 
 ### Capture core vs. host integrations
 
@@ -42,7 +38,9 @@ ship host-side _integration_ helpers that perform I/O:
   `recordToolAuthorization`.
 - **Queue transports** (SQS, NATS, Redis) and **framework adapters**
   (LangGraph, CrewAI) — the host enqueues / bridges; the SDK records.
-- **MCP instrumentation** — not implemented; see the parity backlog.
+- **MCP session wrapping** — the SDK can record a privacy-safe, hashed MCP
+  inventory, but invoking and authorizing a live MCP session remains a host
+  adapter concern.
 
 This keeps the package dependency-light and runtime-agnostic. The engine
 that produces a verdict lives in the host, not the capture library.
@@ -56,27 +54,67 @@ rolling counters / distinct-value sets onto the decision span:
 ```ts
 fabric.decision({ sessionId: "s", requestId: "r" }, (d) => {
   // Guardrail outcome (host ran its own redaction/guardrail service)
-  d.recordGuardrail({ phase: "input", blocked: false, latencyMs: 3, policies: ["presidio:EMAIL_ADDRESS"] });
+  d.recordGuardrail({
+    phase: "input",
+    blocked: false,
+    latencyMs: 3,
+    policies: ["presidio:EMAIL_ADDRESS"],
+  });
 
   // Retrieval (RAG/KG/SQL/tool/memory) — query hashed locally
-  d.recordRetrieval({ source: "rag", query: "refund policy", resultCount: 2, sourceDocumentIds: ["doc-1"] });
+  d.recordRetrieval({
+    source: "rag",
+    query: "refund policy",
+    resultCount: 2,
+    sourceDocumentIds: ["doc-1"],
+  });
 
   // Long-term memory read/write/erase — content hashed locally
-  d.remember({ kind: "semantic", content: "prefers email", key: "pref:contact", ttlSeconds: 86400 });
-  d.recall({ kind: "semantic", key: "pref:contact", content: "prefers email", source: "vector-store" });
+  d.remember({
+    kind: "semantic",
+    content: "prefers email",
+    key: "pref:contact",
+    ttlSeconds: 86400,
+  });
+  d.recall({
+    kind: "semantic",
+    key: "pref:contact",
+    content: "prefers email",
+    source: "vector-store",
+  });
   d.forget("semantic", "pref:contact");
 
   // Policy + tool authorization (host ran its own engine)
-  d.recordPolicyEvaluation({ engine: "opa", policyId: "finance.refund.cap", decision: "deny",
-    input: { amount: 5000 }, reason: "amount exceeds cap" });
-  d.recordToolAuthorization({ toolName: "wire_transfer", decision: "deny", arguments: '{"amount":9999}',
-    reason: "not on allow-list" });
+  d.recordPolicyEvaluation({
+    engine: "opa",
+    policyId: "finance.refund.cap",
+    decision: "deny",
+    input: { amount: 5000 },
+    reason: "amount exceeds cap",
+  });
+  d.recordToolAuthorization({
+    toolName: "wire_transfer",
+    decision: "deny",
+    arguments: '{"amount":9999}',
+    reason: "not on allow-list",
+  });
 
   // External mutation, save point, inline eval, async judge
-  d.recordSideEffect({ type: "ticket_create", targetSystem: "zendesk", operation: "create_ticket",
-    requestPayload: '{"subject":"refund"}', idempotencyKey: "idem-100", approvalRequired: true });
+  d.recordSideEffect({
+    type: "ticket_create",
+    targetSystem: "zendesk",
+    operation: "create_ticket",
+    requestPayload: '{"subject":"refund"}',
+    idempotencyKey: "idem-100",
+    approvalRequired: true,
+  });
   d.checkpoint("after-retrieval", { stateHash: "..." });
-  d.recordEval({ rubricId: "faithfulness-v1", score: 0.91, dimension: "faithfulness", evaluatorName: "Judge" });
+  d.recordEval({
+    rubricId: "faithfulness-v1",
+    score: 0.91,
+    dimension: "faithfulness",
+    evaluatorName: "Judge",
+  });
   d.queueJudge({ rubricId: "helpfulness-v1", dimensions: ["helpfulness", "tone"] });
 
   // Human-in-the-loop escalation (sets the decision-span ERROR status)
@@ -89,9 +127,18 @@ to stamp `fabric.blocked` and the `guardrail_blocked` status on the span.
 
 ## Install
 
-The package is **not published to npm** (publishing is planned
-post-parity; `package.json` is marked `"private": true`). Build from a
-checkout of this repository:
+The supported runtime is Node.js 20.6 or newer. Install the explicitly
+versioned beta; Fabric does not place beta releases on npm's `latest` tag:
+
+```bash
+npm install --save-exact @singleaxis/fabric@beta
+```
+
+For a reproducible enterprise deployment, resolve the beta once, commit the
+resulting `package-lock.json`, and use `npm ci` in build automation. Do not use
+an unbounded version range for production agents.
+
+To build the SDK from a source checkout instead:
 
 ```bash
 cd sdk/typescript
@@ -105,15 +152,28 @@ Then reference the local build directly from your app, e.g.:
 // package.json of the consuming project
 {
   "dependencies": {
-    "@singleaxis/fabric": "file:../singleaxis-fabric/sdk/typescript"
-  }
+    "@singleaxis/fabric": "file:../singleaxis-fabric/sdk/typescript",
+  },
 }
 ```
 
-The package depends on `@opentelemetry/api` and
-`@opentelemetry/sdk-trace-node`, and lists
-`@opentelemetry/exporter-trace-otlp-http` as an optional peer for real
-OTLP export.
+The only runtime peer is `@opentelemetry/api` 1.9.x. Install an OpenTelemetry
+SDK and the exporter selected by your deployment separately; the example below
+uses `@opentelemetry/sdk-trace-node`.
+
+### Release integrity
+
+Every npm tarball is built once in the repository's exact-commit release
+workflow. That same qualified `.tgz` is published to npm and attached to the
+corresponding GitHub release with `SHA256SUMS.typescript` and
+`typescript-package.json`. Qualification fails if the tarball contains anything
+outside the public `dist/`, README, licence, and package metadata allowlist, or
+if a clean consumer cannot load its ESM, CommonJS, and TypeScript surfaces.
+
+Publishing uses npm trusted publishing and provenance. Registry administrators
+must bind `@singleaxis/fabric` to the `singleaxis/singleaxis-fabric` repository
+and `.github/workflows/release.yml`; the workflow does not use a long-lived npm
+token.
 
 ## Quickstart
 
@@ -200,6 +260,8 @@ npm run lint        # eslint
 npm run typecheck   # tsc --noEmit
 npm run build       # tsup -> CJS + ESM + types
 npm test            # vitest (conformance + hash parity)
+npm run test:package
+npm run package:qualified -- --destination ./dist-package --smoke
 ```
 
 ## License

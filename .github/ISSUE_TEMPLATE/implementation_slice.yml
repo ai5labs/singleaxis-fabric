@@ -1,0 +1,119 @@
+name: Implementation slice
+description: Propose one bounded, releasable Fabric feature slice.
+title: "[slice] "
+labels: ["implementation-slice", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fabric features are delivered as small vertical slices. Read
+        `specs/025-product-planes-and-packaging.md` before completing this
+        form. Do not combine unrelated planes or artifacts into one slice.
+
+  - type: dropdown
+    id: plane
+    attributes:
+      label: Product plane
+      options:
+        - Connect
+        - Control
+        - Observe
+        - Assurance
+        - Governance contract
+        - Management contract
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lifecycle
+    attributes:
+      label: Primary lifecycle phase
+      options:
+        - Discover and register
+        - Integrate
+        - Pre-deployment
+        - Deploy
+        - Runtime
+        - Continuous assurance
+        - Incident and audit
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Customer outcome and acceptance criteria
+      description: State the observable result, measurable exit conditions, and explicit non-goals.
+    validations:
+      required: true
+
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Artifact and ownership
+      description: Name the SDK, adapter, gateway, collector, relay, sidecar, runner, chart, or contract and the files/components in scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract and compatibility
+      description: Describe schema/fixture changes, supported versions, capability declaration, and migration. Write "No contract change" with a reason when applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and data handling
+      description: Classify inputs/outputs, raw-content behavior, redaction, retention, residency, logs, and error-message exposure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: trust
+    attributes:
+      label: Trust boundary and authorization
+      description: Identify producers, consumers, workload identity, authentication, authorization, secrets, signatures, and cross-boundary egress.
+    validations:
+      required: true
+
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure, latency, and recovery
+      description: Specify fail-open/fail-closed behavior, timeout, backpressure, queue overflow, loss/duplication semantics, readiness, rollback, and recovery.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: List conformance, unit, adversarial, integration, packaging, upgrade, and released-artifact tests. Include operator diagnostics.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: placement
+    attributes:
+      label: Implementation placement
+      options:
+        - Public OSS implementation
+        - Public contract only
+        - Customer-owned integration
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Readiness
+      options:
+        - label: The slice has one primary outcome and can be reviewed independently.
+          required: true
+        - label: Raw content is disabled by default or the exception is explicitly justified.
+          required: true
+        - label: Documentation and release-artifact qualification are included in the definition of done.
+          required: true

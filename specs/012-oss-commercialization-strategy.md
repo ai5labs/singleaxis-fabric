@@ -1,12 +1,12 @@
 ---
-title: PRD - Operational Infrastructure for Autonomous Systems
+title: Public Distribution Architecture for Autonomous Systems
 status: accepted
 revision: 3
 last_updated: 2026-07-25
 owner: product
 ---
 
-# 012 - PRD: Operational Infrastructure for Autonomous Systems
+# 012 - Public Distribution Architecture
 
 ## Executive summary
 
@@ -597,30 +597,18 @@ Fabric should build:
 - governance workflows
 - conformance tests
 
-## Commercialization strategy
+## Public distribution strategy
 
-### OSS strategy
+### OSS principles
 
 Goals:
 
 - ecosystem adoption
 - protocol standardization
-- developer mindshare
+- straightforward adoption
 - integration ecosystem
 
 License: Apache-2.0 for the public capture substrate.
-
-### Commercial strategy
-
-Monetize:
-
-- governance
-- operational intelligence
-- compliance
-- replay orchestration
-- enterprise workflows
-- runtime evaluations
-- retention and evidence
 
 ### Deployment models
 
@@ -628,18 +616,11 @@ Monetize:
 |---|---|
 | Self-hosted OSS | Yes |
 | Enterprise self-hosted | Yes |
-| Managed cloud | Future |
-| Air-gapped deployment | Enterprise |
+| Managed platform | Product-dependent |
+| Air-gapped deployment | Product-dependent |
 
-### Pricing strategy
-
-| Tier | Model |
-|---|---|
-| OSS | Free |
-| Enterprise | Per environment, tenant, and governed agent/workflow |
-| Cloud | Usage-based with included decision volumes |
-| Compliance add-ons | Premium |
-| Retention and evidence | Premium |
+Commercial packaging, pricing, sales targets, and private implementation
+topology are intentionally outside this public design record.
 
 ## Compliance requirements
 
@@ -735,13 +716,11 @@ Targets should be staged.
 - GRC systems
 - object storage and WORM archives
 
-## Success metrics
+## Public conformance objectives
 
 | Metric | Target |
 |---|---:|
 | SDK install-to-first-trace | `<10 min` |
-| OSS GitHub stars | `10k+` |
-| Enterprise conversion | `5%+` |
 | P99 SDK overhead | `<5ms` |
 | Replay reconstruction metadata completeness | `>99.9%` |
 | Incident debugging time reduction | `50%` |
@@ -756,9 +735,9 @@ Targets should be staged.
 | Overpromising replay | Use reconstruction-first language and stage replay support by runtime |
 | Vendor ecosystem fragmentation | Keep the capture substrate standards-first and framework-agnostic |
 | Excessive ingestion costs | Sampling, tiered retention, compression, hot/cold storage |
-| Regulatory churn | Keep compliance mappings and policy packs commercial and updatable |
+| Regulatory churn | Keep compliance mappings versioned and independently updatable |
 | Framework churn | Adapter abstraction and conformance tests |
-| Closed egress slows security approval | Make tenant-side egress inspectable; keep SaaS ingest and analytics commercial |
+| Closed egress slows security approval | Make tenant-side egress inspectable and backend-neutral |
 | Side effects are under-modeled | Make `SideEffect` a first-class primitive in v1 schemas |
 
 ## Roadmap
@@ -807,8 +786,7 @@ Targets should be staged.
 Immediate engineering actions:
 
 1. Keep the public provenance spec named Decision Graph.
-2. Move commercial implementation code out of the OSS repo and into the
-   private `singleaxis-fabric-internal` repo.
+2. Keep private platform implementation code outside the OSS distribution.
 3. Keep only public contracts, architecture, schemas, SDKs, sidecars,
    collector processors, examples, and deployment profiles in this repo.
 4. Update docs to describe Fabric as operational infrastructure for
@@ -816,7 +794,7 @@ Immediate engineering actions:
 5. Add first-class `SideEffect`, `Execution`, and `Checkpoint` schema
    work before broadening framework support.
 
-## Strategic positioning
+## Public positioning
 
 Fabric is positioned as:
 
@@ -830,7 +808,7 @@ Fabric is not:
 - a model gateway
 - an orchestration framework
 
-Fabric's long-term moat:
+Fabric's technical differentiators:
 
 - operational semantics
 - causality lineage

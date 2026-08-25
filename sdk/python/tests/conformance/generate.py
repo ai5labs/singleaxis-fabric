@@ -7,7 +7,8 @@ Run from ``sdk/python`` as::
     python -m tests.conformance.generate
 
 This drives every scenario through the live SDK with a fresh
-``InMemorySpanExporter`` and (re)writes ``goldens/<scenario>.json``.
+``InMemorySpanExporter`` and (re)writes the public contract golden for
+each scenario.
 An intentional contract change therefore shows up as a reviewable
 golden-file diff. The pytest runner uses the *same* normalization to
 assert against these files, so a passing regeneration guarantees a
@@ -42,7 +43,7 @@ def main() -> int:
     for name in SCENARIOS:
         normalized = run_scenario(name, exporter)
         dump_golden(name, normalized)
-        print(f"wrote goldens/{name}.json")
+        print(f"wrote contracts/activity/v1/goldens/{name}.json")
     print(f"regenerated {len(SCENARIOS)} goldens")
     return 0
 

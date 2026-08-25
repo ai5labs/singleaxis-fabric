@@ -17,39 +17,73 @@ helm install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/permissive-dev.yaml
 
-# Regulated workloads (EU AI Act high-risk):
-#   - REPLACE the trustedKey publicKey with the real release Ed25519
-#     public key (base64). The chart fails-closed otherwise.
-#   - PROVIDE a Presidio sidecar. The umbrella bundles the subchart,
-#     but this profile does not enable it (it needs a real tenant HMAC
-#     key). Either enable it — `--set presidioSidecar.enabled=true`
-#     plus `--set presidio-sidecar.tenantKey.existingSecret=<secret>` —
-#     or point redact.existingSocketProvider at a sidecar you manage
-#     yourself.
-helm install fabric . \
+# Regulated posture (EU AI Act high-risk): provision the five
+# operator-owned Secrets listed below, then name a real HTTPS OTLP
+# destination, explicit egress route, release verification key, and
+# an operator-managed cert-manager ClusterIssuer named fabric-ca-issuer.
+helm upgrade --install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=<uuid> \
-    --set update-agent.config.trustedKeys[0].publicKey=<real-base64-Ed25519-key> \
-    --set otel-collector.fabric.redact.existingSocketProvider=<presidio-sidecar-name>
+    --set tenant.id=TENANT_UUID \
+    --set otel-collector.exporter.endpoint=https://otlp.example.com \
+    --set 'update-agent.config.trustedKeys[0].publicKey=BASE64_ED25519_PUBLIC_KEY' \
+    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
+
+Create these Secrets in `fabric-system` before the rollout. Their values stay
+outside Helm values, rendered ConfigMaps, and source control:
+
+| Secret | Key | Purpose |
+|---|---|---|
+| `fabric-otel-receiver-tls` | `tls.crt`, `tls.key` | Server identity for both OTLP/gRPC and OTLP/HTTP receivers |
+| `fabric-otel-client-ca` | `ca.crt` | CA used to verify client certificates at OTLP ingress |
+| `fabric-presidio-tenant-key` | `tenant.key` | Tenant-specific HMAC material used by the embedded telemetry redactor |
+| `fabric-otel-sampler-key` | `hmac_key` | 32-byte deterministic sampling key |
+| `fabric-otel-export-auth` | `authorization` | Complete outbound authorization header value |
+
+`203.0.113.10/32` is documentation-only. Replace it with the approved backend
+or controlled egress-gateway CIDR that serves the exporter endpoint. Kubernetes
+NetworkPolicy cannot match a DNS name or prove that a CIDR belongs to a URL.
+
+The high-risk profile requires mTLS on both OTLP receivers. A verified client
+certificate authenticates possession of a key chained to the configured CA;
+it does not map the certificate subject to a Fabric tenant or replace tenant
+authorization. The profile also renders Presidio as a container in the
+Collector pod and connects it over a mode-0600 Unix socket. The umbrella's
+standalone Presidio Deployment remains disabled; cross-pod Unix-socket provider
+flags from older releases are no longer valid. Kubernetes can validate that a
+Secret reference is syntactically present, but only the pod rollout proves that
+each named Secret and key exists.
+
+The high-risk profile also requires cert-manager and an existing issuer at
+`update-agent.tls.certManager.issuerRef` (the shipped reference is the
+`fabric-ca-issuer` `ClusterIssuer`). cert-manager, rather than Helm, owns the
+admission webhook serving key and its rotation. Override the issuer reference
+when your organization uses a namespaced `Issuer` or another approved PKI.
 
 ### Inspecting the rendered manifests (template / lint only)
 
 For pre-install review (`helm template`, `helm lint`, compliance audit
-of the rendered manifests), bypass the install-time checks:
+of the rendered manifests), allow only the placeholder update signing key and
+provide a non-secret test endpoint:
 
 ```bash
 helm template fabric . \
+    --namespace fabric-system \
     --values profiles/eu-ai-act-high-risk.yaml \
+    --set tenant.id=00000000-0000-4000-8000-000000000000 \
+    --set otel-collector.exporter.endpoint=https://otlp.invalid.example \
     --set update-agent.config.allowPlaceholderKey=true \
-    --set otel-collector.fabric.redact.acceptMissingProvider=true
+    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
-Both flags **only affect template rendering**. The deployed binaries
-re-validate at startup and refuse to run with a placeholder key or a
-missing redact socket — a real `helm install` cannot bypass either
-check even if the renderer was told to.
+`allowPlaceholderKey` is for offline render review only. Do not carry it into a
+release values file. The deployed containers still require the referenced
+Secrets to exist before they become Ready.
 
 Two regulatory profiles ship today:
 
@@ -74,19 +108,18 @@ topology. Use Helm for anything that touches real traffic.
 
 ## What this OSS distribution covers
 
-The OSS Fabric provides the **collection infrastructure** and the
-**inline control plane** — decision spans, guardrail events,
-escalation records, retrieval hashes, fail-loud guardrail sidecars,
-the human-in-the-loop primitive. It does not generate evidence
-bundles, signed audit trails, or regulator-shaped mappings; those
-are produced by the SingleAxis commercial control plane (Context
-Graph, evidence builder, escalation service, judge workers) layered
-on top of this collection layer.
+The OSS Fabric provides the **Connect, Observe, and Relay spine**—decision and
+interaction records, public contracts, privacy filtering, correlation, and
+customer-selected OTLP delivery—plus optional Control and Assurance building
+blocks. It does not turn the Collector queue into an evidence store or ship the
+enterprise investigation and retention workflows. Those belong in a
+customer-owned backend or the SingleAxis Platform's Management, Assurance, and
+Governance planes.
 
-If your team operates the collection infrastructure yourselves and
-builds your own audit trail on top of it, this distribution is
-sufficient. If you need the audit trail itself as a managed product,
-that's the SingleAxis control plane.
+If your team operates the collection infrastructure and builds its own audit
+trail on the public contract, this distribution is sufficient. If you need the
+Decision Graph and evidence lifecycle as a managed or privately deployed
+product, that is the SingleAxis Platform.
 
 Fabric does not issue certifications either way: no SOC 2 report,
 no ISO/IEC 42001 certificate, no EU AI Act conformity marking comes

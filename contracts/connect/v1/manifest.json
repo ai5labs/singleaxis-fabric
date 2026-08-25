@@ -1,0 +1,69 @@
+{
+  "contract": "singleaxis.fabric.connect-capability",
+  "version": "1.0.0",
+  "schema": {
+    "path": "schema/connector-capability-v1.schema.json",
+    "sha256": "2ff95bc4406fdc93b7b31deb689bca4633c26d07acf45a85e27da4a307a59161"
+  },
+  "artifacts": [
+    {
+      "path": "manifests/python-sdk.json",
+      "sha256": "b056a022eaa528572fad14c5dfa4efa81d1de9e28b9799a65fa22d0a6115ec89",
+      "expectation": "valid"
+    },
+    {
+      "path": "manifests/typescript-capture-sdk.json",
+      "sha256": "3c9441bac7ccec36413ea5e659a51bb31060da054c676200f0ae5fa73d5dd5a5",
+      "expectation": "valid"
+    },
+    {
+      "path": "manifests/collector-otlp-receiver.json",
+      "sha256": "2ec38225c59e3d86d474ce1857a2c7a892b4d83e6426cbabe28f189753b46bfd",
+      "expectation": "valid"
+    },
+    {
+      "path": "manifests/ebpf-discovery-only.json",
+      "sha256": "822ccfe653c45ffbfb8e27d97fd59ecc4f4879548352be7e3308e265a02e4b19",
+      "expectation": "valid"
+    },
+    {
+      "path": "fixtures/valid/framework-adapter.json",
+      "sha256": "f9abc94ac4783b2ca3a3a92efa3da18185e07eaa4edafe19f88998e647604616",
+      "expectation": "valid"
+    },
+    {
+      "path": "fixtures/valid/gateway-proxy.json",
+      "sha256": "df229900b9ebbb64b7ff54f7e94b6b0463e7c401b2bd02cdb6c160b68a1fa9ca",
+      "expectation": "valid"
+    },
+    {
+      "path": "fixtures/valid/vendor-receiver.json",
+      "sha256": "d1e7ac7b22160c3e53a0754b80f0acad28fc70b9f33bb9ec2e78c0b1c39c4934",
+      "expectation": "valid"
+    },
+    {
+      "path": "fixtures/invalid/ebpf-decision-overclaim.json",
+      "sha256": "20fbb1b6807e08d0955da394383010a55095fbd0930f410e105117a96a2519a2",
+      "expectation": "invalid",
+      "error_code": "connect.semantic.ebpf_decision_semantics"
+    },
+    {
+      "path": "fixtures/invalid/receiver-runtime-control.json",
+      "sha256": "bd9d900db87b3b8c0fd6544b5598377844334fd58b45437ee38742dff9113083",
+      "expectation": "invalid",
+      "error_code": "connect.semantic.runtime_control_kind"
+    },
+    {
+      "path": "fixtures/invalid/raw-default-inconsistent.json",
+      "sha256": "df0f2be1d56d7e9805e6031f0c6e0d0e7800fdd250b68b7205f64863894e98c7",
+      "expectation": "invalid",
+      "error_code": "connect.semantic.raw_default"
+    },
+    {
+      "path": "fixtures/invalid/auth-default-unsupported.json",
+      "sha256": "1174cf1a78bc40b07a08a7d0890fbfdb8458cfb56af6b40ee437e38d8ac41a21",
+      "expectation": "invalid",
+      "error_code": "connect.semantic.auth_default_unsupported"
+    }
+  ]
+}

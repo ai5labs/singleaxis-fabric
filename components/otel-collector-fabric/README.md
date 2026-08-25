@@ -1,87 +1,112 @@
-# otel-collector-fabric
+# Fabric OpenTelemetry Collector distribution
 
-An OpenTelemetry Collector distribution that ships with SingleAxis
-Fabric policy processors. Operators who prefer the Collector topology
-over the in-process Bridge can plug Fabric's controls in at the same
-place — the edge of the telemetry pipeline.
+This OpenTelemetry Collector Builder (OCB) distribution applies Fabric's
+telemetry controls before logs and traces leave an operator-controlled
+environment. It can export to any OTLP/HTTP backend; the SingleAxis
+Platform is an optional destination, not a runtime dependency.
 
-## What's in the box
+## Included components
 
-- **`fabricguard` (logs processor)** — enforces the Fabric
-  deny-by-default schema allowlist on agent decision logs. Mirrors the
-  in-process Bridge stage, so policy stays identical whether an
-  operator runs the Bridge or the Collector.
-- **`fabricpolicy` (logs processor)** — gates log records through an
-  OPA (Rego) policy bundle. Fail-closed on eval errors or non-boolean
-  results. Mirrors the Bridge's OPA stage.
-- **`fabricsampler` (logs processor)** — deterministic HMAC-keyed
-  per-class sampler. Same records sample identically across retries
-  and replicas, and across the Bridge/Collector topologies when they
-  share a key.
-- **`fabricredact` (logs processor)** — forwards every string
-  attribute to the `fabric-presidio-sidecar` over a Unix socket and
-  replaces hashed values in place. Fail-closed: any sidecar error
-  drops the record. Mirrors the Bridge's Presidio redaction stage.
-- **Standard upstream components** — `otlpreceiver`, `memorylimiter`,
-  `batch`, `otlphttpexporter`, `debugexporter`.
+- `fabricguard` — deny-by-default schema allowlisting for logs and traces.
+- `fabricpolicy` — fail-closed OPA/Rego egress policy evaluation.
+- `fabricredact` — fail-closed telemetry redaction over a pod-local Unix
+  socket to the Fabric Presidio provider.
+- `fabricsampler` — deterministic HMAC-keyed per-class sampling.
+- Upstream OTLP receiver, memory limiter, batch processor, OTLP/HTTP and
+  debug exporters, health/zPages extensions, and the file-storage extension
+  used by durable exporter queues.
 
-## Build
+## Build and test
 
-Install the OpenTelemetry Collector Builder once:
+Install the version-pinned OCB tool, then build from this directory:
 
 ```bash
 go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+make test
+make build
 ```
 
-Then, from this directory:
+The result is `dist/otelcol-fabric`. The OCB manifest pins every upstream
+component to v0.150.0 and resolves the four local Fabric processors from
+their source directories.
+
+## Distribution configuration acceptance
+
+After building, qualify the actual binary rather than only rendering Helm
+text:
 
 ```bash
-make test      # unit tests for the Fabric processors
-make build     # runs ocb against ocb-config.yaml → dist/otelcol-fabric
+make qualify-config
 ```
 
-The resulting `dist/otelcol-fabric` is a standalone binary.
+For the locally built container image used by CI:
+
+```bash
+make qualify-image COLLECTOR_IMAGE=fabric-otelcol:pr
+```
+
+The test generates a temporary CA, server certificate, HMAC key, queue
+directory, and Collector configuration. It then proves that the built
+artifact starts with:
+
+- mTLS on both OTLP/gRPC and OTLP/HTTP receivers (`cert_file`, `key_file`,
+  and `client_ca_file`);
+- an `otlp_http/fabric` exporter using the file-storage persistent queue;
+- `fabricguard`, `fabricredact`, `fabricpolicy`, and `fabricsampler` in both
+  logs and traces pipelines.
+
+The image-mode test uses `--network none`, and the binary-mode exporter is
+an unused loopback endpoint. No telemetry is emitted. This qualifies
+component and configuration compatibility only; it does not qualify live
+delivery, backend authentication, redaction behavior, or durability under
+failure. Temporary key material is removed on exit.
 
 ## Run
 
+The example configuration demonstrates TLS/authenticated OTLP export with a
+disk-backed sending queue. Supply its referenced policy, key, certificate,
+credential, and writable queue paths before starting it:
+
 ```bash
+export FABRIC_EXPORT_ENDPOINT=https://otlp.example.com
+export FABRIC_EXPORT_AUTH='Bearer <token>'
 ./dist/otelcol-fabric --config examples/config.yaml
 ```
 
-## Container image
-
-A multi-stage `Dockerfile` ships alongside the source. The builder
-stage runs OCB against `ocb-config.yaml` and produces a static binary;
-the runtime stage ships that binary on `gcr.io/distroless/static` as
-`nonroot`, exposing the standard OTLP ports.
+For a container deployment, mount configuration and queue storage separately:
 
 ```bash
-# Build
 docker build -t fabric-otelcol:local .
-
-# Run — mount your collector config at /etc/otelcol-fabric/config.yaml
 docker run --rm \
   -p 4317:4317 -p 4318:4318 -p 13133:13133 \
+  -e FABRIC_EXPORT_ENDPOINT -e FABRIC_EXPORT_AUTH \
   -v /path/to/config.yaml:/etc/otelcol-fabric/config.yaml:ro \
+  -v fabric-otel-queue:/var/lib/otelcol-fabric/storage \
   fabric-otelcol:local
 ```
 
-Ports exposed: `4317` (OTLP/gRPC), `4318` (OTLP/HTTP), `13133`
-(health_check extension — compiled in from contrib; wire it in your
-collector config under `extensions.health_check` and list it in
-`service.extensions`, as shown in `examples/config.yaml`).
+If `fabricredact` is configured, the Presidio Unix socket must also be
+mounted into the same container/pod filesystem. The Helm chart renders the
+supported pod-local sidecar topology.
 
-If your pipeline uses `fabricredact`, also bind-mount the Presidio
-sidecar's Unix socket into the container (e.g. `-v
-/run/fabric:/run/fabric`) and point the processor's `unix_socket` at
-that path in your config.
+## Reliability and security boundary
 
-## Why a custom distro?
+Compiling `filestorageextension` does not by itself make export durable.
+The exporter must set `sending_queue.storage`, the extension must be enabled
+under `service.extensions`, and its directory must be a persistent writable
+volume. The Helm chart owns this wiring and validates regulated combinations.
 
-The Fabric schema allowlist and OPA policy need to run BEFORE data
-leaves the operator's perimeter. Running them inside the Collector
-lets operators apply Fabric compliance controls to any telemetry they
-already route through otelcol, without adopting the full Bridge.
+Persistent queues provide bounded at-least-once transport. They may replay a
+batch when acknowledgement state is ambiguous, and they can still lose data
+on permanent errors, queue/disk exhaustion, storage loss, or pre-queue policy
+drops. The receiving system must deduplicate using stable Fabric identifiers
+and provide the authoritative evidence retention layer.
+
+Outbound credentials belong in environment/secret sources, never inline in
+Collector YAML. TLS verification should remain enabled; mount private CA and
+mTLS material read-only where required. Queue volumes can contain sensitive
+telemetry and therefore need storage-layer encryption, least-privilege access,
+backup, and lifecycle controls supplied by the operator.
 
 ## License
 

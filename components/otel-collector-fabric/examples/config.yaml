@@ -1,7 +1,7 @@
 # Example runtime config for the Fabric Collector distribution.
 #
 # Flow:
-#   OTLP receiver  →  memory_limiter  →  fabricguard  →  batch  →  otlphttp
+#   OTLP receiver → controls → batch → persistent queue → OTLP/HTTP
 #
 # The `fabricguard` processor enforces the deny-by-default Fabric
 # field allowlist on every incoming log record. Anything that is not
@@ -16,6 +16,12 @@ extensions:
     endpoint: 0.0.0.0:13133
   # zpages stays on its default port (55679) for debug introspection.
   zpages:
+  # Disk-backed exporter queue. The directory must be a dedicated,
+  # encrypted persistent volume in production.
+  file_storage/fabric:
+    directory: /var/lib/otelcol-fabric/storage
+    create_directory: true
+    fsync: true
 
 receivers:
   otlp:
@@ -84,20 +90,34 @@ processors:
     send_batch_size: 512
 
 exporters:
-  # Point at a Fabric reference ingest endpoint, or directly at the
-  # SingleAxis ingest. Envelope signing and encryption are handled by
-  # the Bridge — this exporter is for the in-Collector path where the
-  # operator does not run the Bridge.
-  otlphttp/fabric:
-    endpoint: http://fabric-ingest:8080
+  # Environment providers keep endpoint and authorization values out of
+  # source-controlled configuration. TLS verification remains enabled.
+  otlp_http/fabric:
+    endpoint: ${env:FABRIC_EXPORT_ENDPOINT}
+    headers:
+      Authorization: ${env:FABRIC_EXPORT_AUTH}
     tls:
-      insecure: true
+      insecure: false
+      insecure_skip_verify: false
+    timeout: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+      block_on_overflow: true
+      storage: file_storage/fabric
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      # Transient errors stay queued. Permanent failures can still drop.
+      max_elapsed_time: 0s
 
   debug:
     verbosity: basic
 
 service:
-  extensions: [health_check, zpages]
+  extensions: [health_check, zpages, file_storage/fabric]
   telemetry:
     logs:
       level: info
@@ -105,4 +125,8 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
-      exporters: [otlphttp/fabric, debug]
+      exporters: [otlp_http/fabric, debug]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
+      exporters: [otlp_http/fabric, debug]

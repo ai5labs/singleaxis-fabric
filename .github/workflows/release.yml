@@ -14,36 +14,31 @@ permissions:
 
 jobs:
   ci-green:
-    name: Require green CI on tagged SHA
+    name: Require exact-SHA release evidence
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
       checks: read
     steps:
-      - name: Verify CI workflow succeeded on ${{ github.sha }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Verify all required workflows succeeded on ${{ github.sha }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Release must not ship unless the CI workflow completed
-        # successfully on the exact SHA the tag points to. We query the
-        # CI workflow runs for this commit and require at least one
-        # `completed / success` run for workflow file `ci.yml`.
-        run: |
-          set -euo pipefail
-          runs_json=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=50")
-          success_count=$(echo "${runs_json}" \
-            | jq '[.workflow_runs[] | select(.status=="completed" and .conclusion=="success")] | length')
-          echo "Successful CI runs on ${GITHUB_SHA}: ${success_count}"
-          if [ "${success_count}" -lt 1 ]; then
-            echo "::error::No successful CI run found for ${GITHUB_SHA}."
-            echo "Push a commit to main, wait for CI to pass, then tag that SHA."
-            echo "Tag: ${GITHUB_REF_NAME}"
-            exit 1
-          fi
+        run: >-
+          python scripts/release/verify_workflow_runs.py
+          --repository "${GITHUB_REPOSITORY}"
+          --sha "${GITHUB_SHA}"
+          --policy scripts/release/release-policy.json
+          --output release-workflow-evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-workflow-evidence
+          path: release-workflow-evidence.json
+          retention-days: 90
 
   verify-tag:
-    name: Verify tag and release identity
+    name: Verify tag, source identity, and main ancestry
     runs-on: ubuntu-latest
     needs: ci-green
     outputs:
@@ -70,10 +65,128 @@ jobs:
           echo "version=$(tr -d '\n' < VERSION)" >> "${GITHUB_OUTPUT}"
           echo "source-commit=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
 
+  qualify-release:
+    name: Qualify release artifacts
+    runs-on: ubuntu-latest
+    # Release-note validation is part of the pre-publication gate. Every
+    # registry publisher depends on this job, so a missing changelog entry
+    # cannot create a partial registry release.
+    needs: [verify-tag, changelog]
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          # npm trusted publishing requires npm 11.5.1 or newer. Node 24
+          # runners ship a qualifying npm CLI; the publish job fails closed
+          # if that runner contract ever changes.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: "v3.15.0"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-workflow-evidence
+          path: qualification
+      - name: Build Python distribution
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Build and qualify TypeScript distribution once
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version --ignore-scripts
+          npm run lint
+          npm run typecheck
+          npm run build
+          npm test
+          npm run test:package
+          npm run package:qualified -- \
+            --destination "${GITHUB_WORKSPACE}/qualification/npm" \
+            --expected-version "${VERSION}" \
+            --smoke
+      - name: Build and qualify public contracts once
+        run: |
+          python scripts/release/package_contracts.py \
+            --contracts-dir contracts \
+            --policy scripts/release/release-policy.json \
+            --version "v${VERSION}" \
+            --output-dir qualification/contracts \
+            --output qualification/contracts/contracts-qualification.json
+      - name: Stamp and package Helm chart
+        run: |
+          python scripts/release/qualify_release.py \
+            --policy scripts/release/release-policy.json \
+            --tag "v${VERSION}" \
+            --chart-dir charts/fabric \
+            --stamp-chart \
+            --output qualification/chart-stamp.json
+          helm lint charts/fabric
+          helm package charts/fabric --destination qualification/chart
+      - name: Qualify exact publication artifacts
+        run: |
+          chart_package=$(find qualification/chart -maxdepth 1 -name 'fabric-*.tgz' -type f)
+          python scripts/release/qualify_release.py \
+            --policy scripts/release/release-policy.json \
+            --tag "v${VERSION}" \
+            --commit-sha "${GITHUB_SHA}" \
+            --workflow-evidence qualification/release-workflow-evidence.json \
+            --chart-dir charts/fabric \
+            --chart-package "${chart_package}" \
+            --dist-dir sdk/python/dist \
+            --smoke-install \
+            --output qualification/release-qualification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qualified-python-dist
+          path: sdk/python/dist/*
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qualified-chart
+          path: qualification/chart/*.tgz
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qualified-typescript-dist
+          path: |
+            qualification/npm/*.tgz
+            qualification/npm/SHA256SUMS.typescript
+            qualification/npm/typescript-package.json
+            qualification/npm/npm-pack-metadata.json
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qualified-contracts
+          path: |
+            qualification/contracts/*.tar.gz
+            qualification/contracts/SHA256SUMS.contracts
+            qualification/contracts/contracts-qualification.json
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-qualification
+          path: qualification/release-qualification.json
+          retention-days: 90
+
   changelog:
     name: Extract changelog entry
     runs-on: ubuntu-latest
     needs: verify-tag
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
     outputs:
       notes: ${{ steps.extract.outputs.notes }}
     steps:
@@ -90,7 +203,7 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os, pathlib, re, sys
-          version = pathlib.Path("VERSION").read_text().strip()
+          version = os.environ["VERSION"]
           text = pathlib.Path("CHANGELOG.md").read_text()
           pattern = rf"## \[{re.escape(version)}\].*?(?=\n## \[|\Z)"
           m = re.search(pattern, text, re.S)
@@ -141,6 +254,8 @@ jobs:
     name: Build signed source archive
     runs-on: ubuntu-latest
     needs: [verify-tag, sbom]
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
     permissions:
       contents: read
       id-token: write       # cosign keyless sign via Fulcio
@@ -152,8 +267,6 @@ jobs:
           name: sbom
           path: .
       - name: Create source tarball
-        env:
-          VERSION: ${{ needs.verify-tag.outputs.version }}
         run: |
           ARCHIVE="singleaxis-fabric-${VERSION}.tar.gz"
           git archive --format=tar.gz --prefix="singleaxis-fabric-${VERSION}/" -o "${ARCHIVE}" HEAD
@@ -162,7 +275,6 @@ jobs:
       - name: Sign artifacts (keyless via Fulcio)
         env:
           COSIGN_EXPERIMENTAL: "1"
-          VERSION: ${{ needs.verify-tag.outputs.version }}
         run: |
           ARCHIVE="singleaxis-fabric-${VERSION}.tar.gz"
           cosign sign-blob --yes "${ARCHIVE}" \
@@ -196,16 +308,16 @@ jobs:
             SHA256SUMS
 
   package-fabricctl:
-    name: Package fabricctl release binaries
+    name: Package qualified fabricctl binaries
     runs-on: ubuntu-latest
-    needs: verify-tag
+    needs: [qualify-release, verify-tag]
     permissions:
       contents: read
       id-token: write
       attestations: write
     env:
       VERSION: ${{ needs.verify-tag.outputs.version }}
-      SOURCE_COMMIT: ${{ needs.verify-tag.outputs.source-commit }}
+      SOURCE_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -268,7 +380,7 @@ jobs:
   publish-image:
     name: Build and publish ${{ matrix.image }} image
     runs-on: ubuntu-latest
-    needs: verify-tag
+    needs: [qualify-release, verify-tag]
     permissions:
       contents: read
       id-token: write
@@ -347,7 +459,7 @@ jobs:
   publish-sidecar-images:
     name: Build and publish sidecar images
     runs-on: ubuntu-latest
-    needs: verify-tag
+    needs: [qualify-release, verify-tag]
     permissions:
       contents: read
       id-token: write
@@ -422,7 +534,7 @@ jobs:
   publish-chart:
     name: Package and publish Helm chart
     runs-on: ubuntu-latest
-    needs: verify-tag
+    needs: qualify-release
     permissions:
       contents: read
       id-token: write
@@ -432,7 +544,10 @@ jobs:
       OCI_REF: oci://ghcr.io/${{ github.repository_owner }}/charts
       CHART_DIR: charts/fabric
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qualified-chart
+          path: dist
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: "v3.15.0"
@@ -451,13 +566,12 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login "${REGISTRY}" \
                 --username "${{ github.actor }}" --password-stdin
-      - name: Package chart
+      - name: Select qualified chart
         id: package
         run: |
-          helm package "${CHART_DIR}" --destination dist/
           pkg="$(ls dist/*.tgz)"
           echo "pkg=${pkg}" >> "$GITHUB_OUTPUT"
-          chart_version="$(helm show chart "${CHART_DIR}" | awk '/^version:/{print $2}')"
+          chart_version="$(helm show chart "${pkg}" | awk '/^version:/{print $2}')"
           echo "chart_version=${chart_version}" >> "$GITHUB_OUTPUT"
       - name: Push chart to GHCR OCI
         id: push
@@ -485,7 +599,7 @@ jobs:
   publish-pypi:
     name: Publish Python SDK to PyPI
     runs-on: ubuntu-latest
-    needs: verify-tag
+    needs: qualify-release
     # Trusted publishing needs id-token; no PyPI token secret required.
     # Pre-req (one-time): configure a "pending publisher" on pypi.org
     # pointing at this workflow. After the first successful publish,
@@ -494,21 +608,55 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          python-version: "3.12"
-      - name: Build sdist and wheel
-        working-directory: sdk/python
-        run: |
-          python -m pip install --upgrade pip build
-          python -m build
+          name: qualified-python-dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          packages-dir: sdk/python/dist
+          packages-dir: dist
           # Don't fail the release if we somehow publish the same
           # version twice — only real failures should block.
           skip-existing: true
+
+  publish-npm:
+    name: Publish TypeScript SDK to npm beta
+    runs-on: ubuntu-latest
+    needs: qualify-release
+    # One-time registry prerequisite: configure npm trusted publishing for
+    # package @singleaxis/fabric, repository singleaxis/singleaxis-fabric,
+    # and workflow release.yml. No long-lived npm token is used.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qualified-typescript-dist
+          path: dist
+      - name: Verify and publish the qualified bytes
+        working-directory: dist
+        run: |
+          npm_version="$(npm --version)"
+          node -e 'const [major, minor, patch] = process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) { throw new Error("npm >=11.5.1 is required for trusted publishing") }' "${npm_version}"
+          sha256sum --check SHA256SUMS.typescript
+          package="$(find . -maxdepth 1 -name 'singleaxis-fabric-*.tgz' -type f -print -quit)"
+          test -n "${package}"
+          test "$(find . -maxdepth 1 -name 'singleaxis-fabric-*.tgz' -type f | wc -l)" -eq 1
+          version="$(node -p 'require("./typescript-package.json").version')"
+          integrity="$(node -p 'require("./typescript-package.json").integrity')"
+          if published_integrity="$(npm view "@singleaxis/fabric@${version}" dist.integrity 2>/dev/null)"; then
+            if [ "${published_integrity}" != "${integrity}" ]; then
+              echo "::error::npm already contains @singleaxis/fabric@${version} with different bytes"
+              exit 1
+            fi
+            echo "@singleaxis/fabric@${version} already contains the qualified bytes; nothing to republish."
+          else
+            npm publish "${package}" --access public --tag beta --provenance
+          fi
 
   github-release:
     name: Publish GitHub release
@@ -522,6 +670,7 @@ jobs:
         publish-sidecar-images,
         publish-chart,
         publish-pypi,
+        publish-npm,
       ]
     permissions:
       contents: write       # softprops/action-gh-release creates the release
@@ -536,8 +685,27 @@ jobs:
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
+          name: release-qualification
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qualified-python-dist
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qualified-typescript-dist
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qualified-contracts
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
           name: fabricctl-release
           path: dist
+      - name: Verify qualified contract artifact handoff
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS.contracts
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           name: ${{ github.ref_name }}

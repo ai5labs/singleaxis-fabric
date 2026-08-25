@@ -18,6 +18,7 @@ evidence generation land with the SingleAxis commercial control plane.
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/singleaxis/singleaxis-fabric/badge)](https://securityscorecards.dev/viewer/?uri=github.com/singleaxis/singleaxis-fabric)
 
 [Quickstart](docs/quickstart.md) ·
+[Product model](specs/025-product-planes-and-packaging.md) ·
 [Architecture](docs/architecture.md) ·
 [GenAI conventions](docs/genai-semantic-conventions.md) ·
 [Deployment](docs/deployment.md) ·
@@ -185,7 +186,7 @@ uv run fabric-reference-agent --prompt "Hello" --low-score   # escalation path
 Output shape: `{"response": "...", "escalated": bool, "blocked": bool,
 "trace_id": "<32-hex>"}`.
 
-## Deploy the control plane
+## Deploy the OSS data plane
 
 For any cluster that will take real traffic, install the umbrella
 Helm chart. Regulatory profiles preset safe defaults.
@@ -204,11 +205,17 @@ helm install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/permissive-dev.yaml
 
-# EU AI Act high-risk workloads:
-helm install fabric . \
+# EU AI Act high-risk posture (requires the documented Secrets,
+# exporter endpoint, and release verification key):
+helm upgrade --install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=<uuid>
+    --set tenant.id=TENANT_UUID \
+    --set otel-collector.exporter.endpoint=https://otlp.example.com \
+    --set 'update-agent.config.trustedKeys[0].publicKey=BASE64_ED25519_PUBLIC_KEY' \
+    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
 **What a bare install does.** The collector installs and
@@ -229,10 +236,14 @@ secret, a key, or an external database you have to supply. The
 `langfuse` subchart in particular does **not** bundle Postgres; see
 [`docs/exporting-to-your-observability-backend.md`](docs/exporting-to-your-observability-backend.md).
 
-The high-risk profile **fails closed**: as printed, that last command
-stops at render until you also supply a real Ed25519 release key and a
-Presidio redaction socket provider. The two required `--set` flags —
-and the template-only flags for pre-install review — are in
+The example CIDR is documentation-only. Replace it with an approved backend or
+egress-gateway CIDR. The high-risk profile **fails closed**. Before installing
+it, provision the five operator-owned Secrets named by the profile: receiver
+TLS identity, trusted client CA, Presidio tenant HMAC key, deterministic
+sampler key, and outbound OTLP authorization value. The profile embeds the
+redactor beside the Collector over a pod-local Unix socket; it does not depend
+on the standalone Presidio Deployment. The complete prerequisite and
+render-review procedure is in
 [`docs/deployment.md`](docs/deployment.md).
 
 The umbrella chart also publishes as a cosign-signed OCI artifact at
@@ -263,10 +274,13 @@ Full deployment guide including HA, DR, and upgrade posture:
                                       Honeycomb / Datadog / your sink
 ```
 
-Three layers you touch: **SDK** (in-process), **sidecars**
-(same pod, UDS), **collector** (cluster-level). Everything else —
-judge workers, escalation service, provenance graph, evidence
-bundles — runs asynchronously off the OTel stream.
+The installable OSS spine is **Connect → Observe → Relay**: SDKs, adapters or
+OTLP receivers capture activity; the Collector normalizes and privacy-filters
+it; the Relay role exports approved telemetry. Optional **Control** components
+run beside protected model or tool calls. **Assurance** produces correlated
+test and evaluation findings. **Management** configures the deployment, while
+**Governance** consumes the stream to investigate, replay, and retain evidence.
+Only explicitly selected controls belong in the request path.
 
 Two-page mental model: [`docs/architecture.md`](docs/architecture.md).
 Authoritative design: [`specs/002-architecture.md`](specs/002-architecture.md).
@@ -280,11 +294,11 @@ explicitly called out. We'd rather under-document than overclaim.
 Two things worth knowing before you plan around them:
 
 - **The TypeScript SDK is not at parity with the Python SDK, and is not
-  a drop-in substitute.** It is an *emit-surface-only* capture library:
-  7 modules against Python's 58, reproducing 19 of the 39 shared
-  conformance goldens. It has no framework adapters, no guardrail or
-  policy transports, no MCP instrumentation, and no host-side I/O
-  helpers, and it is not published to npm. Outstanding work is tracked
+  a drop-in substitute.** It implements the public emit-surface contract and
+  reproduces all 39 shared conformance fixtures, but it has no framework
+  adapters, guardrail or policy transports, or host-side I/O helpers. Tagged
+  releases package and smoke-test its ESM, CommonJS, and type-declaration
+  surfaces; feature-parity work remains tracked
   in [`docs/typescript-parity-backlog.md`](docs/typescript-parity-backlog.md).
   There is no Go SDK.
 - **Latency figures in this README are design budgets, not measured
@@ -312,28 +326,27 @@ plus:
 
 ## What this OSS distribution covers
 
-The open-source Fabric (this repository) is the **collection
-infrastructure** plus the **inline control plane** for an AI agent:
+The open-source Fabric (this repository) is the reconstruction and secure
+delivery substrate for an AI agent:
 
-- **Collection** — decision spans, guardrail events, retrieval
-  hashes, escalation records, judge-score attributes. Standardised
-  OTel shape; hardened defaults; tenant-scoped.
-- **Control** — fail-loud guardrail sidecars, the human-in-the-loop
-  escalation primitive, deny-by-default policy gates, the
-  signed-manifest update channel.
+- **Connect / Observe / Relay** — identity propagation, decision and
+  interaction records, public activity contracts, privacy filtering,
+  correlation, durable queueing, and authenticated OTLP export.
+- **Optional Control building blocks** — fail-loud guardrail and PII clients,
+  policy/tool-authorization events, reference sidecars, and escalation
+  emission. These are selected by profile; they are not prerequisites for
+  basic observation.
+- **Optional Assurance interfaces** — local judge adapters, red-team runner
+  packaging, and correlated finding emission. Test execution is not part of
+  telemetry transport.
 
-It is a substrate, not a compliance product. **Fabric does not issue
-certifications, generate evidence bundles, or produce signed audit
-trails on its own.** The artefacts an external auditor asks for —
-queryable evidence bundles, immutable retention, regulator-shaped
-mappings — are produced by the SingleAxis commercial control plane on
-top of this collection layer (Decision Graph, evidence builder,
-escalation service, judge workers).
-
-If your team operates the collection infrastructure yourselves and
-builds your own audit trail on top of it, the OSS distribution is
-sufficient. If you need the audit trail itself as a managed product,
-that's the SingleAxis control plane.
+It is a substrate, not a certification product. **Fabric does not issue
+certifications or turn a telemetry queue into an immutable audit trail.** A
+customer-owned backend can consume the public contract and build its own
+Decision Graph and evidence workflows. The SingleAxis Platform provides the
+managed or privately deployed Management, Assurance orchestration, and
+Governance implementation—including fleet configuration, investigations,
+evidence, retention, and controlled replay.
 
 Control mappings (Fabric artifact → regulatory control) are roadmap.
 The structure each mapping will follow is captured in
