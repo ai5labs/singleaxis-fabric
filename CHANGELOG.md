@@ -8,6 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-25
+
+### Added
+
+- Added canonical, versioned public contracts for Fabric activity records,
+  connector capabilities, Assurance findings, and `FabricDeployment`
+  management profiles, including digest-pinned fixtures and deterministic
+  release bundles.
+- Added `fabricctl` environment diagnostics, configuration inspection and
+  validation, local trace verification, deployment validation and digesting,
+  and deterministic offline deployment planning for assurance levels A0-A3.
+- Added connector capability manifests for the Python SDK, TypeScript SDK,
+  OTLP receiver, and discovery-only eBPF integration, with fail-loud
+  validation against capability overclaims.
+- Added durable Collector delivery using persistent file-storage queues,
+  retained per-replica volumes, bounded backpressure, unlimited transient
+  retry, and authenticated OTLP/HTTP export.
+- Added receiver mTLS, private-CA and client-certificate support, explicit
+  exporter NetworkPolicy destinations, embedded Presidio UDS deployment, and
+  a versioned reference policy bundle for regulated profiles.
+- Added strict umbrella and Collector Helm values schemas, v0.6-to-v0.7
+  upgrade fixtures, security render tests, and an artifact-level Collector
+  startup qualification test.
+- Added qualified TypeScript ESM, CommonJS, and type-definition packaging with
+  npm trusted publishing and provenance, plus signed public-contract release
+  artifacts.
+- Added the public product-plane and packaging design of record: Connect,
+  Control, Observe, Assurance, Governance, and Management, with a precise OSS
+  distribution boundary and vertical implementation-slice template.
+
+### Changed
+
+- Hardened telemetry redaction across logs, spans, events, links, resources,
+  and scopes; invalid UTF-8 now fails closed under secure byte handling and
+  sanitized errors no longer echo sensitive content.
+- The EU high-risk profile now requires OTLP receiver mTLS, authenticated TLS
+  export, persistent queues, explicit egress peers, active policy/redaction
+  controls, fail-closed admission, and cert-manager-owned webhook keys.
+- Release publication now builds each package once, qualifies the exact bytes,
+  requires successful CI/security evidence for the tagged commit, verifies the
+  changelog entry, and publishes only the qualified artifacts.
+- Python and TypeScript conformance suites now consume the same canonical
+  activity contract and fixtures instead of maintaining SDK-local copies.
+- Public documentation now separates the OSS Connect/Observe/Relay spine from
+  optional Control and Assurance components and external Governance and
+  Management implementations, without exposing internal product planning.
+
 ### Security
 
 - Bumped `aiohttp` to 3.14.3 and `cryptography` to 50.0.0 in the SDK lockfile
@@ -1525,7 +1572,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.6.0
 [0.5.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.5.1
