@@ -32,7 +32,7 @@ imagePullSecrets: []
 # Kept in lockstep with the chart appVersion by the release pipeline.
 global:
   fabric:
-    version: "0.7.0"
+    version: "0.7.1"
 
 # Cross-cutting namespace creation. When running inside an operator
 # that manages the namespace externally, set this to false.
