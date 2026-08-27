@@ -18,6 +18,7 @@ global:
 image:
   repository: langfuse/langfuse
   tag: ""              # defaults to .Chart.AppVersion (upstream Langfuse, currently 2.x)
+  digest: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -137,6 +138,7 @@ bootstrap:
     # release workflow publishes it at the Fabric version; the Langfuse
     # app container (image.tag above) keeps its upstream appVersion.
     tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   # Which profile overlay to apply. Must match one of the files in
   # the image (or in the overriding curatedConfigMap).

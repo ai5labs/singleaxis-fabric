@@ -1,9 +1,8 @@
 # fabricctl
 
-`fabricctl` is the canonical Go operator CLI for SingleAxis Fabric. Its current
-surface helps an operator create a deterministic Offline Install Bundle v1,
-inspect its desired state, and preflight a Kubernetes target without changing
-a runtime:
+`fabricctl` is the canonical Go operator CLI for SingleAxis Fabric. The same
+public lifecycle engine is consumable from `pkg/lifecycle` by the CLI,
+self-hosted controllers, GitOps automation, and the SingleAxis Platform.
 
 | Command | Current behavior |
 | --- | --- |
@@ -14,11 +13,18 @@ a runtime:
 | `fabricctl deployment plan` | Deterministic, non-mutating installation/readiness planning. |
 | `fabricctl doctor --offline --bundle DIR` | Strict local verification of all six bundle artifacts and their bindings. |
 | `fabricctl doctor` | Read-only host, Kubernetes, Helm, profile, and optional destination preflight. |
+| `fabricctl plan` | Resolve a local chart, public profile, and release image locks; `--refresh` binds the plan to an immutable cluster UID. |
+| `fabricctl install` | Apply one exact mutation-ready plan with a target Lease, Helm atomic recovery, explicit approval, and a no-clobber receipt. |
+| `fabricctl status` | Read component readiness and compare the effective Helm manifest with a verified receipt. |
+| `fabricctl verify` | Send a metadata-only synthetic trace through Collector ingress and report destination acknowledgement separately. |
+| `fabricctl connect` | Optionally pair an installed site to SingleAxis SaaS/private through HTTPS device flow and workload identity. |
+| `fabricctl support` | Create a local allowlisted support directory that is never uploaded automatically. |
 
-None of these commands installs Kubernetes resources, changes cluster state,
-transmits telemetry, or connects the deployment to SingleAxis services. Bundle
-generation produces typed Helm values, but it is not installation, chart
-rendering, verification, or proof of readiness.
+`init`, `bundle`, `deployment`, offline `doctor`, and draft `plan` are local and
+non-mutating. `plan --refresh`, `status`, and `verify` make read-only target
+calls; `verify` additionally sends one metadata-only synthetic trace.
+`install` mutates only the reviewed Kubernetes target. `connect` is optional
+and contacts only the named HTTPS management origin. `support` never uploads.
 
 ## Build and run
 
@@ -34,6 +40,9 @@ make check
 ./bin/fabricctl deployment digest singleaxis.yaml
 ./bin/fabricctl deployment plan singleaxis.yaml
 ./bin/fabricctl doctor --offline --bundle ./bundle --output json
+./bin/fabricctl plan --bundle ./bundle --chart ./fabric-0.7.1.tgz \
+  --profile ../../charts/fabric/profiles/permissive-dev.yaml \
+  --image-locks ./images.lock.json --refresh --output json
 ./bin/fabricctl doctor
 ./bin/fabricctl doctor --profile permissive-dev --output json
 ./bin/fabricctl doctor \
@@ -391,8 +400,10 @@ release provenance and must not be represented as an approved release.
 ## Go and Python command ownership
 
 The Go CLI in this directory is the canonical operator surface for guided
-initialization, offline bundle generation, deployment validation, digest,
-plan, and Kubernetes-aware preflight. The Python SDK currently also installs a
+initialization, lifecycle planning, Kubernetes installation/status/proof,
+optional management pairing, and support collection. The versioned
+`pkg/lifecycle` API is the shared Go contract engine; target process execution
+stays behind internal backends. The Python SDK currently also installs a
 `fabricctl` console entry point with an older command surface. That Python CLI
 is legacy during the migration to Go; do not depend on parity between the two
 binaries. Packaging must ensure the intended Go executable is first on `PATH`
@@ -400,22 +411,26 @@ when using the commands documented here.
 
 ## Deliberate limitations
 
-The current CLI generates deterministic canonical resources, typed values,
-unresolved secret requirements, an offline plan, and a byte-digest manifest.
-It does not fetch or verify the pinned chart/profile bytes; produce an
-installation receipt; apply manifests; operate a Site Controller; reconcile
-desired state; manage approvals; resolve opaque references; verify release
-signatures; lock or verify every component image digest; manage upgrades or
-rollback; or prove end-to-end OTLP ingestion.
-It does not establish the availability of a private SingleAxis platform.
+The CLI verifies operator-supplied chart/profile bytes and immutable image
+locks but does not yet fetch or verify registry signatures itself. It does not
+operate a continuously reconciling Site Controller, resolve arbitrary policy
+references, manage secret values, or expose upgrade/rollback commands. The
+internal upgrade backend is not public until current-receipt/current-bundle
+compatibility and N-1 recovery qualification are complete.
+
+Runtime verification proves cluster identity, receipt-bound manifest state,
+component readiness, and Collector ingress acceptance. It remains `partial`
+until the selected destination implements a correlation acknowledgement; pod
+readiness and an OTLP HTTP success are not represented as evidence
+persistence. The optional management HTTPS adapter is implemented in OSS, but
+the corresponding fleet APIs and UI belong to `singleaxis-eval-platform`.
 
 `doctor` also does not validate Secret values or ConfigMap contents, verify
 policy semantics, or test NetworkPolicy dataplane behavior. The name override
 flags are an explicit contract; doctor does not infer custom prerequisite
 names from arbitrary YAML.
 
-The complete interactive lifecycle—plan review, install, verify, status,
-connect, upgrade, rollback, and sanitized support collection—remains planned.
-Those workflows require explicit security contracts and environment-specific
-evidence; the current bundle, desired-state, and preflight commands must not be
-treated as deployment, operational-readiness, or compliance attestations.
+Local and Compose backends remain gated behind Kubernetes destination-proof,
+upgrade, rollback, interruption, and released-binary qualification. No command
+is a compliance attestation, and no replay claim includes private model
+reasoning or nondeterministic external systems.

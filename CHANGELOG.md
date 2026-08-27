@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0-rc.1] - 2026-08-28
+
+### Added
+
+- Added the public `fabricctl` lifecycle engine and versioned contracts shared
+  by the CLI, GitOps automation, customer-hosted controllers, and the
+  SingleAxis Platform.
+- Added immutable release image locks and digest-aware Helm rendering for all
+  public Fabric workloads.
+- Added Kubernetes mutation-ready planning, explicit approvals, target-scoped
+  operation locking, atomic installation, hash-chained receipts, runtime
+  status, receipt-bound drift detection, and metadata-only ingress proof.
+- Added optional HTTPS management pairing using workload identity, ephemeral
+  device credentials, purpose-separated trust, and signed connection
+  receipts.
+- Added local allowlisted support bundles that exclude raw prompts, tool
+  payloads, environment variables, credentials, Kubernetes Secrets, desired
+  state, and cluster logs.
+
+### Changed
+
+- Clarified the architecture boundary: Fabric OSS owns portable lifecycle
+  contracts and deployment mechanics; the SingleAxis Platform owns fleet
+  state, approval workflows, rollout orchestration, and operator UI.
+- Runtime verification now reports Collector ingress and downstream
+  destination acknowledgement independently, preventing ingress acceptance
+  from being represented as evidence persistence.
+
+### Security
+
+- A2/A3 and non-interactive mutations require detached Ed25519 approvals bound
+  to the exact operation, bundle, plan, target, and validity window.
+- Management device codes and grants are memory-only, connection origins are
+  HTTPS-only, and management availability is excluded from the agent request
+  path.
+- Mutable, unlisted, or mismatched workload images are rejected before
+  Kubernetes mutation.
+
 ## [0.7.1] - 2026-08-25
 
 ### Added
@@ -1572,7 +1610,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...HEAD
+[0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1
 [0.7.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.6.0

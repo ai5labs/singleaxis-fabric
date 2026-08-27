@@ -57,6 +57,18 @@ func runWithSession(args []string, stdin io.Reader, stdout, stderr io.Writer, in
 		return runInit(args[1:], stdin, stdout, stderr, interactive)
 	case "bundle":
 		return runBundle(args[1:], stdout, stderr)
+	case "plan":
+		return runPlan(args[1:], stdout, stderr)
+	case "install":
+		return runInstall(args[1:], stdin, stdout, stderr, interactive)
+	case "status":
+		return runStatus(args[1:], stdout, stderr)
+	case "verify":
+		return runVerify(args[1:], stdout, stderr)
+	case "support":
+		return runSupport(args[1:], stdout, stderr)
+	case "connect":
+		return runConnect(args[1:], stdout, stderr)
 	case "deployment":
 		return runDeployment(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
@@ -526,6 +538,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  fabricctl init [--output-dir DIR]")
 	fmt.Fprintln(w, "  fabricctl bundle build --deployment FILE --target FILE [--output-dir DIR] [--json]")
+	fmt.Fprintln(w, "  fabricctl plan --bundle DIR --chart FILE --profile FILE --image-locks FILE [--output human|json]")
+	fmt.Fprintln(w, "  fabricctl install --bundle DIR --chart FILE --profile FILE --image-locks FILE --plan-digest DIGEST [flags]")
+	fmt.Fprintln(w, "  fabricctl status --bundle DIR [--receipt FILE] [--output human|json]")
+	fmt.Fprintln(w, "  fabricctl verify --bundle DIR [--receipt FILE] [--output human|json]")
+	fmt.Fprintln(w, "  fabricctl support --bundle DIR --output-dir DIR [--receipt FILE] [--output human|json]")
+	fmt.Fprintln(w, "  fabricctl connect --bundle DIR --operation-receipt FILE --platform HTTPS_ORIGIN --trust-store FILE [flags]")
 	fmt.Fprintln(w, "  fabricctl doctor --offline --bundle DIR [--output human|json]")
 	fmt.Fprintln(w, "  fabricctl doctor [flags]")
 	fmt.Fprintln(w, "  fabricctl deployment validate FILE [--json]")

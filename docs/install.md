@@ -80,12 +80,31 @@ helm upgrade --install fabric ./fabric-1.2.3.tgz \
   --wait --atomic
 ```
 
-The release chart selects Fabric-owned images with the release version. Before
-production promotion, resolve every image tag to an immutable digest, verify
-its signature and provenance, and enforce those digests through the
-organization's registry mirror or admission policy. The current chart values
-do not expose a digest field for every component; tag-to-digest enforcement is
-therefore an external deployment control rather than a chart guarantee.
+The release chart accepts an optional `image.digest` for every public workload;
+when present it renders `repository@sha256:...` and ignores the tag. The
+canonical lifecycle path uses a strict `fabricctl.image-locks/v1` file and
+rejects a rendered install workload that is mutable, unlisted, or absent from
+the rendered release. Verify image signatures and provenance before admitting
+those digests into the lock file.
+
+For the governed lifecycle, build the six-file bundle first, then resolve the
+exact chart package, profile, and image locks:
+
+```bash
+fabricctl plan --bundle ./bundle --chart ./fabric-1.2.3.tgz \
+  --profile ./profiles/permissive-dev.yaml \
+  --image-locks ./images.lock.json --refresh --output json
+fabricctl install --bundle ./bundle --chart ./fabric-1.2.3.tgz \
+  --profile ./profiles/permissive-dev.yaml \
+  --image-locks ./images.lock.json --plan-digest sha256:... \
+  --actor operator/alice --receipt ./install-receipt.json
+fabricctl status --bundle ./bundle --receipt ./install-receipt.json
+fabricctl verify --bundle ./bundle --receipt ./install-receipt.json
+```
+
+A2/A3 and non-interactive mutation require a detached Ed25519 approval and a
+purpose-limited public trust store. A local source-built chart can exercise the
+workflow but is not a qualified released artifact.
 
 ## Promotion record
 

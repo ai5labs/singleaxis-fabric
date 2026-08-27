@@ -55,3 +55,11 @@ set, which the deployment template treats as "no mount, passthrough".
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "nemo-sidecar.image" -}}
+{{- if .Values.image.digest -}}
+{{ printf "%s@%s" .Values.image.repository .Values.image.digest }}
+{{- else -}}
+{{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
+{{- end -}}
+{{- end -}}

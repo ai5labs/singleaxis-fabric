@@ -52,8 +52,12 @@ Resolve the image tag. `image.tag` defaults to `.Chart.AppVersion`;
 variants without having to rewrite the tag.
 */}}
 {{- define "redteam-runner.image" -}}
+{{- if .Values.image.digest -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
 {{- $base := .Values.image.tag | default .Chart.AppVersion -}}
 {{- printf "%s:%s%s" .Values.image.repository $base (.Values.image.suffix | default "") -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

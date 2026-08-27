@@ -48,6 +48,22 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{- define "otel-collector.image" -}}
+{{- if .Values.image.digest -}}
+{{ printf "%s@%s" .Values.image.repository .Values.image.digest }}
+{{- else -}}
+{{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
+{{- end -}}
+{{- end -}}
+
+{{- define "otel-collector.embeddedRedactorImage" -}}
+{{- if .Values.fabric.redact.embedded.image.digest -}}
+{{ printf "%s@%s" .Values.fabric.redact.embedded.image.repository .Values.fabric.redact.embedded.image.digest }}
+{{- else -}}
+{{ printf "%s:%s" .Values.fabric.redact.embedded.image.repository (.Values.fabric.redact.embedded.image.tag | default .Chart.AppVersion) }}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Validate fabric.sampler config: when enabled, exactly one of
 hmacKey / hmacKeySecret.name must be set. When hmacKey is set

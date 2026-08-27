@@ -52,7 +52,7 @@ spec:
           # subchart's `.Chart.AppVersion`, which intentionally tracks
           # the upstream Langfuse release (e.g. 2.93.0) and would point
           # at an image tag that the release workflow never publishes.
-          image: "{{ .Values.bootstrap.image.repository }}:{{ $bootstrapTag }}"
+          image: {{ if .Values.bootstrap.image.digest }}{{ printf "%s@%s" .Values.bootstrap.image.repository .Values.bootstrap.image.digest | quote }}{{ else }}{{ printf "%s:%s" .Values.bootstrap.image.repository $bootstrapTag | quote }}{{ end }}
           imagePullPolicy: {{ .Values.bootstrap.image.pullPolicy }}
           args: ["run"]
           env:

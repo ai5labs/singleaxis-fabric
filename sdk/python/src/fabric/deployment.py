@@ -386,8 +386,7 @@ def _reference_looks_sensitive(value: str) -> bool:
     if any(pattern.fullmatch(value) for pattern in _CREDENTIAL_REFERENCE_PATTERNS):
         return True
     return not any(separator in value for separator in "/:.") and bool(
-        _OPAQUE_REFERENCE_PATTERN.fullmatch(value)
-        or _HEX_REFERENCE_PATTERN.fullmatch(value)
+        _OPAQUE_REFERENCE_PATTERN.fullmatch(value) or _HEX_REFERENCE_PATTERN.fullmatch(value)
     )
 
 

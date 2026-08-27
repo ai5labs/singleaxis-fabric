@@ -1,8 +1,8 @@
 ---
 title: fabricctl lifecycle and deployment bundle
 status: active-build
-revision: 2
-last_updated: 2026-08-25
+revision: 3
+last_updated: 2026-08-28
 owner: product-architecture
 ---
 
@@ -24,6 +24,13 @@ deployment CLI.
 This specification defines the lifecycle target and records implementation
 status by slice. It does not claim that install or reconciliation exists where
 the current-state section says it is deferred.
+
+The recommended ownership boundary is a public, provider-neutral lifecycle
+engine in `tools/fabricctl/pkg/lifecycle` with environment-specific execution
+backends behind the CLI. The SingleAxis Platform consumes those contracts and
+owns fleet state, approval workflows, rollout orchestration, and operator UI.
+`singleaxis-fabric-internal` may supply private engines, workers, connectors,
+bundles, and deployment overlays, but it is not a second management plane.
 
 ## Problem
 
@@ -409,19 +416,36 @@ At this revision:
 - Slice 1 is complete: guided `init` and non-interactive `bundle build`
   generate the exact six-file bundle, and offline doctor reconstructs and
   verifies it without target access;
-- the public contract defines the separate `FabricInstallTarget` and the
-  derived secret-requirements, installation-plan, and bundle-manifest
-  artifacts;
+- the shared public Go API and `contracts/lifecycle/v1` define bundle,
+  artifact-lock, plan, approval, receipt, status, verification, pairing, and
+  support semantics for CLI, GitOps, customer controllers, and platform
+  consumers;
+- Slice 2 is implemented through mutation-ready planning, exact digest-locked
+  Helm install, target Lease, atomic failure recovery, receipts, status,
+  receipt-bound drift detection, and metadata-only Collector ingress proof;
+  a clean Kind cluster has exercised those paths successfully from current
+  source;
+- Slice 2 is not release-qualified: destination persistence acknowledgement,
+  signed release/archive qualification, A3 cluster qualification, and the
+  full interruption/failure matrix remain open;
+- the OSS portion of Slice 3 provides an HTTPS-only, provider-neutral pairing
+  client with ephemeral device credentials and signed connection receipts;
+  the fleet APIs, bundle service, rollout state, and UI belong in
+  `singleaxis-eval-platform` and are not implemented by this repository;
+- Slice 4 provides operation locking, drift reporting, hash-chained receipts,
+  purpose-separated approval trust, atomic install recovery, and local
+  allowlisted support bundles. Upgrade and rollback remain deliberately
+  unavailable on the public CLI until current-state binding and N-1 recovery
+  qualification are complete;
+- Slice 5 remains gated. Local and Docker Compose backends must not duplicate
+  or weaken lifecycle behavior before Kubernetes destination proof and
+  lifecycle-safety exit criteria stabilize;
 - the Python/PyPI console script is compatibility surface, not an alternative
   place to add lifecycle features;
-- no CLI command installs, connects, upgrades, rolls back, or uploads support
-  data; and
+- no command uploads support data automatically, and no command represents
+  Collector acceptance as destination persistence or legal compliance; and
 - the private Management service does not yet generate and reconcile the
   complete public bundle.
-
-Installation mutation remains blocked until Slice 2 defines pinned artifact
-and component-image verification, authorization, receipts, failure semantics,
-and recovery as enforceable contracts rather than CLI convenience behavior.
 
 ## References
 
