@@ -3,7 +3,7 @@ name: fabric-relay
 description: Durable, security-hardened OTLP egress relay for SingleAxis Fabric
 type: application
 version: 0.1.0
-appVersion: "0.7.1"
+appVersion: "0.8.0-rc.1"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/singleaxis/singleaxis-fabric
 sources:

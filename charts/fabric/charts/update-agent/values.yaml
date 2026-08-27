@@ -5,6 +5,7 @@ replicaCount: 2                    # HA by default; admission must be reliable
 image:
   repository: ghcr.io/singleaxis/fabric-update-agent
   tag: ""                          # defaults to .Chart.AppVersion
+  digest: ""                       # production: sha256:...; tag ignored when set
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

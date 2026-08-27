@@ -11,6 +11,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/singleaxis/fabric-presidio-sidecar
   tag: ""
+  digest: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
