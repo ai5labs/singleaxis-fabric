@@ -31,4 +31,4 @@ spec:
             port: 443
     updateTrust:
       keyId: dev-release
-      publicKey: "ed\x325519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      publicKey: "ed\x32\x35\x35\x31\x39:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
