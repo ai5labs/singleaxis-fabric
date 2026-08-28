@@ -26,6 +26,8 @@
 ## Checklist
 
 - [ ] Commits are signed off (`git commit -s`)
+- [ ] Squash/rebase merge commits preserve a real `Signed-off-by:` trailer
+  on its own line
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
 - [ ] Tests added / updated
 - [ ] Spec updated if behaviour changed
