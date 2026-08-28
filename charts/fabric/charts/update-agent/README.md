@@ -86,7 +86,7 @@ helm upgrade <release> <chart> ...   # reissues everything consistently
 ## Profile-lock admission backstop
 
 Under a regulatory profile with locked fields (see
-[docs/regulatory-profiles.md](../../../docs/regulatory-profiles.md)),
+[docs/regulatory-profiles.md](../../../../docs/regulatory-profiles.md)),
 the verifier can additionally deny ConfigMaps carrying the
 otel-collector config naming whose collector config drops a locked
 control or leaves it declared but absent from the active logs/traces

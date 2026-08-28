@@ -195,3 +195,16 @@ def test_package_identity_mismatch_is_reported(monkeypatch: pytest.MonkeyPatch) 
     check = cli.run_checks(_healthy_env())[1]
     assert check.status == "fail"
     assert check.id == "package.identity"
+
+
+def test_package_identity_accepts_pep440_normalized_release_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = SimpleNamespace(
+        metadata={"Name": "singleaxis-fabric"},
+        version=__version__.replace("-rc.", "rc"),
+    )
+    monkeypatch.setattr("fabric.cli.metadata.distribution", lambda _name: fake)
+    check = cli.run_checks(_healthy_env())[1]
+    assert check.status == "pass"
+    assert check.id == "package.identity"

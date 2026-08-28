@@ -241,7 +241,7 @@ build lineage. The OSS SDK only emits them.
   `fabric.execution_id="execution-0001"` and
   `fabric.workflow_id="workflow-0001"`.
 - The conformance schema
-  ([fabric-decision-v1.schema.json](../sdk/python/tests/conformance/schema/fabric-decision-v1.schema.json))
+  ([fabric-decision-v1.schema.json](../contracts/activity/v1/schema/fabric-decision-v1.schema.json))
   gains an **optional** top-level `execution_span` object (sibling to
   `decision_span` / `events` / `child_spans`). The root still **requires**
   only the existing three, so non-execution scenarios validate unchanged;

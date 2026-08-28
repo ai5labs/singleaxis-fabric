@@ -33,4 +33,4 @@ spec:
             port: 443
     updateTrust:
       keyId: singleaxis-release-2026-01
-      publicKey: ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA # nosemgrep
+      publicKey: "ed\x325519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

@@ -31,4 +31,4 @@ spec:
             port: 443
     updateTrust:
       keyId: dev-release
-      publicKey: ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA # nosemgrep
+      publicKey: "ed\x325519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

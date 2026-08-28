@@ -166,7 +166,7 @@ spec:
             port: 443
     updateTrust:
       keyId: singleaxis-release-2026-01
-      publicKey: ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA # nosemgrep
+      publicKey: ed25519:<base64url-encoded-32-byte-public-key>
 ```
 
 The v1alpha1 target supports only `backend.type: helm`. Docker Compose and
