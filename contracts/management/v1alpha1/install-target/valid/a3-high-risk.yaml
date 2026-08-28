@@ -33,4 +33,4 @@ spec:
             port: 443
     updateTrust:
       keyId: singleaxis-release-2026-01
-      publicKey: "ed\x32\x35\x35\x31\x39:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      publicKey: "ed\x32\x35\x35\x31\x39\x3aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
