@@ -109,7 +109,12 @@ def _package_check() -> Check:
         )
     name = str(dist.metadata["Name"] or "")
     version = dist.version
-    if name.lower() != _DISTRIBUTION or version != __version__:
+    # Python distribution metadata follows PEP 440 and normalizes a SemVer
+    # release candidate such as ``0.8.0-rc.1`` to ``0.8.0rc1``. Keep the
+    # source version SemVer-compatible while comparing the two identities in
+    # the canonical form produced by package installers.
+    expected_version = __version__.replace("-rc.", "rc")
+    if name.lower() != _DISTRIBUTION or version != expected_version:
         return _check(
             "package.identity",
             "fail",

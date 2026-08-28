@@ -105,4 +105,9 @@ exclude = [
   "^https://github\\.com/singleaxis/singleaxis-fabric/releases/tag/v0\\.2\\.0",
   "^https://github\\.com/singleaxis/singleaxis-fabric/releases/download/v0\\.2\\.0",
   "^https://github\\.com/singleaxis/singleaxis-fabric/compare/v0\\.2\\.0",
+
+  # The release-candidate compare targets become resolvable only after the
+  # signed tag is published. Keep the canonical CHANGELOG links in place.
+  "^https://github\\.com/singleaxis/singleaxis-fabric/compare/v0\\.7\\.1\\.\\.\\.v0\\.8\\.0-rc\\.1$",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/compare/v0\\.8\\.0-rc\\.1\\.\\.\\.HEAD$",
 ]

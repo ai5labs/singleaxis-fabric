@@ -47,7 +47,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: otel-collector
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "otel-collector.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --config=/etc/otelcol-fabric/config.yaml
@@ -113,7 +113,7 @@ spec:
           {{- end }}
         {{- if and .Values.fabric.redact.enabled .Values.fabric.redact.embedded.enabled }}
         - name: presidio-redactor
-          image: "{{ .Values.fabric.redact.embedded.image.repository }}:{{ .Values.fabric.redact.embedded.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "otel-collector.embeddedRedactorImage" . | quote }}
           imagePullPolicy: {{ .Values.fabric.redact.embedded.image.pullPolicy }}
           args:
             - --uds

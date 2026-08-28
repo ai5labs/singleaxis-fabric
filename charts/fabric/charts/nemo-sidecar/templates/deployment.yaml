@@ -39,7 +39,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: nemo-sidecar
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "nemo-sidecar.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "--host"

@@ -24,6 +24,15 @@ MAX_DOCUMENT_BYTES = 1_048_576
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$")
 _REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$")
+_OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{48,}$")
+_HEX_REFERENCE_PATTERN = re.compile(r"^[A-Fa-f0-9]{40,}$")
+_CREDENTIAL_REFERENCE_PATTERNS = (
+    re.compile(r"^(?:bearer[ :]?)[A-Za-z0-9._~+/-]+$", re.IGNORECASE),
+    re.compile(r"^(?:sk|pk|api[_-]?key|token|secret)[_-][A-Za-z0-9._~+/-]{8,}$", re.IGNORECASE),
+    re.compile(r"^(?:AKIA|ASIA)[A-Z0-9]{16}$"),
+    re.compile(r"^gh[pousr]_[A-Za-z0-9]{20,}$"),
+    re.compile(r"^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$"),
+)
 _FORBIDDEN_KEY_PATTERN = re.compile(
     r"^(?:env|envs|envvars|environmentvariables|password|passwd|secret|token|"
     r"apikey|api_key|credential|credentials)$",
@@ -347,7 +356,9 @@ def _reference_diagnostics(resource: FabricDeployment) -> list[DeploymentDiagnos
     if resource.spec.rollout is not None:
         values.append(("$.spec.rollout.approvalRef", resource.spec.rollout.approval_ref))
     for path, value in values:
-        if value is not None and not _REFERENCE_PATTERN.fullmatch(value):
+        if value is None:
+            continue
+        if not _REFERENCE_PATTERN.fullmatch(value):
             diagnostics.append(
                 DeploymentDiagnostic(
                     "deployment.reference.invalid",
@@ -356,7 +367,27 @@ def _reference_diagnostics(resource: FabricDeployment) -> list[DeploymentDiagnos
                     "Reference must be 1-253 identifier characters and contain no inline value",
                 )
             )
+        elif _reference_looks_sensitive(value):
+            diagnostics.append(
+                DeploymentDiagnostic(
+                    "deployment.reference.sensitive",
+                    "error",
+                    path,
+                    "Reference resembles credential material; use an external reference "
+                    "identifier instead",
+                )
+            )
     return diagnostics
+
+
+def _reference_looks_sensitive(value: str) -> bool:
+    """Reject common credentials and long opaque tokens without logging them."""
+
+    if any(pattern.fullmatch(value) for pattern in _CREDENTIAL_REFERENCE_PATTERNS):
+        return True
+    return not any(separator in value for separator in "/:.") and bool(
+        _OPAQUE_REFERENCE_PATTERN.fullmatch(value) or _HEX_REFERENCE_PATTERN.fullmatch(value)
+    )
 
 
 def validate_deployment(value: Any) -> tuple[FabricDeployment | None, list[DeploymentDiagnostic]]:

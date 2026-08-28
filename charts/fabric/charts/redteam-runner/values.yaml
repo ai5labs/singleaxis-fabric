@@ -14,6 +14,7 @@
 image:
   repository: ghcr.io/singleaxis/fabric-redteam-runner
   tag: ""                          # defaults to .Chart.AppVersion
+  digest: ""
   suffix: "-suites"                # "" for the bare image
   pullPolicy: IfNotPresent
 
