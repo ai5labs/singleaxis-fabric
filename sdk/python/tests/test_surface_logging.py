@@ -461,7 +461,9 @@ def test_record_hook_optionals_omitted(span_exporter: InMemorySpanExporter) -> N
 _SENSITIVE_PATH = "/patients/jane/record.pdf"
 
 
-def test_record_file_access_readable_path(span_exporter: InMemorySpanExporter) -> None:
+def test_record_file_access_hashes_path_by_default(
+    span_exporter: InMemorySpanExporter,
+) -> None:
     client = _client()
     with client.decision(session_id="s", request_id="r") as d:
         d.record_file_access(
@@ -473,12 +475,23 @@ def test_record_file_access_readable_path(span_exporter: InMemorySpanExporter) -
     span = _decision_span(span_exporter)
     assert dict(span.attributes or {})["fabric.file_access_count"] == 1
     attrs = _event(span, "fabric.file")
-    assert attrs["fabric.file.path"] == "/var/data/report.csv"
+    assert attrs["fabric.file.path_hash"] == _sha256("/var/data/report.csv")
     assert attrs["fabric.file.operation"] == "read"
-    assert attrs["fabric.file.path_redacted"] is False
+    assert attrs["fabric.file.path_redacted"] is True
     assert attrs["fabric.file.content_hash"] == "c" * 64
     assert attrs["fabric.file.size_bytes"] == 2048
-    assert "fabric.file.path_hash" not in attrs
+    assert "fabric.file.path" not in attrs
+
+
+def test_record_file_access_path_requires_explicit_raw_opt_out(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_file_access("report.csv", "read", redact_path=False)
+    attrs = _event(_decision_span(span_exporter), "fabric.file")
+    assert attrs["fabric.file.path"] == "report.csv"
+    assert attrs["fabric.file.path_redacted"] is False
 
 
 def test_record_file_access_redacted_path(span_exporter: InMemorySpanExporter) -> None:

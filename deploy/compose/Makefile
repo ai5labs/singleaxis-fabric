@@ -1,57 +1,36 @@
-# Wrapper around docker compose for the Fabric integration harness.
-# Explicit targets keep the common flows discoverable; pass extra
-# args through the `ARGS=` variable, e.g. `make logs ARGS="-f otel-collector"`.
-
 COMPOSE ?= docker compose
-PROJECT ?= fabric-harness
 
-.PHONY: up up-bootstrap down reset logs ps build curl-health smoke
+.PHONY: up down reset logs status build smoke qualify help
 
-up: ## Start core harness (sidecars + collector + Langfuse).
-	mkdir -p run
-	@if [ ! -s run/presidio.key ]; then \
-		openssl rand -base64 32 > run/presidio.key; \
-	fi
-	$(COMPOSE) up -d --build
-	@echo ""
-	@echo "Langfuse UI:  http://localhost:$${FABRIC_LANGFUSE_PORT:-3000}"
-	@echo "OTLP/gRPC:    localhost:$${FABRIC_OTLP_GRPC_PORT:-4317}"
-	@echo "OTLP/HTTP:    localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
-	@echo ""
-	@echo "Guardrail sockets live on the 'fabric-run' named volume, not on"
-	@echo "the host. Run your agent as a container to reach them:"
-	@echo "  docker run --rm --network $(PROJECT)_fabric \\"
-	@echo "    -v $(PROJECT)_fabric-run:/run/fabric --user 1000:1000 \\"
-	@echo "    -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 <image>"
-	@echo "  UDS paths inside the container: /run/fabric/{presidio,nemo}.sock"
+up: ## Build and start Fabric Node plus the controlled sink.
+	$(COMPOSE) up -d --build --wait
+	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
+	@echo "Controlled sink status: http://localhost:$${FABRIC_SINK_PORT:-8080}/count"
 
-up-bootstrap: up ## Start harness AND run the Langfuse bootstrap Job.
-	$(COMPOSE) --profile bootstrap run --rm langfuse-bootstrap
-
-down: ## Stop everything; keep Postgres volume.
+down: ## Stop the evaluation setup while keeping durable volumes.
 	$(COMPOSE) down
 
-reset: ## Stop + delete volumes (Langfuse DB, Fabric UDS dir).
+reset: ## Delete this evaluation setup and its queue/sink volumes.
 	$(COMPOSE) down -v
-	rm -rf run
 
-logs: ## Tail logs; pass ARGS="<service>" to filter.
+logs: ## Tail logs; use ARGS="fabric-node" to select a service.
 	$(COMPOSE) logs -f $(ARGS)
 
-ps: ## Show running services.
+status: ## Show containers and the controlled sink's accepted request count.
 	$(COMPOSE) ps
+	@curl -fsS "http://$$($(COMPOSE) port test-sink 8080)/count"; echo
 
-build: ## Build all local images without starting.
-	$(COMPOSE) build
+build: ## Build the local Fabric Node image.
+	$(COMPOSE) build fabric-node
 
-curl-health: ## Hit each service's healthcheck endpoint.
-	@curl -fsS http://localhost:3000/api/public/health && echo "  <- langfuse OK"
-	@curl -fsS http://localhost:4318/v1/traces -X POST -H 'Content-Type: application/json' -d '{}' \
-		&& echo "  <- otel-collector OK" \
-		|| echo "  <- otel-collector reachable (empty body is expected)"
+smoke: ## Send one protected OTLP trace to Fabric Node.
+	@curl -fsS -X POST "http://$$($(COMPOSE) port fabric-node 4318)/v1/traces" \
+		-H 'Content-Type: application/json' \
+		--data-binary @fixtures/decision-summary.json >/dev/null
+	@echo "trace accepted by Fabric Node"
 
-smoke: ## Run the Fabric SDK smoke test from the host against the harness.
-	cd ../../examples/harness-smoke && python smoke.py
+qualify: up ## Exercise protection plus destination outage/restart recovery.
+	./qualify.sh
 
 help:
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

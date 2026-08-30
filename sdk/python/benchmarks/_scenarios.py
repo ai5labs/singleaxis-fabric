@@ -15,15 +15,15 @@ network. Inputs are fixed so successive runs are comparable.
 
 from __future__ import annotations
 
+from fabric.guardrails import CheckerVerdict
+from fabric.policy import EngineVerdict
+from fabric.tool_auth import ToolAuthorization
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric.client import Fabric, FabricConfig
 from fabric.decision import Decision
-from fabric.guardrails import CheckerVerdict
-from fabric.policy import EngineVerdict
-from fabric.tool_auth import ToolAuthorization
 
 from ._harness import Scenario
 

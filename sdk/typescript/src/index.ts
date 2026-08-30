@@ -14,21 +14,12 @@ export {
   type BaselineStatus,
   type DecisionClientIdentity,
   type DecisionIds,
-  type EscalationMode,
-  type EscalationSummary,
-  type EvalOptions,
   type FileAccessOptions,
-  type GuardrailEntity,
-  type GuardrailPhase,
-  type GuardrailResult,
   type HookOptions,
   type InteractionDirection,
   type InteractionOptions,
   type McpInventoryOptions,
   type McpToolDefinition,
-  type PolicyDecision,
-  type PolicyEvaluationOptions,
-  type QueueJudgeOptions,
   type RecallOptions,
   type RememberOptions,
   type ReplayBehavior,
@@ -36,8 +27,6 @@ export {
   type RetrievalOptions,
   type SideEffectOptions,
   type SkillOptions,
-  type ToolAuthorizationDecision,
-  type ToolAuthorizationOptions,
   resetCoverageRegistry,
 } from "./decision.js";
 export { Execution, type ExecutionOptions } from "./execution.js";
@@ -49,5 +38,5 @@ export {
   type LlmUsage,
   type ToolCallOptions,
 } from "./calls.js";
-export { sha256Hex } from "./hash.js";
-export * as attributes from "./attributes.js";
+export { canonicalObjectHash, sha256Hex } from "./hash.js";
+export * as attributes from "./recorder-attributes.js";

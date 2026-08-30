@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Container image for the Fabric OTel Collector distribution —
-# upstream collector components plus the four Fabric policy
-# processors (fabricguard, fabricpolicy, fabricsampler, fabricredact).
+# upstream collector components plus the recorder's fabricguard metadata
+# protection processor. Runtime control, sampling, and sidecar integrations are
+# intentionally absent from the recorder-v1 binary.
 # Two-stage build: the builder compiles a static binary via OCB, the
 # runtime stage ships that binary on a distroless base with ca-certs.
 
@@ -24,10 +25,9 @@ ARG OCB_VERSION
 RUN go install go.opentelemetry.io/collector/cmd/builder@${OCB_VERSION} \
     && ln -s /go/bin/builder /usr/local/bin/ocb
 
-# The OCB manifest uses local `replaces:` entries, so the processor
-# modules must be present before we run the build.
+# The OCB manifest uses a local `replaces:` entry for fabricguard.
 COPY ocb-config.yaml ./
-COPY processor ./processor
+COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
 
 RUN ocb --config ocb-config.yaml \
     && test -x /src/dist/otelcol-fabric

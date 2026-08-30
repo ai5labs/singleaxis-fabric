@@ -8,43 +8,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.8.0-rc.1] - 2026-08-28
+## [0.8.0-rc.2] - 2026-08-31
 
 ### Added
 
-- Added the public `fabricctl` lifecycle engine and versioned contracts shared
-  by the CLI, GitOps automation, customer-hosted controllers, and the
-  SingleAxis Platform.
-- Added immutable release image locks and digest-aware Helm rendering for all
-  public Fabric workloads.
-- Added Kubernetes mutation-ready planning, explicit approvals, target-scoped
-  operation locking, atomic installation, hash-chained receipts, runtime
-  status, receipt-bound drift detection, and metadata-only ingress proof.
-- Added optional HTTPS management pairing using workload identity, ephemeral
-  device credentials, purpose-separated trust, and signed connection
-  receipts.
-- Added local allowlisted support bundles that exclude raw prompts, tool
-  payloads, environment variables, credentials, Kubernetes Secrets, desired
-  state, and cluster logs.
+- Added a deterministic end-to-end test critic that evaluates structured
+  evidence from a simulated agent run containing model, retrieval, tool, and
+  side-effect activity, including a destination outage and recorder restart.
+- Added retained CI artifacts for the agentic scenario evidence and critic
+  report so release qualification can be independently reviewed.
 
 ### Changed
 
-- Clarified the architecture boundary: Fabric OSS owns portable lifecycle
-  contracts and deployment mechanics; the SingleAxis Platform owns fleet
-  state, approval workflows, rollout orchestration, and operator UI.
-- Runtime verification now reports Collector ingress and downstream
-  destination acknowledgement independently, preventing ingress acceptance
-  from being represented as evidence persistence.
+- Release artifacts now contain only the passive recorder product:
+  `CAPTURE -> PROTECT -> DELIVER`. Legacy assurance, management, judge,
+  red-team, runtime-control, and regulatory surfaces are excluded by
+  artifact-content tests.
+- The Collector allowlist and both SDK vocabularies now preserve compatible
+  causal reconstruction fields while continuing to exclude raw content by
+  default.
+
+### Fixed
+
+- Fixed persistent queue volume ownership and restart recovery in the
+  production Helm posture.
+- Fixed release qualification fail-safety, dependency/version drift, the
+  `fabricctl` YAML runtime dependency, and high-severity vulnerabilities in
+  the exact TypeScript and Collector-image release artifacts.
 
 ### Security
 
-- A2/A3 and non-interactive mutations require detached Ed25519 approvals bound
-  to the exact operation, bundle, plan, target, and validity window.
-- Management device codes and grants are memory-only, connection origins are
-  HTTPS-only, and management availability is excluded from the agent request
-  path.
-- Mutable, unlisted, or mismatched workload images are rejected before
-  Kubernetes mutation.
+- The simulated workflow proves that prohibited raw content does not reach the
+  destination, at-least-once delivery recovers after an outage, and the
+  release makes no exactly-once or destination-persistence claim. Separate
+  chart tests prove that the production recorder exposes no sampling control.
+- Security qualification now scans the exact image and package bytes intended
+  for publication and fails closed on high or critical findings.
+
+## [0.8.0-rc.1] - 2026-08-31
+
+### Added
+
+- Added Activity Envelope v2, recorder configuration, privacy assertion,
+  delivery receipt, and connector capability contracts as independently
+  verifiable public interoperability artifacts.
+- Added the recorder-only `fabricctl` surface for local initialization,
+  validation, digesting, help, and version reporting.
+- Added `shadow-dev` and fail-closed `shadow-production` Helm postures for the
+  Collector-only Fabric Node.
+- Added persistent at-least-once queueing, restart recovery, blocking overflow,
+  direct-to-persistent-queue production handoff, indefinite transient retry,
+  mTLS ingress, authenticated HTTPS egress, and explicit ingress/exporter
+  NetworkPolicy peers.
+- Added exact Python wheel/sdist, npm package, Helm package, Collector image,
+  CLI binary, and public-contract release qualification.
+
+### Changed
+
+- Refocused Fabric OSS on the customer-controlled passive recorder pipeline:
+  `CAPTURE -> PROTECT -> DELIVER`.
+- Removed policy, guardrail, prompt-time PII, judge, red-team, assurance-tier,
+  governance, and management implementations from recorder SDKs, binaries,
+  charts, images, installer commands, and packaged contracts.
+- Python now matches TypeScript's safer defaults by hashing generic interaction
+  targets and file paths unless raw metadata is explicitly requested.
+- Recorder CI and license gates now qualify only released recorder surfaces;
+  legacy source cannot define release readiness.
+- Documentation now separates export minimization from PII detection, passive
+  recording from enforcement, and destination acceptance from durable
+  persistence.
+
+### Security
+
+- Fabric Node uses a non-disableable exact metadata allowlist in the named
+  production profile and removes raw bodies, caller-controlled names, native
+  text channels, sensitive keys, structured escape hatches, oversized values,
+  and invalid hash-labelled values before export.
+- Production rejects custom allowlist extensions, plaintext or unauthenticated
+  transport, missing ingress/egress peers, non-durable queues, finite retry,
+  debug export, and audit sampling.
+- Release promotion requires successful exact-commit CI, security, CodeQL,
+  license, and live kind delivery evidence, plus SBOM, provenance, signatures,
+  and coordinated version checks.
+
+### Known limitations
+
+- Fabric captures only activity exposed by the selected SDK, adapter, gateway,
+  vendor API, or existing telemetry source; it cannot infer hidden reasoning.
+- Metadata-only protection is not semantic PII detection or legal
+  de-identification. Customers must use opaque identifiers and qualify their
+  allowed metadata.
+- Delivery is at least once. Destinations must deduplicate and supply separate
+  evidence when durable persistence must be proven.
 
 ## [0.7.1] - 2026-08-25
 
@@ -1610,7 +1665,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...HEAD
+[0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1
 [0.7.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0

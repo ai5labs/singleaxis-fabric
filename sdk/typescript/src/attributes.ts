@@ -132,45 +132,6 @@ export const FABRIC_LLM_STREAMING_CHUNK_COUNT = "fabric.llm.streaming.chunk_coun
 export const FABRIC_LLM_RETRY_COUNT = "fabric.llm.retry.count";
 export const FABRIC_LLM_RETRY_REASON = "fabric.llm.retry.reason";
 
-// -- Guardrail (fabric.guardrail span event, per spec 005) --------------
-//
-// These mirror `sdk/python/src/fabric/decision.py` (`_record_guardrail_event`
-// and the block bookkeeping in `Decision.__exit__`). The keys land verbatim
-// on the emitted span/event, so they MUST stay byte-identical to the Python
-// constants or the shared `guardrail_*` conformance goldens will not match.
-
-export const EVENT_NAME_GUARDRAIL = "fabric.guardrail";
-
-export const ATTR_GUARDRAIL_PHASE = "fabric.guardrail.phase";
-export const ATTR_GUARDRAIL_LATENCY_MS = "fabric.guardrail.latency_ms";
-export const ATTR_GUARDRAIL_BLOCKED = "fabric.guardrail.blocked";
-export const ATTR_GUARDRAIL_ENTITIES = "fabric.guardrail.entities";
-export const ATTR_GUARDRAIL_POLICIES = "fabric.guardrail.policies";
-
-// Block bookkeeping stamped on the decision span itself when a guardrail
-// blocks (mirrors Python's ATTR_BLOCKED / ATTR_BLOCK_POLICIES).
-export const ATTR_BLOCKED = "fabric.blocked";
-export const ATTR_BLOCKED_POLICIES = "fabric.blocked.policies";
-
-// Dual-pipeline content-reference locator stamped on the guardrail event
-// when the host resolves the raw content into a ContentStore (spec 012).
-export const ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref";
-
-// Span status descriptions (match Python decision.py __exit__ precedence).
-export const STATUS_GUARDRAIL_BLOCKED = "guardrail_blocked";
-export const STATUS_ESCALATION_REQUESTED = "escalation_requested";
-export const STATUS_BLOCKED_AND_ESCALATED = "blocked_and_escalated";
-
-// -- Escalation (fabric.escalation span event) --------------------------
-
-export const EVENT_NAME_ESCALATION = "fabric.escalation";
-
-export const ATTR_ESCALATED = "fabric.escalated";
-export const ATTR_ESC_REASON = "fabric.escalation.reason";
-export const ATTR_ESC_RUBRIC = "fabric.escalation.rubric_id";
-export const ATTR_ESC_MODE = "fabric.escalation.mode";
-export const ATTR_ESC_SCORE = "fabric.escalation.triggering_score";
-
 // -- Retrieval (fabric.retrieval span event) ----------------------------
 
 export const EVENT_NAME_RETRIEVAL = "fabric.retrieval";
@@ -235,62 +196,6 @@ export const ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count";
 export const ATTR_CHECKPOINT_ID = "fabric.checkpoint.checkpoint_id";
 export const ATTR_CHECKPOINT_STEP_NAME = "fabric.checkpoint.step_name";
 export const ATTR_CHECKPOINT_STATE_HASH = "fabric.checkpoint.state_hash";
-
-// -- Eval (fabric.eval span event) --------------------------------------
-
-export const EVENT_NAME_EVAL = "fabric.eval";
-
-export const ATTR_EVAL_COUNT = "fabric.eval_count";
-export const ATTR_EVAL_RUBRICS = "fabric.eval_rubrics";
-
-export const ATTR_EVAL_ID = "fabric.eval.eval_id";
-export const ATTR_EVAL_RUBRIC_ID = "fabric.eval.rubric_id";
-export const ATTR_EVAL_SCORE = "fabric.eval.score";
-export const ATTR_EVAL_DIMENSION = "fabric.eval.dimension";
-export const ATTR_EVAL_EVALUATOR_NAME = "fabric.eval.evaluator_name";
-export const ATTR_EVAL_EVALUATOR_VERSION = "fabric.eval.evaluator_version";
-export const ATTR_EVAL_CONFIDENCE = "fabric.eval.confidence";
-export const ATTR_EVAL_PAYLOAD_REF = "fabric.eval.payload_ref";
-
-// -- Judge queue (fabric.judge.queued span event) -----------------------
-
-export const EVENT_NAME_JUDGE_QUEUED = "fabric.judge.queued";
-
-export const ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count";
-export const ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics";
-
-export const ATTR_JUDGE_REQUEST_ID = "fabric.judge.request_id";
-export const ATTR_JUDGE_RUBRIC_ID = "fabric.judge.rubric_id";
-export const ATTR_JUDGE_DIMENSIONS = "fabric.judge.dimensions";
-export const ATTR_JUDGE_PAYLOAD_REF = "fabric.judge.payload_ref";
-
-// -- Policy evaluation (fabric.policy.evaluation span event) -------------
-
-export const EVENT_NAME_POLICY_EVALUATION = "fabric.policy.evaluation";
-
-export const ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count";
-export const ATTR_POLICY_ENGINES = "fabric.policy_engines";
-
-export const ATTR_POLICY_EVALUATION_ID = "fabric.policy.evaluation_id";
-export const ATTR_POLICY_ENGINE = "fabric.policy.engine";
-export const ATTR_POLICY_POLICY_ID = "fabric.policy.policy_id";
-export const ATTR_POLICY_DECISION = "fabric.policy.decision";
-export const ATTR_POLICY_INPUT_HASH = "fabric.policy.input_hash";
-export const ATTR_POLICY_LATENCY_MS = "fabric.policy.latency_ms";
-export const ATTR_POLICY_POLICY_VERSION = "fabric.policy.policy_version";
-export const ATTR_POLICY_REASON = "fabric.policy.reason";
-export const ATTR_POLICY_EVIDENCE_REF = "fabric.policy.evidence_ref";
-export const ATTR_POLICY_BUNDLE_SIGNATURE = "fabric.policy.bundle_signature";
-export const ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref";
-
-// -- Tool authorization (fabric.tool.authorization span event) ----------
-
-export const EVENT_NAME_TOOL_AUTHORIZATION = "fabric.tool.authorization";
-
-export const ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count";
-
-export const ATTR_TOOL_AUTH_DECISION = "fabric.tool.authorization.decision";
-export const ATTR_TOOL_AUTH_REASON = "fabric.tool.authorization.reason";
 
 // -- Replay, inventory, extensibility, and generic interaction events ----
 

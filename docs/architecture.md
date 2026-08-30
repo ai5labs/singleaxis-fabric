@@ -1,133 +1,93 @@
 # Architecture
 
-> This page explains the current runtime topology. For the canonical product
-> boundaries—Connect, Control, Observe, Assurance, Governance, and
-> Management—see [spec 025](../specs/025-product-planes-and-packaging.md).
-
-A short mental model. The authoritative spec is
-[`specs/002-architecture.md`](../specs/002-architecture.md); this page
-exists so you can orient yourself in two pages instead of
-thirty.
-
-> **Scope.** This page describes the **L1 OSS** distribution that
-> ships from this repository: the Fabric SDK, guardrail sidecars,
-> OTel collector, red-team runner, and Helm chart. The L2 commercial
-> control plane (judge workers, decision graph, telemetry bridge,
-> escalation service, evidence bundles) is referenced where it sits
-> in the picture, but its implementation lives in a separate private
-> repository — see [`specs/001-product-vision.md`](../specs/001-product-vision.md)
-> for the L1/L2 split.
-
-## Three layers you touch
-
-Fabric has many components; developers working with it day-to-day
-only interact with three layers.
-
-| Layer | What it is | Where it runs | When the agent talks to it |
-|-------|------------|---------------|----------------------------|
-| **SDK** | The Python library your agent imports (`fabric`). Opens `Decision` spans, routes through guardrail chains, emits OTel telemetry. | In-process, same trust domain as the agent. | Synchronously, on every decision — this is the one call path that must be fast. |
-| **Sidecars** | Presidio (PII redaction) and NeMo Guardrails (Colang rails), exposed over Unix domain sockets. Shipped as container images; deployed alongside the agent pod. | Same pod or same node as the agent. | Synchronously on `guard_input` / `guard_output_*`, but over a UDS — no TCP, no DNS, design-budget sub-millisecond transport (benchmark suite is a follow-up release). |
-| **Collector** | An OpenTelemetry Collector distribution pre-configured with the Fabric processor chain (tail sampling, attribute allowlisting, tenant scoping). | One or more per-cluster deployments. | Asynchronously — the SDK exports batched spans over OTLP; the agent request path never waits for this. |
-
-Everything else in the picture runs asynchronously off the OTel stream
-or over a message broker: judge workers, the escalation service, the
-decision graph, the telemetry bridge, and the admin UI are **L2
-commercial and not in this repository**; the update agent is in this
-repository as an opt-in subchart. The agent's request path never blocks
-on any of them.
-
-## The one principle to internalize
-
-> **The agent request path never blocks on a Fabric HTTP call.**
-
-The SDK keeps the hot path to:
-
-1. In-process span work (target `<1 ms` P99 — design budget).
-2. UDS calls to guardrail sidecars (target `<100 ms` P99 budget per sidecar — design budget).
-3. OTLP export over a buffered, non-blocking exporter.
-
-The numeric budgets above are design contracts, not measured
-benchmarks. A first-party benchmark suite that gates merges on P99
-regressions lands as a follow-up release.
-
-Everything else — judges, escalations, decision-graph writes,
-compliance evidence generation — happens off the critical path.
-Spec [`004-telemetry-bridge.md`](../specs/004-telemetry-bridge.md)
-and [`008-deployment-model.md`](../specs/008-deployment-model.md)
-document the specific latency budgets.
-
-This is load-bearing. Security and compliance tooling that blocks
-request paths gets ripped out. Fabric stays in the path only where
-the latency budget justifies it.
-
-## Request flow, at a glance
+The recorder-v1 architecture has one pipeline and one deployable runtime:
 
 ```text
-agent pod:
-  agent code -> fabric.Decision
-                   |-- guard_input      --UDS--> Presidio sidecar
-                   |-- guard_output_*   --UDS--> NeMo rail sidecar
-                   |-- record_retrieval / request_escalation (local)
-                   `-- OTLP exporter (buffered, async) -----> OTel Collector
-                                                                |
-      +---------------------------------------------------------+
-      v                 v                      v
-  Langfuse      judge-workers (NATS)   telemetry-bridge (NATS)
-                                                |
-                                                v
-                                decision-graph / escalation-service
+                                  customer trust boundary
+                                      |
+SDK / adapter / existing OTLP ------+--> Fabric Node --> approved destination
+                                         |    |    |
+                                      capture protect deliver
 ```
 
-Everything below the OTLP hop happens after the agent returns. If
-the decision graph is down, judges are behind, or the escalation
-service is restarting, the agent still serves requests — the
-telemetry queue drains when those services recover.
+The accepted design of record is
+[spec 027](../specs/027-recorder-v1.md).
 
-## Where each piece is documented
+## Components
 
-- Overall component shape — [spec 002](../specs/002-architecture.md)
-- Decision Graph (provenance) — [spec 003](../specs/003-decision-graph.md)
-- Telemetry wire contract — [spec 004](../specs/004-telemetry-bridge.md)
-- Inline guardrails — [spec 005](../specs/005-guardrails-inline.md)
-- LLM-as-judge (async) — [spec 006](../specs/006-llm-as-judge.md)
-- Escalation (pause/resume) — [spec 007](../specs/007-escalation-workflow.md)
-- Deployment / Helm / profiles — [spec 008](../specs/008-deployment-model.md)
-- Compliance mappings — [spec 009](../specs/009-compliance-mapping.md)
+### Fabric SDKs
 
-## What's not in this repo
+SDKs are optional instrumentation libraries. Use them when the customer can
+modify agent code and needs richer model, tool, retrieval, memory, delegation,
+side-effect, retry, and failure correlation. They export OpenTelemetry and do
+not require a SingleAxis backend.
 
-This repository ships the developer-facing adoption surface — SDK,
-adapters, sidecars, OTel collector, Helm chart. Components and
-services maintained internally by SingleAxis (Decision Graph
-analytics, evidence-bundle generation, reviewer workflows, rubric
-authoring) are not part of this distribution.
+An existing system does not need to adopt the SDK. Its current OpenTelemetry
+pipeline can send compatible telemetry directly to Fabric Node.
 
-## Dual-pipeline architecture (trace vs judge queue)
+### Fabric Node
 
-Fabric uses two independent transports:
+Fabric Node is the existing Fabric OpenTelemetry Collector distribution. One
+process performs the complete recorder path:
 
-**Trace stream** (OpenTelemetry): carries `fabric.*` and `gen_ai.*`
-span attributes and events. Hash-only by default; PII redacted
-upstream by Presidio. Exports to Langfuse, Phoenix, Datadog,
-Honeycomb, Tempo, Jaeger — whatever the operator wires up.
+1. **Capture** — authenticate and receive OTLP, categorize supported metadata,
+   and retain
+   causal fields supplied by the source.
+2. **Protect** — apply an exact metadata allowlist and remove unapproved
+   content before export.
+3. **Deliver** — place protected records in a persistent sending queue and
+   retry export to the configured OTLP/HTTP destination.
 
-**Judge queue** (tenant-internal transport): carries `JudgeRequest`
-payloads including raw `JudgeContext`. Stays inside the tenant
-boundary. Never touches the OTel collector. Transport choice is
-tenant-configured (NATS, Kafka, SQS, Pub/Sub, in-process).
+There is no required Collector-to-Relay hop in recorder v1. The older Relay
+source is experimental and is not published or installed by this release.
 
-The SDK enforces the split. `decision.queue_judge()` MUST emit the
-`fabric.judge.queued` event with content-free attributes; it MUST
-NOT inline the context into the span. The judge queue transport
-MUST be a separate process / network path from the OTel collector.
+### `fabricctl`
 
-Why two transports?
+`fabricctl init` creates a local recorder configuration and a deterministic
+receipt. The result is explicitly marked `not-installed`; configuration does
+not mutate a cluster. Validation and digest operations work offline.
 
-- Single-pipeline content capture (opt-in via env var) is
-  regulatorily fragile: one mis-set flag and prompts ship to a
-  third-party SaaS.
-- LLM-as-judge requires raw content. Refusing to carry it makes
-  judges useless. Dual-pipeline lets judges work on content without
-  that content ever touching the telemetry stream.
+### Public contracts
 
-See [`spec 012 §Content vs trace pipeline`](../specs/012-oss-commercialization-strategy.md) for the full rule.
+The contracts separate interoperability from proprietary services:
+
+- Activity Envelope v2 describes the downstream normalization target for
+  reconstructable activity and causal identity. Fabric Node transports
+  protected OTLP; it does not materialize the JSON envelope on its wire path.
+- Connector manifests disclose coverage, identity, ordering, content access,
+  and blind spots.
+- Privacy assertions bind a processor's claim to the input, protected output,
+  policy, and build; unsigned assertions remain explicitly unverified.
+- Delivery batches and receipts distinguish queueing, transmission,
+  destination acceptance, and durable-persistence evidence.
+
+## Trust boundaries
+
+Raw content is disabled by default. Protection runs before the export boundary,
+not after telemetry reaches SingleAxis. The production profile requires mTLS
+ingress, authenticated HTTPS egress, persistent storage, and explicit network
+policy peers.
+
+The destination can be customer-owned, a private SingleAxis deployment, or
+SingleAxis Platform. Fabric Node behaves the same in each model.
+
+## Passive monitoring
+
+Recorder v1 is outside the monitored agent's decision path. A collector outage
+must not change the agent's business decision. Persistent queues and retry
+handle destination outages independently.
+
+Fabric may observe only what the chosen integration exposes. SDK
+instrumentation is richer than generic OTLP, and a gateway sees only traffic
+that traverses it. Connector capability manifests must disclose those blind
+spots rather than claiming universal capture.
+
+## What happens after delivery
+
+SingleAxis Platform or a customer backend can monitor, evaluate, investigate,
+and build a Decision Graph from the open record. Those services are downstream
+consumers, not hidden dependencies of Fabric Node.
+
+Prompt-time PII blocking, guardrails, policy authorization, and tool blocking
+are enforcement. They require deliberate placement in the request or execution
+path and are not enabled by the passive recorder.

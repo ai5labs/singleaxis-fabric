@@ -89,7 +89,6 @@ rm -f -- "${runtime}/ca.key" "${runtime}/ca.srl" \
 # The distroless image runs as nonroot. Certificate material is ephemeral and
 # read-only from the Collector's perspective; make it readable by that UID.
 chmod 0644 "${runtime}/ca.crt" "${runtime}/server.crt" "${runtime}/server.key"
-hmac_key="$(openssl rand -hex 32)"
 
 if [[ "${mode}" == "image" ]]; then
   config_root="/fabric-config-test"
@@ -130,18 +129,6 @@ processors:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
-  fabricredact:
-    unix_socket: ${config_root}/redactor.sock
-    timeout: 500ms
-    event_class_attribute: event_class
-    byte_handling: redact_utf8
-  fabricpolicy:
-    bundle_path: ""
-    query: data.fabric.egress.allow
-    event_class_attribute: event_class
-  fabricsampler:
-    hmac_key_hex: ${hmac_key}
-    default_rate: 1.0
   batch:
     timeout: 1s
     send_batch_size: 32
@@ -171,11 +158,11 @@ service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
+      processors: [memory_limiter, fabricguard, batch]
       exporters: [otlp_http/fabric]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
+      processors: [memory_limiter, fabricguard, batch]
       exporters: [otlp_http/fabric]
 EOF
 chmod 0644 "${runtime}/config.yaml"
@@ -194,10 +181,9 @@ grep -q '^  otlp_http/fabric:' "${runtime}/config.yaml" \
 grep -q '^  file_storage/fabric:' "${runtime}/config.yaml" \
   || fail "file-storage extension is missing"
 grep -q 'storage: file_storage/fabric' "${runtime}/config.yaml" || fail "persistent queue binding is missing"
-for processor in fabricguard fabricredact fabricpolicy fabricsampler; do
-  count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
-  [[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"
-done
+processor="fabricguard"
+count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
+[[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"
 
 if [[ "${mode}" == "image" ]]; then
   container_name="fabric-config-test-${RANDOM}-${RANDOM}"
@@ -228,5 +214,11 @@ else
   done
 fi
 
-printf '%s PASS: artifact accepted mTLS ingress, durable OTLP/HTTP export, and all Fabric processors\n' "${prefix}"
+for prohibited in fabricredact fabricpolicy fabricsampler; do
+  if grep -q "${prohibited}" "${runtime}/config.yaml"; then
+    fail "recorder config unexpectedly contains ${prohibited}"
+  fi
+done
+
+printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"
 printf '%s NOTE: configuration compatibility only; no telemetry delivery was attempted\n' "${prefix}"
