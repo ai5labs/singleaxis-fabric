@@ -1,7 +1,7 @@
 {
   "name": "@singleaxis/fabric",
-  "version": "0.8.0-rc.1",
-  "description": "OpenTelemetry-native capture SDK for reconstructing AI agent decisions with the SingleAxis Fabric activity contract.",
+  "version": "0.8.0-rc.2",
+  "description": "Customer-controlled OpenTelemetry capture SDK for reconstructing AI agent activity.",
   "license": "Apache-2.0",
   "type": "module",
   "publishConfig": {
@@ -46,7 +46,7 @@
     "ai-agents",
     "gen_ai",
     "tracing",
-    "governance"
+    "activity-correlation"
   ],
   "engines": {
     "node": ">=20.6.0"
@@ -63,6 +63,9 @@
   "peerDependencies": {
     "@opentelemetry/api": ">=1.9.0 <1.10.0"
   },
+  "overrides": {
+    "esbuild": "0.28.1"
+  },
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "@opentelemetry/api": "1.9.0",
@@ -75,6 +78,6 @@
     "prettier": "3.4.2",
     "tsup": "8.5.1",
     "typescript": "5.7.3",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   }
 }

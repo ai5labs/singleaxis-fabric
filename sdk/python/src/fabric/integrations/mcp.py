@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """MCP (Model Context Protocol) tool-call instrumentation.
 
-Wraps an MCP ``ClientSession.call_tool`` invocation so each call emits
-a tool-named ``execute_tool`` child span (kind="mcp") under the active
-``fabric.decision`` and, optionally, runs through a pre-execution tool
-authorizer. Agents that talk to MCP servers get Fabric observability +
-control over their tool calls with near-zero glue.
+Wraps an MCP ``ClientSession.call_tool`` invocation so each call emits a
+tool-named ``execute_tool`` child span (kind="mcp") under the active
+``fabric.decision``. The wrapper is passive instrumentation only.
 
 Why a local Protocol instead of importing ``mcp``
 --------------------------------------------------
@@ -55,7 +53,6 @@ if TYPE_CHECKING:
     from fabric.baseline import BaselineCheck
     from fabric.decision import Decision
     from fabric.signing import SignatureCheck
-    from fabric.tool_auth import ToolAuthorizer
 
 # MCP-specific span attribute keys. Tool name / arguments / result are
 # already covered by the ``fabric.tool.*`` keys stamped by
@@ -249,14 +246,12 @@ async def traced_call_tool(
     *,
     server_name: str | None = None,
     transport: str | None = None,
-    authorizer: ToolAuthorizer | None = None,
 ) -> Any:
     """Invoke an MCP tool under a tool-named ``execute_tool`` child span.
 
     Opens a tool-named span (kind="mcp") under ``decision``,
-    optionally runs the call through ``authorizer`` *before* execution,
-    awaits ``session.call_tool``, maps the result defensively onto the
-    span, and returns the raw result unchanged.
+    awaits ``session.call_tool``, maps the result defensively onto the span,
+    and returns the raw result unchanged.
 
     Args:
         decision: the active :class:`fabric.Decision` (must be entered).
@@ -270,29 +265,10 @@ async def traced_call_tool(
         transport: optional transport label (e.g. ``"stdio"``,
             ``"sse"``, ``"streamable-http"``); stamped as
             ``fabric.mcp.transport``.
-        authorizer: optional pre-execution
-            :class:`~fabric.tool_auth.ToolAuthorizer`. When supplied the
-            call is authorized first and a deny aborts with
-            :class:`~fabric.tool_auth.ToolCallDenied` — the tool never
-            runs.
-
     Returns:
         The raw result object returned by ``session.call_tool``.
-
-    Raises:
-        ToolCallDenied: if ``authorizer`` denies the call.
     """
     serialized_args = _serialize_arguments(arguments)
-
-    if authorizer is not None:
-        # Authorize before opening the call span / invoking the tool.
-        # A deny raises ToolCallDenied here, so the tool never runs.
-        authorization = decision.authorize_tool_call(
-            authorizer,
-            tool_name=tool_name,
-            arguments=serialized_args,
-        )
-        authorization.raise_for_denied()
 
     with decision.tool_call(tool_name) as tc:
         tc.set_kind("mcp")
@@ -325,7 +301,7 @@ class InstrumentedMCPSession:
     """Thin proxy that traces every ``call_tool`` through Fabric.
 
     Wraps an MCP session together with a bound :class:`fabric.Decision`
-    (plus optional ``server_name`` / ``transport`` / ``authorizer``).
+    (plus optional ``server_name`` / ``transport``).
     Its async :meth:`call_tool` forwards through :func:`traced_call_tool`;
     every other attribute passes straight through to the wrapped session
     via :meth:`__getattr__`, so it remains a drop-in stand-in for the
@@ -339,13 +315,11 @@ class InstrumentedMCPSession:
         *,
         server_name: str | None = None,
         transport: str | None = None,
-        authorizer: ToolAuthorizer | None = None,
     ) -> None:
         self._session = session
         self._decision = decision
         self._server_name = server_name
         self._transport = transport
-        self._authorizer = authorizer
 
     async def call_tool(
         self,
@@ -360,7 +334,6 @@ class InstrumentedMCPSession:
             arguments,
             server_name=self._server_name,
             transport=self._transport,
-            authorizer=self._authorizer,
         )
 
     async def snapshot_inventory(self) -> MCPInventory:

@@ -22,13 +22,13 @@ try:
 except ImportError:  # pragma: no cover - non-unix (resource is unix-only)
     resource = None  # type: ignore[assignment]
 
+from fabric.guardrails import CheckerVerdict
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric.client import Fabric, FabricConfig
 from fabric.decision import Decision
-from fabric.guardrails import CheckerVerdict
 
 _SAMPLE_TEXT = "the quick brown fox jumps over the lazy dog " * 4
 # One decision span + one llm_call child span per driven turn.

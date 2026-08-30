@@ -43,7 +43,7 @@ import {
   SPAN_NAME_DECISION,
 } from "./attributes.js";
 import { activeExecution } from "./execution.js";
-import { policyInputHash, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
+import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import {
   LlmCall,
   ToolCall,
@@ -96,85 +96,15 @@ export interface DecisionIds {
   conversationCompacted?: boolean;
 }
 
-/** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
-export type GuardrailPhase = "input" | "output_stream" | "output_final";
-
-/**
- * Normalized policy verdict vocabulary (mirrors Python `PolicyDecision`;
- * schema `fabric.policy.decision` enum).
- */
-export type PolicyDecision = "allow" | "deny" | "warn" | "escalate" | "redact";
-
-/**
- * Tool-authorization verdict vocabulary. The schema restricts
- * `fabric.tool.authorization.decision` to allow/deny only.
- */
-export type ToolAuthorizationDecision = "allow" | "deny";
-
-/**
- * Human-handoff escalation mode (mirrors Python `EscalationMode`; schema
- * `fabric.escalation.mode` enum).
- */
-export type EscalationMode = "sync" | "async" | "deferred";
-
 /**
  * Side-effect replay behavior (mirrors Python `ReplayBehavior`; schema
  * `fabric.side_effect.replay_behavior` enum).
  */
 export type ReplayBehavior = "replay" | "suppress" | "mock" | "manual";
 
-const POLICY_DECISIONS: readonly PolicyDecision[] = ["allow", "deny", "warn", "escalate", "redact"];
-const TOOL_AUTH_DECISIONS: readonly ToolAuthorizationDecision[] = ["allow", "deny"];
-const ESCALATION_MODES: readonly EscalationMode[] = ["sync", "async", "deferred"];
 const REPLAY_BEHAVIORS: readonly ReplayBehavior[] = ["replay", "suppress", "mock", "manual"];
-const GUARDRAIL_PHASES: readonly GuardrailPhase[] = ["input", "output_stream", "output_final"];
 const INTERACTION_DIRECTIONS: readonly InteractionDirection[] = ["inbound", "outbound", "internal"];
 const BASELINE_STATUSES: readonly BaselineStatus[] = ["match", "deviation", "unknown"];
-
-/** A detected PII/entity class and how many times it occurred. */
-export interface GuardrailEntity {
-  category: string;
-  count: number;
-}
-
-/**
- * The outcome of one guardrail pass, recorded on the decision via
- * {@link Decision.recordGuardrail} (and {@link Decision.recordBlock} when it
- * blocks). Mirrors the Python `GuardrailResult` fields that land on the wire;
- * the SDK owns the attribute-key formatting so TS guardrail telemetry stays
- * in lockstep with the shared `fabric.guardrail` contract.
- */
-export interface GuardrailResult {
-  /** Which phase of the turn this guardrail ran in. */
-  phase: GuardrailPhase;
-  /** Whether the guardrail blocked the content. */
-  blocked: boolean;
-  /** How long the guardrail took, in milliseconds. */
-  latencyMs: number;
-  /** Policy identifiers that fired (e.g. `presidio:EMAIL_ADDRESS`). */
-  policies?: string[];
-  /** Detected entity classes (e.g. `{ category: "EMAIL_ADDRESS", count: 1 }`). */
-  entities?: GuardrailEntity[];
-  /**
-   * Dual-pipeline content-store locator for the raw content (spec 012). When
-   * the host resolves the raw input into a ContentStore it passes the
-   * returned URI here; the SDK stamps `fabric.guardrail.content_ref`. The
-   * trace still carries only the hash/URI, never raw content.
-   */
-  contentRef?: string;
-}
-
-/** A request to escalate a decision to a human (mirrors Python `EscalationSummary`). */
-export interface EscalationSummary {
-  /** Why escalation is needed. */
-  reason: string;
-  /** Sync (block for a verdict), async (fire-and-forget), or deferred handoff. */
-  mode: EscalationMode;
-  /** Optional rubric the triggering score came from. */
-  rubricId?: string;
-  /** Optional score that triggered the escalation. */
-  triggeringScore?: number;
-}
 
 /** Options for {@link Decision.recordRetrieval}. */
 export interface RetrievalOptions {
@@ -244,55 +174,6 @@ export interface SideEffectOptions {
 export interface CheckpointOptions {
   stateHash?: string;
   checkpointId?: string;
-}
-
-/** Options for {@link Decision.recordEval}. */
-export interface EvalOptions {
-  rubricId: string;
-  score: number;
-  dimension: string;
-  evaluatorName: string;
-  evaluatorVersion?: string;
-  confidence?: number;
-  payloadRef?: string;
-}
-
-/** Options for {@link Decision.queueJudge}. */
-export interface QueueJudgeOptions {
-  rubricId: string;
-  dimensions: string[];
-  payloadRef?: string;
-  /** Optional caller-supplied request id; a UUID is minted otherwise. */
-  requestId?: string;
-}
-
-/** Options for {@link Decision.recordPolicyEvaluation}. */
-export interface PolicyEvaluationOptions {
-  engine: string;
-  policyId: string;
-  decision: PolicyDecision;
-  /** Raw input object; hashed Python-compatibly to `input_hash`. Mutually exclusive with `inputHash`. */
-  input?: unknown;
-  /** Precomputed input hash. Mutually exclusive with `input`. */
-  inputHash?: string;
-  policyVersion?: string;
-  reason?: string;
-  evidenceRef?: string;
-  bundleSignature?: string;
-  latencyMs?: number;
-  /** Optional dual-pipeline content-store locator for the raw input. */
-  inputContentRef?: string;
-}
-
-/** Options for {@link Decision.recordToolAuthorization}. */
-export interface ToolAuthorizationOptions {
-  toolName: string;
-  decision: ToolAuthorizationDecision;
-  /** Raw serialized arguments; hashed locally to `arguments_hash`. Mutually exclusive with `argumentsHash`. */
-  arguments?: string;
-  /** Precomputed arguments hash. Mutually exclusive with `arguments`. */
-  argumentsHash?: string;
-  reason?: string;
 }
 
 /** Replay envelope inputs. Only hashes and lineage identifiers are emitted. */
@@ -366,8 +247,6 @@ export function resetCoverageRegistry(): void {
 export class Decision {
   private readonly tracer: Tracer;
   private readonly span: Span;
-  private blockedResult: GuardrailResult | null = null;
-  private escalationResult: EscalationSummary | null = null;
   // Rolling counters + distinct-value sets folded onto the decision span,
   // mirroring the Python SDK so the Telemetry Bridge can summarize a
   // decision without replaying every event.
@@ -381,13 +260,6 @@ export class Decision {
   private readonly sideEffectTypes = new Set<string>();
   private readonly sideEffectSystems = new Set<string>();
   private checkpointCount = 0;
-  private evalCount = 0;
-  private readonly evalRubrics = new Set<string>();
-  private judgeQueuedCount = 0;
-  private readonly judgeRubrics = new Set<string>();
-  private policyEvalCount = 0;
-  private readonly policyEngines = new Set<string>();
-  private toolAuthCount = 0;
   private readonly decisionId: string;
   private readonly resolvedExecutionId?: string;
   private readonly checkpointIds: string[] = [];
@@ -491,137 +363,6 @@ export class Decision {
   }
 
   /**
-   * Record a guardrail outcome as a `fabric.guardrail` span event on the
-   * decision span (spec 005). This is the TS counterpart to the Python
-   * SDK's guardrail event — the host runs its own guardrail/redaction
-   * service, then hands the result here so the keys (`fabric.guardrail.*`)
-   * and shape stay byte-identical to the shared wire contract instead of
-   * being hand-rolled via `getSpan().addEvent(...)`.
-   *
-   * This records the event only; it does NOT mark the decision blocked.
-   * For a blocking outcome, also call {@link recordBlock}.
-   */
-  recordGuardrail(result: GuardrailResult): void {
-    assertOneOf("recordGuardrail: phase", result.phase, GUARDRAIL_PHASES);
-    assertFiniteNumber("recordGuardrail: latencyMs", result.latencyMs);
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_GUARDRAIL_PHASE]: result.phase,
-      [A.ATTR_GUARDRAIL_LATENCY_MS]: result.latencyMs,
-      [A.ATTR_GUARDRAIL_BLOCKED]: result.blocked,
-    };
-    if (result.entities && result.entities.length > 0) {
-      attrs[A.ATTR_GUARDRAIL_ENTITIES] = result.entities.map((e) => `${e.category}:${e.count}`);
-    }
-    if (result.policies && result.policies.length > 0) {
-      attrs[A.ATTR_GUARDRAIL_POLICIES] = [...result.policies];
-    }
-    if (result.contentRef !== undefined) {
-      attrs[A.ATTR_GUARDRAIL_CONTENT_REF] = result.contentRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_GUARDRAIL, attrs);
-  }
-
-  /**
-   * Mark this decision blocked by a guardrail. First-wins: the first block
-   * recorded is canonical; a second call throws rather than silently
-   * overwriting (mirrors Python `Decision.record_block`). Stamps
-   * `fabric.blocked` / `fabric.blocked.policies` on the decision span and
-   * sets the block/escalation-precedence ERROR status.
-   *
-   * Call {@link recordGuardrail} too if you also want the `fabric.guardrail`
-   * event (the audit record of what fired); `recordBlock` only writes the
-   * canonical block bookkeeping.
-   */
-  recordBlock(result: GuardrailResult): void {
-    if (!result.blocked) {
-      throw new Error("recordBlock called with a non-blocking GuardrailResult");
-    }
-    if (this.blockedResult !== null) {
-      throw new Error(
-        "Decision is already blocked; recordBlock is first-wins. Call only once per Decision.",
-      );
-    }
-    this.blockedResult = result;
-    this.span.setAttribute(A.ATTR_BLOCKED, true);
-    if (result.policies && result.policies.length > 0) {
-      this.span.setAttribute(A.ATTR_BLOCKED_POLICIES, [...result.policies]);
-    }
-    this.applyStatus();
-  }
-
-  /** The blocking guardrail result, or `null` if none fired. */
-  get blocked(): GuardrailResult | null {
-    return this.blockedResult;
-  }
-
-  /**
-   * Record that this decision should be escalated for human review. Stamps
-   * `fabric.escalated` + `fabric.escalation.*` on the decision span and emits
-   * a `fabric.escalation` event. First-wins: a second call throws (mirrors
-   * Python `Decision.request_escalation`). Does not throw on its own — the
-   * host decides flow control.
-   */
-  requestEscalation(summary: EscalationSummary): void {
-    assertOneOf("requestEscalation: mode", summary.mode, ESCALATION_MODES);
-    if (summary.triggeringScore !== undefined) {
-      assertFiniteNumber("requestEscalation: triggeringScore", summary.triggeringScore);
-    }
-    if (this.escalationResult !== null) {
-      throw new Error(
-        "Decision already has an escalation requested; requestEscalation is first-wins. " +
-          "Call only once per Decision.",
-      );
-    }
-    this.escalationResult = summary;
-    this.span.setAttribute(A.ATTR_ESCALATED, true);
-    this.span.setAttribute(A.ATTR_ESC_REASON, summary.reason);
-    this.span.setAttribute(A.ATTR_ESC_MODE, summary.mode);
-    if (summary.rubricId !== undefined) {
-      this.span.setAttribute(A.ATTR_ESC_RUBRIC, summary.rubricId);
-    }
-    if (summary.triggeringScore !== undefined) {
-      this.span.setAttribute(A.ATTR_ESC_SCORE, summary.triggeringScore);
-    }
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_ESC_REASON]: summary.reason,
-      [A.ATTR_ESC_MODE]: summary.mode,
-    };
-    if (summary.rubricId !== undefined) {
-      attrs[A.ATTR_ESC_RUBRIC] = summary.rubricId;
-    }
-    if (summary.triggeringScore !== undefined) {
-      attrs[A.ATTR_ESC_SCORE] = summary.triggeringScore;
-    }
-    this.span.addEvent(A.EVENT_NAME_ESCALATION, attrs);
-    this.applyStatus();
-  }
-
-  /** The recorded escalation, or `null` if none requested. */
-  get escalation(): EscalationSummary | null {
-    return this.escalationResult;
-  }
-
-  /**
-   * Set the decision-span status from the block/escalation precedence,
-   * matching Python's `Decision.__exit__`: both → `blocked_and_escalated`,
-   * block only → `guardrail_blocked`, escalation only → `escalation_requested`.
-   */
-  private applyStatus(): void {
-    const isBlocked = this.blockedResult !== null;
-    const isEscalated = this.escalationResult !== null;
-    if (isBlocked && isEscalated) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_BLOCKED_AND_ESCALATED });
-    } else if (isBlocked) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_GUARDRAIL_BLOCKED });
-    } else if (isEscalated) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_ESCALATION_REQUESTED });
-    }
-  }
-
-  /**
    * Record a retrieval (RAG/KG/SQL/tool/memory) as a `fabric.retrieval`
    * event. The raw query is hashed locally; rolling `fabric.retrieval_count`
    * and `fabric.retrieval_sources` are folded onto the decision span.
@@ -639,7 +380,9 @@ export class Decision {
       [A.ATTR_RETRIEVAL_RESULT_COUNT]: options.resultCount,
     };
     if (options.resultHashes && options.resultHashes.length > 0) {
-      attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...options.resultHashes];
+      attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = options.resultHashes.map((value) =>
+        assertSha256Hex("recordRetrieval: resultHashes", value),
+      );
     }
     if (options.sourceDocumentIds && options.sourceDocumentIds.length > 0) {
       attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...options.sourceDocumentIds];
@@ -747,9 +490,15 @@ export class Decision {
     const requestHash =
       options.requestPayload !== undefined
         ? sha256Hex(options.requestPayload)
-        : options.requestHash;
+        : options.requestHash === undefined
+          ? undefined
+          : assertSha256Hex("recordSideEffect: requestHash", options.requestHash);
     const resultHash =
-      options.resultPayload !== undefined ? sha256Hex(options.resultPayload) : options.resultHash;
+      options.resultPayload !== undefined
+        ? sha256Hex(options.resultPayload)
+        : options.resultHash === undefined
+          ? undefined
+          : assertSha256Hex("recordSideEffect: resultHash", options.resultHash);
 
     this.sideEffectCount += 1;
     this.sideEffectTypes.add(options.type);
@@ -803,154 +552,12 @@ export class Decision {
       [A.ATTR_CHECKPOINT_STEP_NAME]: stepName,
     };
     if (options.stateHash !== undefined) {
-      attrs[A.ATTR_CHECKPOINT_STATE_HASH] = options.stateHash;
+      attrs[A.ATTR_CHECKPOINT_STATE_HASH] = assertSha256Hex(
+        "checkpoint: stateHash",
+        options.stateHash,
+      );
     }
     this.span.addEvent(A.EVENT_NAME_CHECKPOINT, attrs);
-  }
-
-  /**
-   * Attach a synchronous evaluation score as a `fabric.eval` event. Rolling
-   * `fabric.eval_count` / `fabric.eval_rubrics` are folded onto the span.
-   */
-  recordEval(options: EvalOptions): void {
-    assertFiniteNumber("recordEval: score", options.score);
-    if (options.confidence !== undefined) {
-      assertFiniteNumber("recordEval: confidence", options.confidence);
-    }
-    this.evalCount += 1;
-    this.evalRubrics.add(options.rubricId);
-    this.span.setAttribute(A.ATTR_EVAL_COUNT, this.evalCount);
-    this.span.setAttribute(A.ATTR_EVAL_RUBRICS, sortedSet(this.evalRubrics));
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_EVAL_ID]: randomUuid(),
-      [A.ATTR_EVAL_RUBRIC_ID]: options.rubricId,
-      [A.ATTR_EVAL_SCORE]: options.score,
-      [A.ATTR_EVAL_DIMENSION]: options.dimension,
-      [A.ATTR_EVAL_EVALUATOR_NAME]: options.evaluatorName,
-    };
-    if (options.evaluatorVersion !== undefined) {
-      attrs[A.ATTR_EVAL_EVALUATOR_VERSION] = options.evaluatorVersion;
-    }
-    if (options.confidence !== undefined) {
-      attrs[A.ATTR_EVAL_CONFIDENCE] = options.confidence;
-    }
-    if (options.payloadRef !== undefined) {
-      attrs[A.ATTR_EVAL_PAYLOAD_REF] = options.payloadRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_EVAL, attrs);
-  }
-
-  /**
-   * Record a `fabric.judge.queued` event for out-of-band (async) grading.
-   * The host enqueues the request to its own transport; the SDK records the
-   * allowlisted metadata. No content lands on the trace.
-   */
-  queueJudge(options: QueueJudgeOptions): void {
-    if (!options.rubricId.trim()) {
-      throw new Error("rubricId must be non-empty");
-    }
-    if (options.dimensions.length === 0) {
-      throw new Error("at least one dimension required");
-    }
-    this.judgeQueuedCount += 1;
-    this.judgeRubrics.add(options.rubricId);
-    this.span.setAttribute(A.ATTR_JUDGE_QUEUED_COUNT, this.judgeQueuedCount);
-    this.span.setAttribute(A.ATTR_JUDGE_RUBRICS, sortedSet(this.judgeRubrics));
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_JUDGE_REQUEST_ID]: options.requestId ?? randomUuid(),
-      [A.ATTR_JUDGE_RUBRIC_ID]: options.rubricId,
-      [A.ATTR_JUDGE_DIMENSIONS]: [...options.dimensions],
-    };
-    if (options.payloadRef !== undefined) {
-      attrs[A.ATTR_JUDGE_PAYLOAD_REF] = options.payloadRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_JUDGE_QUEUED, attrs);
-  }
-
-  /**
-   * Record a normalized policy verdict as a `fabric.policy.evaluation` event.
-   * The host runs its own policy engine (OPA/Cedar/HTTP) and passes the
-   * verdict here. Pass `input` to have the SDK hash it Python-compatibly, or
-   * `inputHash` if already computed. Rolling `fabric.policy_evaluation_count`
-   * / `fabric.policy_engines` are folded onto the span.
-   */
-  recordPolicyEvaluation(options: PolicyEvaluationOptions): void {
-    assertOneOf("recordPolicyEvaluation: decision", options.decision, POLICY_DECISIONS);
-    if (options.latencyMs !== undefined) {
-      assertFiniteNumber("recordPolicyEvaluation: latencyMs", options.latencyMs);
-    }
-    if (options.input !== undefined && options.inputHash !== undefined) {
-      throw new Error("pass either input or inputHash, not both");
-    }
-    const inputHash =
-      options.input !== undefined ? policyInputHash(options.input) : options.inputHash;
-
-    this.policyEvalCount += 1;
-    this.policyEngines.add(options.engine);
-    this.span.setAttribute(A.ATTR_POLICY_EVAL_COUNT, this.policyEvalCount);
-    this.span.setAttribute(A.ATTR_POLICY_ENGINES, sortedSet(this.policyEngines));
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_POLICY_EVALUATION_ID]: randomUuid(),
-      [A.ATTR_POLICY_ENGINE]: options.engine,
-      [A.ATTR_POLICY_POLICY_ID]: options.policyId,
-      [A.ATTR_POLICY_DECISION]: options.decision,
-    };
-    if (inputHash !== undefined) {
-      attrs[A.ATTR_POLICY_INPUT_HASH] = inputHash;
-    }
-    if (options.latencyMs !== undefined) {
-      attrs[A.ATTR_POLICY_LATENCY_MS] = options.latencyMs;
-    }
-    if (options.policyVersion !== undefined) {
-      attrs[A.ATTR_POLICY_POLICY_VERSION] = options.policyVersion;
-    }
-    if (options.reason !== undefined) {
-      attrs[A.ATTR_POLICY_REASON] = options.reason;
-    }
-    if (options.evidenceRef !== undefined) {
-      attrs[A.ATTR_POLICY_EVIDENCE_REF] = options.evidenceRef;
-    }
-    if (options.bundleSignature !== undefined) {
-      attrs[A.ATTR_POLICY_BUNDLE_SIGNATURE] = options.bundleSignature;
-    }
-    if (options.inputContentRef !== undefined) {
-      attrs[A.ATTR_POLICY_INPUT_CONTENT_REF] = options.inputContentRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_POLICY_EVALUATION, attrs);
-  }
-
-  /**
-   * Record a pre-execution tool-authorization verdict as a
-   * `fabric.tool.authorization` event. Raw arguments are hashed locally;
-   * rolling `fabric.tool_authorization_count` is folded onto the span.
-   */
-  recordToolAuthorization(options: ToolAuthorizationOptions): void {
-    assertOneOf("recordToolAuthorization: decision", options.decision, TOOL_AUTH_DECISIONS);
-    if (options.arguments !== undefined && options.argumentsHash !== undefined) {
-      throw new Error("pass either arguments or argumentsHash, not both");
-    }
-    const argumentsHash =
-      options.arguments !== undefined ? sha256Hex(options.arguments) : options.argumentsHash;
-
-    this.toolAuthCount += 1;
-    this.span.setAttribute(A.ATTR_TOOL_AUTH_COUNT, this.toolAuthCount);
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.FABRIC_TOOL_NAME]: options.toolName,
-      [A.ATTR_TOOL_AUTH_DECISION]: options.decision,
-    };
-    if (options.reason !== undefined) {
-      attrs[A.ATTR_TOOL_AUTH_REASON] = options.reason;
-    }
-    if (argumentsHash !== undefined) {
-      attrs[A.FABRIC_TOOL_ARGS_HASH] = argumentsHash;
-    }
-    this.span.addEvent(A.EVENT_NAME_TOOL_AUTHORIZATION, attrs);
   }
 
   /** Emit a replay envelope derived from checkpoints and suppressed side effects in this decision. */
@@ -970,10 +577,15 @@ export class Decision {
       attrs[A.ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS] = [...this.suppressedSideEffectIds];
     }
     if (options.stateHash !== undefined) {
-      attrs[A.ATTR_REPLAY_STATE_HASH] = options.stateHash;
+      attrs[A.ATTR_REPLAY_STATE_HASH] = assertSha256Hex(
+        "recordReplayMetadata: stateHash",
+        options.stateHash,
+      );
     }
     if (options.toolResultHashes && options.toolResultHashes.length > 0) {
-      attrs[A.ATTR_REPLAY_TOOL_RESULT_HASHES] = [...options.toolResultHashes];
+      attrs[A.ATTR_REPLAY_TOOL_RESULT_HASHES] = options.toolResultHashes.map((value) =>
+        assertSha256Hex("recordReplayMetadata: toolResultHashes", value),
+      );
     }
     this.span.addEvent(A.EVENT_NAME_REPLAY, attrs);
   }
@@ -1029,7 +641,10 @@ export class Decision {
     };
     if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
     if (options.manifestHash !== undefined) {
-      attrs[A.ATTR_SKILL_MANIFEST_HASH] = options.manifestHash;
+      attrs[A.ATTR_SKILL_MANIFEST_HASH] = assertSha256Hex(
+        "recordSkill: manifestHash",
+        options.manifestHash,
+      );
     }
     if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
     this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
@@ -1083,9 +698,14 @@ export class Decision {
       [A.ATTR_HOOK_PHASE]: phase,
       [A.ATTR_HOOK_MODIFIED]: options.modified,
     };
-    if (options.inputHash !== undefined) attrs[A.ATTR_HOOK_INPUT_HASH] = options.inputHash;
+    if (options.inputHash !== undefined) {
+      attrs[A.ATTR_HOOK_INPUT_HASH] = assertSha256Hex("recordHook: inputHash", options.inputHash);
+    }
     if (options.outputHash !== undefined) {
-      attrs[A.ATTR_HOOK_OUTPUT_HASH] = options.outputHash;
+      attrs[A.ATTR_HOOK_OUTPUT_HASH] = assertSha256Hex(
+        "recordHook: outputHash",
+        options.outputHash,
+      );
     }
     this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
   }
@@ -1108,7 +728,10 @@ export class Decision {
     if (redactPath) attrs[A.ATTR_FILE_PATH_HASH] = sha256Hex(path);
     else attrs[A.ATTR_FILE_PATH] = path;
     if (options.contentHash !== undefined) {
-      attrs[A.ATTR_FILE_CONTENT_HASH] = options.contentHash;
+      attrs[A.ATTR_FILE_CONTENT_HASH] = assertSha256Hex(
+        "recordFileAccess: contentHash",
+        options.contentHash,
+      );
     }
     if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
     this.span.addEvent(A.EVENT_NAME_FILE, attrs);
@@ -1144,7 +767,10 @@ export class Decision {
       attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
     }
     if (options.payloadHash !== undefined) {
-      attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = options.payloadHash;
+      attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = assertSha256Hex(
+        "recordInteraction: payloadHash",
+        options.payloadHash,
+      );
     }
     if (options.metadata !== undefined) {
       attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));

@@ -1,0 +1,14 @@
+{
+  "contract": "singleaxis.fabric.recorder",
+  "version": "v1",
+  "schema": {
+    "path": "schema.json",
+    "sha256": "f5821678e263bff7c08c5b6082c79e94edc041fde647616014dca053d1350e2f"
+  },
+  "fixtures": [
+    {
+      "path": "example.yaml",
+      "sha256": "50ddbb6264a595c9db2e82f4de0dac8ace8ded55f345c904d055817a475ac52a"
+    }
+  ]
+}

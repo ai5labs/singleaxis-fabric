@@ -11,11 +11,9 @@ tracer reference so the decision context can emit consistent spans.
 from __future__ import annotations
 
 import os
-import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
-from ._chain import GuardrailChain
 from ._id_validators import check_identifier, warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_meter, get_tracer
@@ -27,22 +25,14 @@ if TYPE_CHECKING:
     from .content_store import ContentStore
     from .decision import Decision
     from .execution import Execution
-    from .guardrails import GuardrailChecker
-    from .nemo import NemoClient
-    from .presidio import PresidioClient
 
 
 ENV_TENANT = "FABRIC_TENANT_ID"
 ENV_AGENT = "FABRIC_AGENT_ID"
 ENV_PROFILE = "FABRIC_PROFILE"
-ENV_PRESIDIO_SOCKET = "FABRIC_PRESIDIO_UNIX_SOCKET"
-ENV_PRESIDIO_TIMEOUT = "FABRIC_PRESIDIO_TIMEOUT_SECONDS"
-ENV_NEMO_SOCKET = "FABRIC_NEMO_UNIX_SOCKET"
-ENV_NEMO_TIMEOUT = "FABRIC_NEMO_TIMEOUT_SECONDS"
-ENV_QUIET_ENV_WARN = "FABRIC_QUIET_ENV_WARN"
 
-DEFAULT_PROFILE = "permissive-dev"
-"""The only profile Phase 1 ships. See specs/009-compliance-mapping.md."""
+DEFAULT_PROFILE = "shadow"
+"""Passive recorder profile; it never enables runtime controls."""
 
 
 @dataclass(frozen=True)
@@ -74,16 +64,6 @@ class FabricConfig:
     execution_attempt: int | None = None
     execution_retry_reason: str | None = None
     execution_retry_previous_attempt_id: str | None = None
-    redaction_mode: Literal["hmac", "tag"] = "hmac"
-    """The Presidio redaction mode this client expects.
-
-    The Presidio sidecar selects its mode via the server-side
-    ``--redaction-mode {hmac,tag}`` startup flag (PR #90); it is *not*
-    negotiated per request. This config value is informational — it
-    must match the sidecar's flag — and is threaded onto the
-    :class:`~fabric.presidio.UDSPresidioClient` so hosts can introspect
-    the expected mode.
-    """
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -168,9 +148,6 @@ class Fabric:
         *,
         tracer: Tracer | None = None,
         meter: Meter | None = None,
-        presidio: PresidioClient | None = None,
-        nemo: NemoClient | None = None,
-        guardrail_checkers: list[GuardrailChecker] | None = None,
         content_store: ContentStore | None = None,
     ) -> None:
         self._config = config
@@ -183,45 +160,6 @@ class Fabric:
         # observability mode unchanged.
         self._content_store = content_store
 
-        # Keep the constructor consistent with from_env(): when an
-        # explicit client is not passed but the corresponding socket
-        # env var is set, auto-wire the client. Explicit kwargs always
-        # win over env. A one-shot warning fires when the env vars
-        # silently wired a client behind the caller's back (env set,
-        # explicit kwarg None) so callers either reach for from_env()
-        # or pass explicit clients. Suppressed by FABRIC_QUIET_ENV_WARN=1
-        # and skipped entirely if the resulting chain is empty (pure
-        # observability mode — user clearly opted out of guardrails).
-        source = dict(os.environ)
-        env_presidio_set = bool(source.get(ENV_PRESIDIO_SOCKET))
-        env_nemo_set = bool(source.get(ENV_NEMO_SOCKET))
-        wired_from_env = False
-        if presidio is None and env_presidio_set:
-            presidio = _presidio_from_env(source, redaction_mode=config.redaction_mode)
-            wired_from_env = True
-        if nemo is None and env_nemo_set:
-            nemo = _nemo_from_env(source)
-            wired_from_env = True
-
-        self._chain = GuardrailChain(
-            presidio=presidio,
-            nemo=nemo,
-            extra_checkers=guardrail_checkers,
-        )
-
-        if (
-            wired_from_env
-            and self._chain.has_rails
-            and source.get(ENV_QUIET_ENV_WARN, "").strip() not in ("1", "true", "True")
-        ):
-            warnings.warn(
-                "Fabric() constructor auto-wired guardrail client(s) from "
-                f"{ENV_PRESIDIO_SOCKET}/{ENV_NEMO_SOCKET}. Prefer Fabric.from_env() "
-                "or pass explicit presidio=/nemo= kwargs. "
-                f"Suppress with {ENV_QUIET_ENV_WARN}=1.",
-                stacklevel=2,
-            )
-
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Fabric:
         """Build a :class:`Fabric` from ``FABRIC_*`` environment vars.
@@ -230,7 +168,7 @@ class Fabric:
           ``FABRIC_TENANT_ID``, ``FABRIC_AGENT_ID``
 
         Optional:
-          ``FABRIC_PROFILE`` (default ``permissive-dev``)
+          ``FABRIC_PROFILE`` (default ``shadow``)
 
         Missing required vars raise :class:`ValueError` with the
         variable name, so a misconfigured deployment fails on startup
@@ -247,9 +185,7 @@ class Fabric:
             raise ValueError(f"{ENV_AGENT} is not set") from err
         profile = source.get(ENV_PROFILE, DEFAULT_PROFILE)
         config = FabricConfig(tenant_id=tenant, agent_id=agent, profile=profile)
-        presidio = _presidio_from_env(source, redaction_mode=config.redaction_mode)
-        nemo = _nemo_from_env(source)
-        return cls(config, presidio=presidio, nemo=nemo)
+        return cls(config)
 
     @property
     def config(self) -> FabricConfig:
@@ -296,7 +232,7 @@ class Fabric:
 
         See :class:`fabric.decision.Decision` for usage. A new
         ``Decision`` is created per agent call — it carries the OTel
-        span and, in later ticks, the per-call guardrail/memory state.
+        span and per-call activity state.
 
         ``decision_id`` is the canonical, stable identity of this
         decision. Supply it to correlate one decision across turns or
@@ -384,12 +320,6 @@ class Fabric:
         return self._meter
 
     @property
-    def guardrail_chain(self) -> GuardrailChain:
-        """The guardrail chain :class:`Decision` delegates to. Not part
-        of the public API — exposed to Decision only."""
-        return self._chain
-
-    @property
     def content_store(self) -> ContentStore | None:
         """The optional dual-pipeline content store, or ``None``.
 
@@ -399,12 +329,6 @@ class Fabric:
         this exposes the store for the follow-up that will.
         """
         return self._content_store
-
-    def close(self) -> None:
-        """Release any resources held by guardrail clients. Hosts
-        should call this at process shutdown; forgetting to is safe
-        but leaks pooled sockets."""
-        self._chain.close()
 
     def enable_auto_instrumentation(
         self,
@@ -431,54 +355,3 @@ class Fabric:
         enabled. Packages that aren't installed are skipped silently.
         """
         return _enable_auto_instrumentation(only=only, capture_content=capture_content)
-
-
-def _presidio_from_env(
-    source: dict[str, str],
-    *,
-    redaction_mode: Literal["hmac", "tag"] = "hmac",
-) -> PresidioClient | None:
-    """Construct a :class:`PresidioClient` from environment vars, or
-    ``None`` if the Presidio rail is not configured.
-
-    Enabled by ``FABRIC_PRESIDIO_UNIX_SOCKET``. Optional timeout via
-    ``FABRIC_PRESIDIO_TIMEOUT_SECONDS`` (default 0.5 s). ``redaction_mode``
-    is threaded onto the client for introspection; it must match the
-    sidecar's server-side ``--redaction-mode`` flag.
-    """
-    socket_path = source.get(ENV_PRESIDIO_SOCKET)
-    if not socket_path:
-        return None
-    from .presidio import UDSPresidioClient  # noqa: PLC0415  (break import cycle)
-
-    timeout_raw = source.get(ENV_PRESIDIO_TIMEOUT)
-    if timeout_raw:
-        try:
-            timeout = float(timeout_raw)
-        except ValueError as err:
-            raise ValueError(f"{ENV_PRESIDIO_TIMEOUT} must be a float: {timeout_raw!r}") from err
-        return UDSPresidioClient(socket_path, timeout=timeout, redaction_mode=redaction_mode)
-    return UDSPresidioClient(socket_path, redaction_mode=redaction_mode)
-
-
-def _nemo_from_env(source: dict[str, str]) -> NemoClient | None:
-    """Construct a :class:`NemoClient` from environment vars, or
-    ``None`` if the NeMo rail is not configured.
-
-    Enabled by ``FABRIC_NEMO_UNIX_SOCKET``. Optional timeout via
-    ``FABRIC_NEMO_TIMEOUT_SECONDS`` (default 1.0 s — NeMo's p99 is
-    an order of magnitude above Presidio's).
-    """
-    socket_path = source.get(ENV_NEMO_SOCKET)
-    if not socket_path:
-        return None
-    from .nemo import UDSNemoClient  # noqa: PLC0415  (break import cycle)
-
-    timeout_raw = source.get(ENV_NEMO_TIMEOUT)
-    if timeout_raw:
-        try:
-            timeout = float(timeout_raw)
-        except ValueError as err:
-            raise ValueError(f"{ENV_NEMO_TIMEOUT} must be a float: {timeout_raw!r}") from err
-        return UDSNemoClient(socket_path, timeout=timeout)
-    return UDSNemoClient(socket_path)

@@ -84,7 +84,7 @@ ATTR_HOOK_INPUT_HASH = "fabric.hook.input_hash"
 ATTR_HOOK_OUTPUT_HASH = "fabric.hook.output_hash"
 
 # File access. Contents are NEVER on the span (hash only); the path is
-# readable by default but hashed when ``redact_path=True``.
+# hashed by default and readable only when ``redact_path=False``.
 ATTR_FILE_ACCESS_COUNT = "fabric.file_access_count"
 ATTR_FILE_PATH = "fabric.file.path"
 ATTR_FILE_PATH_HASH = "fabric.file.path_hash"
@@ -109,8 +109,8 @@ ATTR_FILE_SIZE_BYTES = "fabric.file.size_bytes"
 ATTR_INTERACTION_COUNT = "fabric.interaction_count"
 ATTR_INTERACTION_KINDS = "fabric.interaction_kinds"
 
-# The ``fabric.interaction`` span event. ``target`` is readable by default
-# and hashed (``target_hash``) when ``redact_target=True``; ``target_redacted``
+# The ``fabric.interaction`` span event. ``target`` is hashed by default
+# and readable only when ``redact_target=False``; ``target_redacted``
 # records which form was emitted (mirrors the file-path redaction model).
 ATTR_INTERACTION_KIND = "fabric.interaction.kind"
 ATTR_INTERACTION_TARGET = "fabric.interaction.target"

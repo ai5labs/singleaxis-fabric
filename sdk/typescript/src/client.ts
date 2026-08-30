@@ -30,7 +30,7 @@ export interface FabricConfig {
   agentName?: string;
   agentVersion?: string;
   agentDescription?: string;
-  /** Governance profile. Defaults to `"default"`. */
+  /** Recorder configuration label. Defaults to `"shadow"`. */
   profile?: string;
   workflowId?: string;
   executionId?: string;
@@ -80,7 +80,7 @@ export class Fabric {
       agentName: config.agentName ?? config.agentId,
       agentVersion: config.agentVersion,
       agentDescription: config.agentDescription,
-      profile: config.profile ?? "default",
+      profile: config.profile ?? "shadow",
       workflowId: config.workflowId,
       executionId: config.executionId,
       executionAttemptId: config.executionAttemptId,

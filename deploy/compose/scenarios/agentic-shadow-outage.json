@@ -1,0 +1,17 @@
+{
+  "schema_version": "fabric.recorder-e2e-scenario/v1",
+  "scenario_id": "passive-agent-shadow-outage-recovery",
+  "description": "Observe a simulated agent model, retrieval, tool, side-effect and checkpoint sequence, then prove protected at-least-once delivery across a destination outage and recorder restart.",
+  "required_reconstruction_markers": [
+    "FABRIC_E2E_RECONSTRUCTION_METADATA",
+    "get_patient_summary",
+    "fhir://Patient"
+  ],
+  "required_claims": {
+    "enforcement": false,
+    "delivery_semantics": "at_least_once",
+    "persistence_scope": "controlled_fsync_sink",
+    "exactly_once": false,
+    "arbitrary_destination_persistence": false
+  }
+}

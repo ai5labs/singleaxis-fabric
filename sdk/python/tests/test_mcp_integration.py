@@ -15,7 +15,6 @@ import asyncio
 import hashlib
 from typing import Any
 
-import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import Fabric, FabricConfig
@@ -33,7 +32,6 @@ from fabric.integrations.mcp import (
     InstrumentedMCPSession,
     traced_call_tool,
 )
-from fabric.tool_auth import ToolAuthorization, ToolCallDenied
 
 
 def _client() -> Fabric:
@@ -63,16 +61,6 @@ class _FakeSession:
     async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
         self.calls.append({"name": name, "arguments": arguments})
         return self._result
-
-
-class _AllowAll:
-    def authorize(self, *, tool_name: str, arguments_hash: str | None) -> ToolAuthorization:
-        return ToolAuthorization(decision="allow")
-
-
-class _DenyAll:
-    def authorize(self, *, tool_name: str, arguments_hash: str | None) -> ToolAuthorization:
-        return ToolAuthorization(decision="deny", reason="not on allow-list")
 
 
 def test_traced_call_tool_happy_path(span_exporter: InMemorySpanExporter) -> None:
@@ -216,35 +204,6 @@ def test_traced_call_tool_unserializable_result(span_exporter: InMemorySpanExpor
     assert "fabric.tool.result_hash" in attrs
 
 
-def test_authorizer_allow_runs_tool(span_exporter: InMemorySpanExporter) -> None:
-    client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
-    with client.decision(session_id="s", request_id="r") as dec:
-        result = asyncio.run(
-            traced_call_tool(dec, session, "get_weather", {"city": "x"}, authorizer=_AllowAll()),
-        )
-
-    assert result is session._result
-    assert len(session.calls) == 1
-
-
-def test_authorizer_deny_blocks_tool() -> None:
-    client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
-    with (
-        client.decision(session_id="s", request_id="r") as dec,
-        pytest.raises(ToolCallDenied, match="not on allow-list"),
-    ):
-        asyncio.run(
-            traced_call_tool(dec, session, "rm_rf", {"path": "/"}, authorizer=_DenyAll()),
-        )
-
-    # the tool was NEVER invoked
-    assert session.calls == []
-
-
 def test_instrumented_session_call_tool(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
     session = _FakeSession(result=_FakeResult(content=["x", "y"]))
@@ -287,15 +246,3 @@ def test_instrumented_session_passthrough() -> None:
         assert wrapped.server_version == "1.2.3"
         close_result = wrapped.close()
         assert close_result == "closed"
-
-
-def test_instrumented_session_deny_blocks() -> None:
-    client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
-    with client.decision(session_id="s", request_id="r") as dec:
-        wrapped = InstrumentedMCPSession(session, dec, authorizer=_DenyAll())
-        with pytest.raises(ToolCallDenied):
-            asyncio.run(wrapped.call_tool("danger", {"x": 1}))
-
-    assert session.calls == []

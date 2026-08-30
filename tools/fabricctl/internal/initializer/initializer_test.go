@@ -52,7 +52,7 @@ func TestRunA0WritesGoldenArtifactsAndReturnsValidatedResource(t *testing.T) {
 	input := strings.NewReader(strings.Join(answers, "\n") + "\n")
 	var output bytes.Buffer
 
-	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true})
+	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true, LegacyManagement: true})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -99,7 +99,7 @@ func TestRunA3CollectsConditionalAndDeliberateOptionalReferences(t *testing.T) {
 	input := strings.NewReader(strings.Join(answers, "\n") + "\n")
 	var output bytes.Buffer
 
-	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true})
+	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true, LegacyManagement: true})
 	if err != nil {
 		t.Fatalf("Run() error = %v\noutput:\n%s", err, output.String())
 	}
@@ -152,7 +152,7 @@ func TestRunRejectsUnavailableA1Immediately(t *testing.T) {
 	var output bytes.Buffer
 	result, err := Run(Options{
 		Input: strings.NewReader("edge-agent\nA1\n"), Output: &output,
-		OutputDir: filepath.Join(t.TempDir(), "output"), Interactive: true,
+		OutputDir: filepath.Join(t.TempDir(), "output"), Interactive: true, LegacyManagement: true,
 	})
 	if result != nil || !errors.Is(err, ErrNoCompatibleInstallProfile) {
 		t.Fatalf("Run() = %#v, %v", result, err)
@@ -175,7 +175,7 @@ func TestRunRetriesInvalidLineInputAndRequiresExactConfirmation(t *testing.T) {
 	answers = append(answers, a0TargetAnswers("yes")...)
 	input := strings.NewReader(strings.Join(answers, "\n") + "\n")
 	var output bytes.Buffer
-	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true})
+	result, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true, LegacyManagement: true})
 	if result != nil || !errors.Is(err, ErrDeclined) {
 		t.Fatalf("Run() = %#v, %v", result, err)
 	}
@@ -197,7 +197,7 @@ func TestRunEOFAndOversizedInputLeaveNoArtifacts(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			directory := filepath.Join(t.TempDir(), "output")
-			_, err := Run(Options{Input: strings.NewReader(input), Output: &bytes.Buffer{}, OutputDir: directory, Interactive: true})
+			_, err := Run(Options{Input: strings.NewReader(input), Output: &bytes.Buffer{}, OutputDir: directory, Interactive: true, LegacyManagement: true})
 			if err == nil {
 				t.Fatal("Run() unexpectedly succeeded")
 			}
@@ -232,7 +232,7 @@ func TestRunRefusesExistingTargetsWithoutReplacingThem(t *testing.T) {
 			answers := []string{"edge-agent", "A0", "sdk", "tenant/acme", "metadata-only", "n"}
 			answers = append(answers, a0TargetAnswers("write")...)
 			input := strings.NewReader(strings.Join(answers, "\n") + "\n")
-			_, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true})
+			_, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true, LegacyManagement: true})
 			if kind == "regular" && !errors.Is(err, ErrTargetExists) {
 				t.Fatalf("Run() error = %v", err)
 			}
@@ -276,6 +276,7 @@ func TestRunRequiresInteractiveTerminal(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "output")
 	_, err := Run(Options{
 		Input: strings.NewReader("edge-agent\n"), Output: &bytes.Buffer{}, OutputDir: directory,
+		LegacyManagement: true,
 	})
 	if !errors.Is(err, ErrInteractiveTerminalRequired) {
 		t.Fatalf("Run() error = %v, want ErrInteractiveTerminalRequired", err)
@@ -298,7 +299,7 @@ func TestRunCanonicalizesSymlinkOutputPathComponent(t *testing.T) {
 	answers := []string{"edge-agent", "A0", "sdk", "tenant/acme", "metadata-only", "n"}
 	answers = append(answers, a0TargetAnswers("write")...)
 	input := strings.NewReader(strings.Join(answers, "\n") + "\n")
-	result, err := Run(Options{Input: input, Output: &bytes.Buffer{}, OutputDir: filepath.Join(link, "child"), Interactive: true})
+	result, err := Run(Options{Input: input, Output: &bytes.Buffer{}, OutputDir: filepath.Join(link, "child"), Interactive: true, LegacyManagement: true})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -322,7 +323,7 @@ func TestValidReferenceRejectsCredentialLikeAndOpaqueValues(t *testing.T) {
 		"secret://fabric/workload", "k8s://fabric-system/tenant", "spiffe://acme.example/agent",
 	}
 	rejected := []string{
-		"AKIAIOSFODNN7EXAMPLE", "ghp_"+"123456789012345678901234567890123456",
+		"AKIAIOSFODNN7EXAMPLE", "ghp_" + "123456789012345678901234567890123456",
 		"sk-1234567890abcdefghij", "token_1234567890abcdefghij",
 		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.signature",
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -346,7 +347,7 @@ func TestWizardExplainsHashAndPIIBoundaries(t *testing.T) {
 	answers = append(answers, a0TargetAnswers("write")...)
 	input := strings.NewReader(strings.Join(answers, "\n") + "\n")
 	var output bytes.Buffer
-	if _, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true}); err != nil {
+	if _, err := Run(Options{Input: input, Output: &output, OutputDir: directory, Interactive: true, LegacyManagement: true}); err != nil {
 		t.Fatalf("Run() error = %v\n%s", err, output.String())
 	}
 	for _, text := range []string{

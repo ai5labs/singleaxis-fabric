@@ -1,129 +1,77 @@
-# Fabric integration harness
+# Fabric Node evaluation harness
 
-Self-contained docker-compose stack that runs the full Layer 1 Fabric
-audit path — OTel Collector (Fabric distribution) plus the two UDS
-guardrail sidecars plus Langfuse + Postgres — so an external agent can
-be pointed at it and every decision it makes is redacted, schema-
-gated, and landed as a Langfuse trace.
+This is a small, explicitly non-production setup for trying the Fabric OSS
+recorder:
 
-This is the harness we recommend for today's integration test: an
-existing product imports the Fabric SDK (or speaks OTLP directly), points
-at the endpoints below, and you watch decisions light up in Langfuse.
+```text
+OTLP -> Fabric Node -> default-deny allowlist -> durable queue -> test sink
+```
 
-## What you get
+It contains two runtime services:
 
-| Surface | Where | Purpose |
-|---|---|---|
-| Langfuse UI | http://localhost:3000 | Decision traces, scores, filters |
-| OTLP/gRPC | localhost:4317 | Agent telemetry ingest |
-| OTLP/HTTP | localhost:4318 | Same, for HTTP-only clients |
-| Presidio UDS | `./run/presidio.sock` | PII redaction for SDK users |
-| NeMo rails UDS | `./run/nemo.sock` | Input/output guardrails for SDK users |
+- `fabric-node`: the current Collector-based recorder implementation;
+- `test-sink`: a controlled OTLP/HTTP destination that stores requests on a
+  durable Docker volume and returns success only after fsync.
 
-Default Langfuse login: `admin@fabric.local` / `fabric-admin`.
+A short-lived `queue-init` helper gives the non-root Fabric Node ownership of
+its Docker queue volume and exits before the recorder starts. It is not a
+runtime hop and has no network dependency.
 
-## Start
+There are no guardrails, prompt-time PII sidecars, judges, red-team runners,
+management services, or observability UI.
+
+## Start and inspect
 
 ```bash
 cd deploy/compose
-cp .env.example .env            # (optional) override defaults
-make up                         # builds + starts everything
+make up
+make status
+make smoke
 ```
 
-First start builds the three Fabric images locally (~2–4 min). `make
-up` also creates `run/presidio.key` if it is missing, so the Presidio
-sidecar can start with a real local HMAC key. Later `make up` reuses
-the built images unless code changes.
+Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
-Wait ~30s for Langfuse to finish its Prisma migrations, then open the
-UI and the project `fabric-harness` will be pre-created with the
-bootstrap keys.
+- `GET http://localhost:8080/health`
+- `GET http://localhost:8080/count`
 
-### Optional: apply curated Fabric dashboards
+Run the restart/outage qualification:
 
 ```bash
-make up-bootstrap
+make qualify
 ```
 
-Runs the `langfuse-bootstrap` Job once against the running Langfuse,
-provisioning Fabric rubric→score mappings, saved filters, and
-per-profile dashboards. Pick a different profile with:
+The fixture simulates a passive shadow of an agent performing a model call,
+retrieval, tool call, non-committed side effect and checkpoint. The deterministic
+CI critic evaluates structured observations from the same scenario; it is test
+tooling, not an LLM judge or runtime assurance component.
+
+The qualification proves that this configuration:
+
+1. accepts a known trace;
+2. strips a non-allowlisted marker before export;
+3. preserves allowlisted reconstruction metadata;
+4. queues a trace while the destination is unavailable;
+5. survives a Fabric Node restart;
+6. delivers the queued request after the sink returns.
+
+## Honest limitations
+
+This harness is plaintext and unauthenticated. It is for local evaluation only.
+Use the Helm `shadow-production` profile across a trust boundary.
+
+The test sink's `200` response has a deliberately strong, test-specific
+meaning: that request was fsynced to its Docker volume. Fabric cannot infer the
+same meaning from an arbitrary OTLP destination. In production, distinguish
+Collector acceptance, local queueing, destination acknowledgement, and
+destination durable persistence.
+
+The queue is at least once, not exactly once. Duplicate delivery remains
+possible after ambiguous acknowledgements, and the queue is not an
+authoritative evidence store.
+
+## Remove evaluation data
 
 ```bash
-FABRIC_PROFILE=eu-ai-act-high-risk make up-bootstrap
+make down        # keeps queue and sink volumes
+make reset       # deletes this Compose project's evaluation volumes
 ```
-
-## Pointing an external agent at the harness
-
-### Option 1 — Fabric SDK (Python, recommended)
-
-```python
-# pip install singleaxis-fabric
-from fabric import Fabric, FabricConfig, UDSNemoClient, UDSPresidioClient
-
-fabric = Fabric(
-    FabricConfig(tenant_id="harness", agent_id="my-product"),
-    presidio=UDSPresidioClient("./run/presidio.sock"),
-    nemo=UDSNemoClient("./run/nemo.sock"),
-)
-
-with fabric.decision(session_id="sess-1", request_id="req-1") as decision:
-    safe_input = decision.guard_input(user_msg)
-    response = llm.complete(safe_input)
-    safe_response = decision.guard_output_final(response)
-```
-
-Adjust paths if you aren't running the agent from `deploy/compose/`.
-
-### Option 2 — vanilla OTLP
-
-If your product already emits OpenTelemetry traces, set the
-exporter:
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_SERVICE_NAME=my-product
-# Fabric allowlist needs event_class on each span/record.
-# See specs/004-telemetry-bridge.md §A.4.
-```
-
-Anything without `event_class = decision_summary` (or another allowed
-class) is dropped by the `fabricguard` processor. This is intentional:
-the collector is the schema contract.
-
-### Option 3 — curl smoke test
-
-```bash
-curl -X POST http://localhost:4318/v1/traces \
-  -H 'Content-Type: application/json' \
-  -d @fixtures/decision-summary.json
-```
-
-## Troubleshooting
-
-- **`make up` fails on first run with `permission denied` on `./run/*.sock`**:
-  the sidecar images run as UID 1000. If your host UID differs and you
-  bind-mount `./run/`, either `chown -R 1000 run/` or delete `run/`
-  and let the sidecars recreate the sockets on next start.
-- **Langfuse never becomes healthy**: the Postgres container usually
-  needs ~15s. Check `make logs ARGS=langfuse-db` — Prisma migrations
-  run on first boot and can take up to a minute.
-- **`fabricredact` drops everything**: confirm both sidecar and
-  collector see the same UDS path (`./run/presidio.sock` on the host,
-  `/run/fabric/presidio.sock` inside the containers).
-- **Traces don't land in Langfuse**: verify the collector's
-  `otlphttp/langfuse` exporter credential — the default base64 matches
-  `pk-lf-harness:sk-lf-harness`. Rotating one without the other fails
-  silently with a 401 on the exporter.
-
-## Relationship to the Helm chart
-
-This harness mirrors `charts/fabric` one-to-one for Layer 1 subcharts
-(otel-collector, nemo-sidecar, presidio-sidecar, langfuse). The
-`permissive-dev` profile values are the compose defaults. For anything
-past a local test — multi-tenant, production Langfuse with external
-Postgres, KMS-backed keys — use the Helm chart.
-
-See `specs/008-deployment-model.md` for the authoritative deployment
-shape.

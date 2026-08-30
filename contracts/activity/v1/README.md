@@ -20,3 +20,9 @@ misrepresented as full parity.
 
 Changing a fixture, schema, support declaration, or digest is a public contract change and
 must be reviewed as such. Consumers must verify digests before trusting these artifacts.
+
+## Compatibility status
+
+Version 1 remains pinned and unchanged for existing SDK conformance. New recorder data-plane
+integrations should use activity v2; v2 is a separate contract and does not reinterpret v1
+fixtures or make v1 payloads valid v2 envelopes.
