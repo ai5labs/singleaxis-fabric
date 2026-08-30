@@ -260,7 +260,7 @@ jobs:
           BEFORE=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
           COLLECTOR_BEFORE=$(kubectl get pod --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
-            -o jsonpath='{.items[0].metadata.name}')
+            -o jsonpath='{.items[0].metadata.uid}')
 
           kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=0
           kubectl wait --for=delete pods --namespace "${NAMESPACE}" -l app=fabric-test-sink --timeout=120s
@@ -275,7 +275,7 @@ jobs:
             -l app.kubernetes.io/name=otel-collector --timeout=300s
           COLLECTOR_AFTER=$(kubectl get pod --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
-            -o jsonpath='{.items[0].metadata.name}')
+            -o jsonpath='{.items[0].metadata.uid}')
 
           kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=1
           kubectl rollout status deployment/fabric-test-sink \
