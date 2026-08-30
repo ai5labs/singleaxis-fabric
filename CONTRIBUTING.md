@@ -27,7 +27,7 @@ licence.
 Every commit must be signed off:
 
 ```bash
-git commit -s -m "feat(decision-graph): add temporal edge type"
+git commit -s -m "feat(recorder): preserve source correlation"
 ```
 
 This appends a `Signed-off-by:` trailer using your configured Git identity.
@@ -54,8 +54,8 @@ Accepted types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
 `ci`, `chore`, `revert`. Breaking changes must include `!` after the type
 and a `BREAKING CHANGE:` footer.
 
-Scope should identify the component (`decision-graph`, `telemetry-bridge`,
-`judge-worker`, `charts`, `sdk-python`, etc.).
+Scope should identify the recorder component (`capture`, `collector`, `delivery`,
+`charts`, `sdk-python`, `sdk-typescript`, etc.).
 
 ## Branching and merge strategy
 
@@ -66,6 +66,10 @@ Scope should identify the component (`decision-graph`, `telemetry-bridge`,
   in its body — the squash commit becomes `main`'s HEAD, which the
   push-event DCO check inspects (per-commit sign-offs are not carried
   over into the squash automatically).
+- The squash body must contain real line breaks before the trailer. Do not pass
+  escaped text such as `\n\nSigned-off-by: ...`; GitHub stores that as literal
+  text, which is not a valid DCO trailer. Confirm the resulting `main` commit
+  passes the push-event DCO job before tagging a release.
 - A PR may not be merged by its author.
 
 ## Code standards
