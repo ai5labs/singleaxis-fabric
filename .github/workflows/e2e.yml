@@ -258,9 +258,12 @@ jobs:
           trap 'kill ${NODE_PF} ${SINK_PF} 2>/dev/null || true' EXIT
           sleep 3
           BEFORE=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
-          COLLECTOR_BEFORE=$(kubectl get pod --namespace "${NAMESPACE}" \
+          COLLECTOR_POD=$(kubectl get pod --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
-            -o jsonpath='{.items[0].metadata.uid}')
+            -o jsonpath='{.items[0].metadata.name}')
+          COLLECTOR_BEFORE=$(kubectl get pod "${COLLECTOR_POD}" \
+            --namespace "${NAMESPACE}" \
+            -o jsonpath='{.metadata.uid}')
 
           kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=0
           kubectl wait --for=delete pods --namespace "${NAMESPACE}" -l app=fabric-test-sink --timeout=120s
@@ -270,7 +273,7 @@ jobs:
           sleep 3
 
           kill "${NODE_PF}" 2>/dev/null || true
-          kubectl delete pod "${COLLECTOR_BEFORE}" --namespace "${NAMESPACE}"
+          kubectl delete pod "${COLLECTOR_POD}" --namespace "${NAMESPACE}"
           kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector --timeout=300s
           COLLECTOR_AFTER=$(kubectl get pod --namespace "${NAMESPACE}" \

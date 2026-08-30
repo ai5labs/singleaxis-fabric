@@ -156,7 +156,8 @@ def test_e2e_workflow_runs_the_deterministic_agentic_critic() -> None:
     assert "scenarios/agentic-shadow-outage.json" in workflow
     assert "python deploy/compose/critic.py" in workflow
     assert "recorder-e2e-critic-evidence" in workflow
-    assert workflow.count("jsonpath='{.items[0].metadata.uid}'") == 2
+    assert "jsonpath='{.metadata.uid}'" in workflow
+    assert "jsonpath='{.items[0].metadata.uid}'" in workflow
 
     scenario = json.loads(
         (ROOT / "deploy/compose/scenarios/agentic-shadow-outage.json").read_text(
