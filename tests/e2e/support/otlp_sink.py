@@ -1,7 +1,11 @@
-"""Small, controlled OTLP/HTTP evaluation sink; not a production backend."""
+#!/usr/bin/env python3
+# Copyright 2026 AI5Labs Research OPC Private Limited
+# SPDX-License-Identifier: Apache-2.0
+"""Controlled OTLP/HTTP fsync sink used only by Fabric end-to-end tests."""
 
 from __future__ import annotations
 
+import base64
 import gzip
 import json
 import os
@@ -22,8 +26,18 @@ def records() -> list[Path]:
     )
 
 
+def non_negative_int(query: dict[str, list[str]], key: str, default: int) -> int:
+    try:
+        value = int(query.get(key, [str(default)])[0])
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a non-negative integer") from exc
+    if value < 0:
+        raise ValueError(f"{key} must be a non-negative integer")
+    return value
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FabricEvaluationSink/1"
+    server_version = "FabricE2ETestSink/1"
 
     def _json(self, status: HTTPStatus, value: object) -> None:
         body = json.dumps(value, sort_keys=True).encode()
@@ -45,23 +59,44 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             needle = query.get("needle", [""])[0].encode()
             try:
-                after = int(query.get("after", ["0"])[0])
-            except ValueError:
-                self._json(
-                    HTTPStatus.BAD_REQUEST,
-                    {"error": "after must be a non-negative integer"},
-                )
-                return
-            if after < 0:
-                self._json(
-                    HTTPStatus.BAD_REQUEST,
-                    {"error": "after must be a non-negative integer"},
-                )
+                after = non_negative_int(query, "after", 0)
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
             found = bool(needle) and any(
                 needle in path.read_bytes() for path in records()[after:]
             )
             self._json(HTTPStatus.OK, {"found": found})
+            return
+        if parsed.path == "/records":
+            query = parse_qs(parsed.query)
+            try:
+                after = non_negative_int(query, "after", 0)
+                limit = non_negative_int(query, "limit", 200)
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+            if limit < 1 or limit > 200:
+                self._json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "limit must be between 1 and 200"},
+                )
+                return
+            selected = records()[after : after + limit]
+            self._json(
+                HTTPStatus.OK,
+                {
+                    "after": after,
+                    "records": [
+                        {
+                            "index": after + offset,
+                            "body_base64": base64.b64encode(path.read_bytes()).decode(),
+                        }
+                        for offset, path in enumerate(selected)
+                    ],
+                    "total": len(records()),
+                },
+            )
             return
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
@@ -88,9 +123,8 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             os.close(directory_fd)
 
-        # An empty protobuf ExportResponse is valid OTLP/HTTP. Success means
-        # this controlled sink fsynced the request; Fabric must not generalize
-        # that meaning to other destinations that return 200.
+        # The empty protobuf ExportResponse is valid OTLP/HTTP. Success means
+        # this test sink fsynced the request; that guarantee is sink-specific.
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/x-protobuf")
         self.send_header("Content-Length", "0")

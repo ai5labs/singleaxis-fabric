@@ -12,11 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Added a deterministic end-to-end test critic that evaluates structured
-  evidence from a simulated agent run containing model, retrieval, tool, and
-  side-effect activity, including a destination outage and recorder restart.
-- Added retained CI artifacts for the agentic scenario evidence and critic
-  report so release qualification can be independently reviewed.
+- Added an isolated end-to-end healthcare shadow workload that uses the public
+  Python SDK to record an ambient-clinical agent execution containing model,
+  retrieval, tool, held EHR side-effect, and checkpoint activity.
+- Added retained CI evidence for causal reconstruction, metadata-only export,
+  destination outage, persistent queue recovery, and Collector recreation.
 
 ### Changed
 
@@ -38,9 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-- The simulated workflow proves that prohibited raw content does not reach the
-  destination, at-least-once delivery recovers after an outage, and the
-  release makes no exactly-once or destination-persistence claim. Separate
+- The credential-free healthcare workflow proves that synthetic raw clinical
+  content does not reach the destination, reconstructable metadata retains its
+  causal structure, and at-least-once delivery recovers after an outage. It
+  makes no exactly-once or arbitrary-destination persistence claim. Separate
   chart tests prove that the production recorder exposes no sampling control.
 - Security qualification now scans the exact image and package bytes intended
   for publication and fails closed on high or critical findings.

@@ -29,7 +29,8 @@ make status
 make smoke
 ```
 
-Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
+The evaluation ports bind to loopback only. Send OTLP/HTTP to
+`http://localhost:4318`. The controlled sink exposes:
 
 - `GET http://localhost:8080/health`
 - `GET http://localhost:8080/count`
@@ -40,10 +41,11 @@ Run the restart/outage qualification:
 make qualify
 ```
 
-The fixture simulates a passive shadow of an agent performing a model call,
-retrieval, tool call, non-committed side effect and checkpoint. The deterministic
-CI critic evaluates structured observations from the same scenario; it is test
-tooling, not an LLM judge or runtime assurance component.
+The Compose qualifier sends a minimal OTLP smoke fixture. The release CI also
+runs the public Python SDK through a realistic ambient-clinical documentation
+shadow workflow under [`../../tests/e2e/healthcare_shadow/`](../../tests/e2e/healthcare_shadow/).
+All scenario code and controlled test infrastructure live under `tests/e2e`;
+they are not installed or published as Fabric runtime components.
 
 The qualification proves that this configuration:
 

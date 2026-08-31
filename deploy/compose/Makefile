@@ -26,7 +26,7 @@ build: ## Build the local Fabric Node image.
 smoke: ## Send one protected OTLP trace to Fabric Node.
 	@curl -fsS -X POST "http://$$($(COMPOSE) port fabric-node 4318)/v1/traces" \
 		-H 'Content-Type: application/json' \
-		--data-binary @fixtures/decision-summary.json >/dev/null
+		--data-binary @../../tests/e2e/fixtures/decision-summary.json >/dev/null
 	@echo "trace accepted by Fabric Node"
 
 qualify: up ## Exercise protection plus destination outage/restart recovery.

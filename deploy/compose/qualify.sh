@@ -2,7 +2,7 @@
 set -eu
 
 compose="${COMPOSE:-docker compose}"
-fixture="fixtures/agentic-shadow-workflow.json"
+fixture="../../tests/e2e/fixtures/decision-summary.json"
 
 published_address() {
   service="$1"
