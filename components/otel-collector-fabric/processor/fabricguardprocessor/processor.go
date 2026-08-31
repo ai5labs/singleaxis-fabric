@@ -239,6 +239,10 @@ func activityCategory(name string, attrs pcommon.Map) string {
 			return "fabric.model_call"
 		}
 	}
+	if operation, ok := attrs.Get("gen_ai.operation.name"); ok &&
+		operation.Type() == pcommon.ValueTypeStr && operation.Str() == "retrieval" {
+		return "fabric.retrieval"
+	}
 	ordered := []struct{ key, category string }{
 		{"fabric.checkpoint.checkpoint_id", "fabric.checkpoint"},
 		{"fabric.replay.metadata_version", "fabric.replay"},
@@ -252,9 +256,9 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		{"fabric.interaction.kind", "fabric.interaction"},
 		{"fabric.file.operation", "fabric.file_access"},
 		{"fabric.delegation.protocol", "fabric.delegation"},
+		{"fabric.decision_id", "fabric.decision"},
 		{"fabric.execution.status", "fabric.execution"},
 		{"fabric.execution_id", "fabric.execution"},
-		{"fabric.decision_id", "fabric.decision"},
 	}
 	for _, candidate := range ordered {
 		if _, ok := attrs.Get(candidate.key); ok {

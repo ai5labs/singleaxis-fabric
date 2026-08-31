@@ -4,7 +4,9 @@ name: E2E kind smoke
 # OTLP -> default-deny protection -> persistent queue -> controlled test sink.
 # The sink returns 200 after fsync, allowing this workflow to test outage and
 # restart recovery without claiming that arbitrary OTLP destinations have the
-# same persistence semantics.
+# same persistence semantics. A realistic ambient-clinical shadow workload
+# exercises the public Python SDK; deterministic external dependencies keep the
+# test credential-free and free of patient data.
 
 on:
   push:
@@ -35,6 +37,8 @@ jobs:
               - 'charts/fabric/**'
               - 'components/otel-collector-fabric/**'
               - 'deploy/compose/**'
+              - 'sdk/python/**'
+              - 'tests/e2e/**'
               - '.github/workflows/e2e.yml'
 
   kind-smoke:
@@ -46,9 +50,13 @@ jobs:
       KIND_CLUSTER: fabric-e2e
       NAMESPACE: fabric-system
       COLLECTOR_IMAGE: fabric-otelcol:e2e
-      SCENARIO_FILE: deploy/compose/scenarios/agentic-shadow-outage.json
-      EVIDENCE_FILE: /tmp/fabric-recorder-e2e-evidence.json
-      CRITIC_REPORT: /tmp/fabric-recorder-e2e-critic-report.json
+      E2E_PYTHON: /tmp/fabric-e2e-venv/bin/python
+      INITIAL_COUNT_FILE: /tmp/fabric-e2e-initial-count
+      BASELINE_MANIFEST: /tmp/fabric-e2e-baseline-manifest.json
+      RECOVERY_MANIFEST: /tmp/fabric-e2e-recovery-manifest.json
+      RUNTIME_EVIDENCE: /tmp/fabric-e2e-runtime.json
+      EXPORTED_RECORDS: /tmp/fabric-e2e-records.json
+      VERIFICATION_REPORT: /tmp/fabric-e2e-report.json
     steps:
       - name: Short-circuit unrelated changes
         if: needs.detect.outputs.relevant != 'true'
@@ -92,13 +100,20 @@ jobs:
         with:
           version: v3.15.0
 
+      - name: Install the public Python SDK test workload
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          python -m venv /tmp/fabric-e2e-venv
+          "${E2E_PYTHON}" -m pip install --upgrade pip
+          "${E2E_PYTHON}" -m pip install --editable './sdk/python[otlp]'
+
       - name: Install controlled fsync test sink
         if: needs.detect.outputs.relevant == 'true'
         run: |
           kubectl create namespace "${NAMESPACE}"
           kubectl create configmap fabric-test-sink \
             --namespace "${NAMESPACE}" \
-            --from-file=otlp_sink.py=deploy/compose/sink/otlp_sink.py
+            --from-file=otlp_sink.py=tests/e2e/support/otlp_sink.py
           kubectl apply --namespace "${NAMESPACE}" -f - <<'YAML'
           apiVersion: v1
           kind: PersistentVolumeClaim
@@ -179,7 +194,7 @@ jobs:
             --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector --timeout=300s
 
-      - name: Verify capture, protection, and delivery
+      - name: Run ambient-clinical shadow workflow
         if: needs.detect.outputs.relevant == 'true'
         run: |
           kubectl port-forward --namespace "${NAMESPACE}" \
@@ -192,9 +207,11 @@ jobs:
           sleep 3
 
           BEFORE=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
-          curl -fsS -X POST http://127.0.0.1:14318/v1/traces \
-            -H 'Content-Type: application/json' \
-            --data-binary @deploy/compose/fixtures/agentic-shadow-workflow.json
+          printf '%s\n' "${BEFORE}" > "${INITIAL_COUNT_FILE}"
+          "${E2E_PYTHON}" tests/e2e/healthcare_shadow/workload.py \
+            --endpoint http://127.0.0.1:14318/v1/traces \
+            --run-id baseline \
+            --manifest "${BASELINE_MANIFEST}"
 
           CURRENT="${BEFORE}"
           for attempt in $(seq 1 30); do
@@ -203,48 +220,14 @@ jobs:
             if [ "${CURRENT}" -gt "${BEFORE}" ]; then break; fi
             sleep 1
           done
-          FORBIDDEN_FOUND=$(curl -fsS \
-            "http://127.0.0.1:18080/contains?needle=MUST_NOT_LEAVE_FABRIC_NODE&after=${BEFORE}" \
-            | jq -r .found)
-          CHECKPOINT_FOUND=$(curl -fsS \
-            "http://127.0.0.1:18080/contains?needle=FABRIC_E2E_RECONSTRUCTION_METADATA&after=${BEFORE}" \
-            | jq -r .found)
-          TOOL_FOUND=$(curl -fsS \
-            "http://127.0.0.1:18080/contains?needle=get_patient_summary&after=${BEFORE}" \
-            | jq -r .found)
-          RETRIEVAL_FOUND=$(curl -fsS \
-            "http://127.0.0.1:18080/contains?needle=fhir%3A%2F%2FPatient&after=${BEFORE}" \
-            | jq -r .found)
-
+          test "${CURRENT}" -gt "${BEFORE}"
           jq -n \
-            --arg scenario_id passive-agent-shadow-outage-recovery \
-            --argjson baseline "${BEFORE}" \
-            --argjson delivered "${CURRENT}" \
-            --argjson forbidden "${FORBIDDEN_FOUND}" \
-            --argjson checkpoint "${CHECKPOINT_FOUND}" \
-            --argjson tool "${TOOL_FOUND}" \
-            --argjson retrieval "${RETRIEVAL_FOUND}" \
+            --argjson before "${BEFORE}" \
+            --argjson after "${CURRENT}" \
             '{
-              schema_version: "fabric.recorder-e2e-evidence/v1",
-              scenario_id: $scenario_id,
-              capture: {
-                baseline_count: $baseline,
-                delivered_count: $delivered,
-                forbidden_marker_found: $forbidden,
-                reconstruction_markers: {
-                  "FABRIC_E2E_RECONSTRUCTION_METADATA": $checkpoint,
-                  "get_patient_summary": $tool,
-                  "fhir://Patient": $retrieval
-                }
-              },
-              claims: {
-                enforcement: false,
-                delivery_semantics: "at_least_once",
-                persistence_scope: "controlled_fsync_sink",
-                exactly_once: false,
-                arbitrary_destination_persistence: false
-              }
-            }' > "${EVIDENCE_FILE}"
+              baseline_before: $before,
+              baseline_after: $after
+            }' > "${RUNTIME_EVIDENCE}"
 
       - name: Verify destination outage and Collector restart recovery
         if: needs.detect.outputs.relevant == 'true'
@@ -267,9 +250,10 @@ jobs:
 
           kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=0
           kubectl wait --for=delete pods --namespace "${NAMESPACE}" -l app=fabric-test-sink --timeout=120s
-          curl -fsS -X POST http://127.0.0.1:14318/v1/traces \
-            -H 'Content-Type: application/json' \
-            --data-binary @deploy/compose/fixtures/agentic-shadow-workflow.json
+          "${E2E_PYTHON}" tests/e2e/healthcare_shadow/workload.py \
+            --endpoint http://127.0.0.1:14318/v1/traces \
+            --run-id recovery \
+            --manifest "${RECOVERY_MANIFEST}"
           sleep 3
 
           kill "${NODE_PF}" 2>/dev/null || true
@@ -302,31 +286,41 @@ jobs:
             --argjson delivered "${CURRENT}" \
             --arg before "${COLLECTOR_BEFORE}" \
             --arg after "${COLLECTOR_AFTER}" \
-            '.recovery = {
-              baseline_count: $baseline,
-              delivered_count: $delivered,
+            '. + {
+              recovery_before: $baseline,
+              recovery_after: $delivered,
               destination_outage_observed: true,
-              recorder_instance_before: $before,
-              recorder_instance_after: $after
-            }' "${EVIDENCE_FILE}" > "${EVIDENCE_FILE}.tmp"
-          mv "${EVIDENCE_FILE}.tmp" "${EVIDENCE_FILE}"
+              collector_uid_before: $before,
+              collector_uid_after: $after
+            }' "${RUNTIME_EVIDENCE}" > "${RUNTIME_EVIDENCE}.tmp"
+          mv "${RUNTIME_EVIDENCE}.tmp" "${RUNTIME_EVIDENCE}"
 
-      - name: Deterministic recorder test critic
-        if: always() && needs.detect.outputs.relevant == 'true'
-        run: >-
-          python deploy/compose/critic.py
-          --scenario "${SCENARIO_FILE}"
-          --evidence "${EVIDENCE_FILE}"
-          --output "${CRITIC_REPORT}"
+          INITIAL=$(cat "${INITIAL_COUNT_FILE}")
+          curl -fsS \
+            "http://127.0.0.1:18080/records?after=${INITIAL}&limit=200" \
+            --output "${EXPORTED_RECORDS}"
 
-      - name: Upload E2E critic evidence
+      - name: Verify protected reconstruction and recovery
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          "${E2E_PYTHON}" tests/e2e/healthcare_shadow/verify.py \
+            --records "${EXPORTED_RECORDS}" \
+            --manifest "${BASELINE_MANIFEST}" \
+            --manifest "${RECOVERY_MANIFEST}" \
+            --runtime "${RUNTIME_EVIDENCE}" \
+            --report "${VERIFICATION_REPORT}"
+
+      - name: Upload healthcare shadow E2E evidence
         if: always() && needs.detect.outputs.relevant == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: recorder-e2e-critic-evidence
+          name: recorder-healthcare-shadow-e2e
           path: |
-            /tmp/fabric-recorder-e2e-evidence.json
-            /tmp/fabric-recorder-e2e-critic-report.json
+            /tmp/fabric-e2e-baseline-manifest.json
+            /tmp/fabric-e2e-recovery-manifest.json
+            /tmp/fabric-e2e-runtime.json
+            /tmp/fabric-e2e-records.json
+            /tmp/fabric-e2e-report.json
           if-no-files-found: error
           retention-days: 90
 

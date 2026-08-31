@@ -295,6 +295,30 @@ func TestProcessTraces_PreservesMetadataEmptySpanForCausalTopology(t *testing.T)
 	}
 }
 
+func TestProcessTraces_PreservesDecisionAndRetrievalCausalCategories(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
+		"fabric.decision_id":  "decision-1",
+		"fabric.execution_id": "execution-1",
+	}})
+	spans := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	retrieval := spans.AppendEmpty()
+	retrieval.SetName("retrieval patient context")
+	retrieval.Attributes().PutStr("gen_ai.operation.name", "retrieval")
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	spans = out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	if got := spans.At(0).Name(); got != "fabric.decision" {
+		t.Fatalf("decision carrying execution correlation became %q", got)
+	}
+	if got := spans.At(1).Name(); got != "fabric.retrieval" {
+		t.Fatalf("semantic retrieval became %q", got)
+	}
+}
+
 func TestProcessTraces_RejectsRawContentMasqueradingAsHash(t *testing.T) {
 	g := newTestGuard(t, nil)
 	td := makeTraces(spanFixture{name: "fabric.tool_call", attrs: map[string]any{

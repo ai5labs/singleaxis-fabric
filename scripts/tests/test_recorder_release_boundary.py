@@ -144,30 +144,50 @@ def test_compose_harness_prepares_non_root_queue_and_qualifies_new_records() -> 
     assert services["fabric-node"]["depends_on"]["queue-init"]["condition"] == (
         "service_completed_successfully"
     )
+    for service_name in ("fabric-node", "test-sink"):
+        assert all(
+            str(port).startswith("127.0.0.1:")
+            for port in services[service_name]["ports"]
+        )
 
     qualifier = (ROOT / "deploy/compose/qualify.sh").read_text(encoding="utf-8")
     assert "MUST_NOT_LEAVE_FABRIC_NODE&after=${before}" in qualifier
     assert "FABRIC_E2E_RECONSTRUCTION_METADATA&after=${before}" in qualifier
 
 
-def test_e2e_workflow_runs_the_deterministic_agentic_critic() -> None:
+def test_e2e_workflow_runs_the_isolated_healthcare_shadow_workload() -> None:
     workflow = (ROOT / ".github/workflows/e2e.yml").read_text(encoding="utf-8")
-    assert "agentic-shadow-workflow.json" in workflow
-    assert "scenarios/agentic-shadow-outage.json" in workflow
-    assert "python deploy/compose/critic.py" in workflow
-    assert "recorder-e2e-critic-evidence" in workflow
+    assert "tests/e2e/healthcare_shadow/workload.py" in workflow
+    assert "tests/e2e/healthcare_shadow/verify.py" in workflow
+    assert "tests/e2e/support/otlp_sink.py" in workflow
+    assert "recorder-healthcare-shadow-e2e" in workflow
+    assert "./sdk/python[otlp]" in workflow
+    assert "critic.py" not in workflow
+    assert "agentic-shadow-workflow.json" not in workflow
     assert "jsonpath='{.metadata.uid}'" in workflow
     assert "jsonpath='{.items[0].metadata.uid}'" in workflow
 
-    scenario = json.loads(
-        (ROOT / "deploy/compose/scenarios/agentic-shadow-outage.json").read_text(
-            encoding="utf-8"
-        )
+    workload = (ROOT / "tests/e2e/healthcare_shadow/workload.py").read_text(
+        encoding="utf-8"
     )
-    assert scenario["required_claims"] == {
-        "enforcement": False,
-        "delivery_semantics": "at_least_once",
-        "persistence_scope": "controlled_fsync_sink",
-        "exactly_once": False,
-        "arbitrary_destination_persistence": False,
-    }
+    assert "client = Fabric(" in workload
+    assert "FabricConfig(" in workload
+    assert "record_retrieval" in workload
+    assert "llm_call" in workload
+    assert "tool_call" in workload
+    assert "record_side_effect" in workload
+    assert "committed=False" in workload
+
+    for misplaced in (
+        "deploy/compose/critic.py",
+        "deploy/compose/scenarios/agentic-shadow-outage.json",
+        "deploy/compose/fixtures/agentic-shadow-workflow.json",
+    ):
+        assert not (ROOT / misplaced).exists()
+
+
+def test_e2e_support_is_not_referenced_by_release_artifact_packaging() -> None:
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    policy = (ROOT / "scripts/release/release-policy.json").read_text(encoding="utf-8")
+    assert "tests/e2e" not in release
+    assert "tests/e2e" not in policy
